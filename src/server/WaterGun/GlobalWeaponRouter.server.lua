@@ -14,9 +14,9 @@ globalEvent.OnServerEvent:Connect(function(player, toolName, isShooting)
 
 	local now = os.clock()
 
-	-- RATE-LIMITER: Mencegah spam exploit
+	-- RATE-LIMITER: Mencegah spam exploit (Diubah ke 0.15 untuk performa 100 Player)
 	if isShooting then
-		if lastFired[player.UserId] and (now - lastFired[player.UserId]) < 0.05 then return end
+		if lastFired[player.UserId] and (now - lastFired[player.UserId]) < 0.15 then return end
 		lastFired[player.UserId] = now
 	end
 

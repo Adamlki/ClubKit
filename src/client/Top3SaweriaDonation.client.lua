@@ -16,6 +16,7 @@ local CONFIG = {
 }
 
 local activeStatues = {}
+local activeUserIds = {}
 local isRendering = false
 
 local function formatMoney(amount)
@@ -122,112 +123,131 @@ local function renderStatue(rank, data)
 	end)
 end
 
--- 🔥 ARCHITECT FIX: THE CURTAIN DROP (SINKRONISASI MUTLAK & RINGAN)
+local function destroyStatue(statue)
+	if not statue then return end
+	pcall(function()
+		local animator = statue:FindFirstChildWhichIsA("Animator", true)
+		if animator then
+			for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+				track:Stop()
+				track:Destroy()
+			end
+		end
+		statue:Destroy()
+	end)
+end
+
+-- 🔥 ARCHITECT FIX: THE CURTAIN DROP (DENGAN AVATAR CACHING)
 local function onUpdate(top3Data)
 	if isRendering then return end
 	isRendering = true
 
-	-- 1. Bersihkan patung yang lama dari Workspace & Memori
-	for _, statue in pairs(activeStatues) do
-		if statue then 
-			pcall(function()
-				-- Hentikan dan hancurkan track agar tidak memory leak
-				local animator = statue:FindFirstChildWhichIsA("Animator", true)
-				if animator then
-					for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-						track:Stop()
-						track:Destroy()
-					end
-				end
-				statue:Destroy() 
-			end)
-		end
-	end
-	table.clear(activeStatues)
-
-	local pendingModels = {}
-	local loadedCount = 0
-
-	-- Hitung jumlah donatur yang valid
 	local expectedCount = 0
 	for rank = 1, 3 do if top3Data[rank] then expectedCount += 1 end end
 
 	if expectedCount == 0 then
+		for rank, statue in pairs(activeStatues) do destroyStatue(statue) end
+		table.clear(activeStatues)
+		table.clear(activeUserIds)
 		isRendering = false
 		return
 	end
 
 	local posFolder = workspace:FindFirstChild("DonatorPositions")
+	local pendingModels = {}
+	local loadedCount = 0
 
-	-- 2. Rakit avatar di belakang layar (Memory)
-	for rank, data in pairs(top3Data) do
-		task.spawn(function()
+	-- 1. Evaluasi Cache
+	for rank = 1, 3 do
+		local data = top3Data[rank]
+		if data then
 			local userId = data.userId or data.UserId or data.id or 1
 			local name = data.name or data.DisplayName or data.Name or data.nama or data.donator or "Unknown"
 			local amount = data.amount or data.Amount or data.jumlah or 0
 
-			local posPart = posFolder and posFolder:FindFirstChild(CONFIG.PosNames[rank])
-
-			if posPart then
-				if userId == 1 and name ~= "Unknown" then
-					pcall(function() userId = Players:GetUserIdFromNameAsync(name) end)
-				end
-
-				local success, model = pcall(function() return Players:CreateHumanoidModelFromUserId(userId) end)
-				if success and model then
-					local humanoid = model:FindFirstChildOfClass("Humanoid")
-					if humanoid then
-						humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None 
-					end
-
-					-- Optimasi Fisika (0% Lag)
-					-- Optimasi Fisika (0% Lag)
-					for _, p in ipairs(model:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end
-					local hrp = model:FindFirstChild("HumanoidRootPart")
-					if hrp then hrp.Anchored = true end
-
-					-- 🔥 ARCHITECT FIX: Pasang PrimaryPart jika kosong!
-					if hrp and not model.PrimaryPart then
-						model.PrimaryPart = hrp
-					end
-
-					local hrpY = (hrp and hrp.Size.Y) or 2
-					local hipH = (humanoid and humanoid.HipHeight) or 0
-					local yOffset = (humanoid and humanoid.RigType == Enum.HumanoidRigType.R15) and (hipH + (hrpY / 2)) or 3
-
-					-- Proteksi mutlak saat memindah posisi
-					pcall(function()
-						if model.PrimaryPart then
-							model:PivotTo(posPart.CFrame * CFrame.new(0, yOffset, 0))
-						else
-							model:MoveTo((posPart.CFrame * CFrame.new(0, yOffset, 0)).Position)
-						end
-					end)
-
-					pcall(function() createInfoGui(model:WaitForChild("Head"), rank, name, amount) end)
-
-					-- Simpan ke penampungan sementara
-					pendingModels[rank] = { Model = model, Humanoid = humanoid, AnimId = CONFIG.Animations["Top"..rank] }
-				end
+			if userId == 1 and name ~= "Unknown" then
+				pcall(function() userId = Players:GetUserIdFromNameAsync(name) end)
 			end
-			loadedCount += 1
-		end)
+			data.resolvedUserId = userId
+
+			if activeUserIds[rank] == userId and activeStatues[rank] then
+				-- CACHE HIT! Orang yang sama, cuma update teks
+				loadedCount += 1
+				local head = activeStatues[rank]:FindFirstChild("Head")
+				if head then
+					local oldGui = head:FindFirstChildOfClass("BillboardGui")
+					if oldGui then oldGui:Destroy() end
+					pcall(function() createInfoGui(head, rank, name, amount) end)
+				end
+			else
+				-- CACHE MISS! Orang beda, hancurkan yang lama
+				if activeStatues[rank] then 
+					destroyStatue(activeStatues[rank]) 
+					activeStatues[rank] = nil 
+				end
+				activeUserIds[rank] = nil
+			end
+		else
+			if activeStatues[rank] then 
+				destroyStatue(activeStatues[rank]) 
+				activeStatues[rank] = nil 
+			end
+			activeUserIds[rank] = nil
+		end
 	end
 
-	-- 3. THE BARRIER: Tunggu sampai semua model siap di-download
+	-- 2. Rakit avatar baru di belakang layar (jika ada yang Cache Miss)
+	for rank, data in pairs(top3Data) do
+		if not activeStatues[rank] then
+			task.spawn(function()
+				local userId = data.resolvedUserId
+				local name = data.name or data.DisplayName or data.Name or data.nama or data.donator or "Unknown"
+				local amount = data.amount or data.Amount or data.jumlah or 0
+				local posPart = posFolder and posFolder:FindFirstChild(CONFIG.PosNames[rank])
+
+				if posPart then
+					local success, model = pcall(function() return Players:CreateHumanoidModelFromUserId(userId) end)
+					if success and model then
+						local humanoid = model:FindFirstChildOfClass("Humanoid")
+						if humanoid then humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None end
+
+						-- Optimasi Fisika (0% Lag)
+						for _, p in ipairs(model:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end
+						local hrp = model:FindFirstChild("HumanoidRootPart")
+						if hrp then hrp.Anchored = true end
+
+						if hrp and not model.PrimaryPart then model.PrimaryPart = hrp end
+
+						local hrpY = (hrp and hrp.Size.Y) or 2
+						local hipH = (humanoid and humanoid.HipHeight) or 0
+						local yOffset = (humanoid and humanoid.RigType == Enum.HumanoidRigType.R15) and (hipH + (hrpY / 2)) or 3
+
+						pcall(function()
+							if model.PrimaryPart then model:PivotTo(posPart.CFrame * CFrame.new(0, yOffset, 0))
+							else model:MoveTo((posPart.CFrame * CFrame.new(0, yOffset, 0)).Position) end
+						end)
+
+						pcall(function() createInfoGui(model:WaitForChild("Head"), rank, name, amount) end)
+
+						pendingModels[rank] = { Model = model, Humanoid = humanoid, AnimId = CONFIG.Animations["Top"..rank], UserId = userId }
+					end
+				end
+				loadedCount += 1
+			end)
+		end
+	end
+
+	-- 3. THE BARRIER
 	local timeout = tick() + 10
-	while loadedCount < expectedCount and tick() < timeout do 
-		task.wait(0.1) 
-	end
+	while loadedCount < expectedCount and tick() < timeout do task.wait(0.1) end
 
-	-- 4. THE CURTAIN DROP: Muncul Bareng & Samakan Hentakan!
+	-- 4. THE CURTAIN DROP
 	local universalStartTime = workspace:GetServerTimeNow()
 	for rank, data in pairs(pendingModels) do
 		local model, humanoid = data.Model, data.Humanoid
-
-		-- Munculkan serentak di Workspace
 		model.Parent = workspace
 		activeStatues[rank] = model
+		activeUserIds[rank] = data.UserId
 
 		local animator = humanoid and (humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid))
 		if animator then
@@ -235,9 +255,8 @@ local function onUpdate(top3Data)
 			anim.AnimationId = data.AnimId
 			local track = animator:LoadAnimation(anim)
 			track.Looped = true
-			track:Play(0.5) -- Fade in transisi halus
+			track:Play(0.5)
 
-			-- Otoritas Waktu Absolut (Zero Delay Sync)
 			task.spawn(function()
 				local waitTimeout = tick() + 2
 				while track.Length == 0 and tick() < waitTimeout do task.wait() end

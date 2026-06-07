@@ -407,9 +407,7 @@ function MusicPlayer:HandleMusicBroadcast(eventType, payload)
 		-- Update UI
 		self:UpdateMusicUI(payload)
 
-		-- 🔥 ABSOLUTE AUDIO SNAP: Paksa HP mengejar ketertinggalan lagu!
-		self:ForceAudioSync(payload)
-
+		-- (Audio Sync is now handled natively by Roblox SoundService replication to avoid TimePosition jump glitches)
 	elseif eventType == "StopMusic" then
 		self:StopMusicUI()
 
@@ -486,14 +484,7 @@ function MusicPlayer:SyncState(state)
 		-- 🔥 ARCHITECT FIX: LATE JOINER AUDIO SNAP!
 		-- Tarik pemain yang baru masuk ke Waktu Absolut 0 Delay!
 		if state.isPlaying and state.startTime then
-			-- Buat payload palsu seolah-olah mereka menerima event SongUpdate
-			local syncPayload = {
-				SoundId = state.currentSong.id,
-				ServerTime = state.startTime,
-				PlaybackSpeed = state.currentSong.PlaybackSpeed or 1.0
-			}
-			-- Panggil fungsi pemotong waktu absolut
-			self:ForceAudioSync(syncPayload)
+			-- Late joiner sync is handled by native Roblox replication for SoundService
 		end
 	end
 

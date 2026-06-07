@@ -32,16 +32,16 @@ local CONFIG = {
 	STATE_REQUEST_COOLDOWN = 5,
 
 	STAGE_FX_DURATION     = 15,    -- Durasi semburan panggung
-	MIN_DONATION_FOR_FX   = 100,  -- Minimal donasi untuk menyalakan panggung otomatis
+	MIN_DONATION_FOR_FX   = 90,  -- Minimal donasi untuk menyalakan panggung otomatis
 }
 
 local PRICE_RANGES = {
-	--{ name = "Level 1", minPrice = 13, maxPrice = 99, templateName = "Level1", useCinematic = false },
-	{ name = "Level 2", minPrice = 100, maxPrice = 499, templateName = "Level2", useCinematic = false },
-	{ name = "Level 3", minPrice = 500, maxPrice = 999, templateName = "Level3", useCinematic = false },
+	{ name = "Level 1", minPrice = 10, maxPrice = 90, templateName = "Level1", useCinematic = false },
+	{ name = "Level 2", minPrice = 90, maxPrice = 450, templateName = "Level2", useCinematic = false },
+	{ name = "Level 3", minPrice = 450, maxPrice = 900, templateName = "Level3", useCinematic = false },
 	{
 		name              = "Level 4",
-		minPrice          = 1000,
+		minPrice          = 900,
 		maxPrice          = 9999999,
 		templateName      = "Level4",
 		useCinematic      = true,

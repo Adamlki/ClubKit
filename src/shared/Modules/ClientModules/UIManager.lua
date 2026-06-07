@@ -367,7 +367,7 @@ function UIManager:UpdateQueue(queueData)
 		songTitleLabel.Text = songData.musicData.judul or "Unknown"
 
 		if index % 10 == 0 then
-			task.wait()
+			-- Removed task.wait() to prevent UI freezing/delaying
 		end
 	end
 end

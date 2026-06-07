@@ -150,6 +150,8 @@ function ServerMusicAudioHandler:Preload(soundId)
 	-- Jangan isi SoundId jika sudah sama. Jika beda, matikan yang lama.
 	if self.serverSound.SoundId ~= assetId then
 		self.serverSound:Stop()
+		self.serverSound.SoundId = ""
+		task.wait()
 		self.serverSound.SoundId = assetId
 	end
 end
@@ -198,6 +200,8 @@ function ServerMusicAudioHandler:Play(soundId, timePosition, playbackSpeed, pitc
 	-- ARCHITECT FIX 4: SMART LOADING
 	if self.serverSound.SoundId ~= assetId then
 		self.serverSound:Stop()
+		self.serverSound.SoundId = ""
+		task.wait()
 		self.serverSound.SoundId = assetId
 	end
 

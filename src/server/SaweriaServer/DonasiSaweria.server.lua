@@ -130,22 +130,29 @@ local function fetchDonationData()
 		end
 
 		if newCount > lastDataCount then
+			local broadcastQueue = {}
 			for i = lastDataCount + 1, newCount do
 				local currentDonation = donationArray[i]
 				if not currentDonation then continue end
 
 				local currentId = currentDonation.id or (tostring(currentDonation.nama) .. "_" .. tostring(currentDonation.amount))
 				lastDonationId = currentId
-				lastDataCount = i 
 
 				table.insert(allDonations, currentDonation)
+				table.insert(broadcastQueue, currentDonation)
+			end
+			
+			lastDataCount = newCount
 
-				-- 🔴 FIX 2: STRICT CLEANUP. Cegah Memory Leak secara mutlak!
-				while #allDonations > MAX_DONATIONS do 
-					table.remove(allDonations, 1) 
-				end
+			-- 🔴 FIX 2: STRICT CLEANUP & BULK UPDATE
+			while #allDonations > MAX_DONATIONS do 
+				table.remove(allDonations, 1) 
+			end
 
-				pcall(updateBoard)
+			pcall(updateBoard)
+
+			-- Broadcast secara sekuensial dengan jeda
+			for _, currentDonation in ipairs(broadcastQueue) do
 
 				local rawDonator = tostring(currentDonation.donator or currentDonation.nama or currentDonation.Nama or "Unknown")
 				local rawAmount = tostring(currentDonation.amount or currentDonation.jumlah or currentDonation.Jumlah or "0")

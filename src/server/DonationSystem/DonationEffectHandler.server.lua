@@ -177,15 +177,20 @@ local function storeDonation(data)
 	while #recentDonations > CONFIG.MAX_STORED_DONATIONS do
 		table.remove(recentDonations, 1)
 	end
-	task.delay(CONFIG.DONATION_STORAGE_TIME, function()
+end
+
+-- 🔥 PERBAIKAN: Background Garbage Collection (1 loop per server, bukan per donasi)
+task.spawn(function()
+	while true do
+		task.wait(10)
 		local cutoff = tick() - CONFIG.DONATION_STORAGE_TIME
 		for i = #recentDonations, 1, -1 do
 			if recentDonations[i].timestamp < cutoff then
 				table.remove(recentDonations, i)
 			end
 		end
-	end)
-end
+	end
+end)
 
 local function fireToPlayer(targetPlayer, donationData)
 	if not targetPlayer or not targetPlayer.Parent then return end

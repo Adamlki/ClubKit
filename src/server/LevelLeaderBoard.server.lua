@@ -72,8 +72,31 @@ end)
 -- SHUTDOWN HANDLER
 -- ====================================
 game:BindToClose(function()
-	for _, player in ipairs(Players:GetPlayers()) do
-		pcall(function() LevelSystem:SavePlayerLevel(player, true) end)
+	local players = Players:GetPlayers()
+	local totalPlayers = #players
+	if totalPlayers == 0 then return end
+	
+	local savedCount = 0
+	local bindable = Instance.new("BindableEvent")
+	
+	for _, player in ipairs(players) do
+		task.spawn(function()
+			pcall(function() LevelSystem:SavePlayerLevel(player, true) end)
+			savedCount += 1
+			if savedCount >= totalPlayers then
+				bindable:Fire()
+			end
+		end)
 	end
-	task.wait(3)
+	
+	-- Tunggu maksimal 25 detik (Batas Roblox adalah 30 detik)
+	task.delay(25, function()
+		if savedCount < totalPlayers then
+			bindable:Fire()
+		end
+	end)
+	
+	bindable.Event:Wait()
+	bindable:Destroy()
+	debugPrint("All player levels saved successfully on shutdown!")
 end)

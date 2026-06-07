@@ -34,13 +34,13 @@ local CONFIG = {
 -- ====================================
 local function debugPrint(...)
 	if CONFIG.Debug.ENABLE_DEBUG and CONFIG.Debug.SHOW_SERVER_LOGS then
-		debugPrint("[UnifiedRole]", ...)
+		print("[UnifiedRole]", ...)
 	end
 end
 
 local function debugDispatch(...)
 	if CONFIG.Debug.ENABLE_DEBUG and CONFIG.Debug.SHOW_DISPATCH_LOGS then
-		debugPrint("[UnifiedRole]", ...)
+		print("[UnifiedRole]", ...)
 	end
 end
 
@@ -275,9 +275,9 @@ giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
 				})
 			end
 
-			-- ====================================
-			-- REMOVE ROLE (OWNER ONLY)
-			-- ====================================
+		-- ====================================
+		-- REMOVE ROLE (OWNER ONLY)
+		-- ====================================
 		elseif action == "RemoveRole" then
 			debugPrint("AdminPanel: RemoveRole (Owner only)")
 

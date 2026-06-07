@@ -239,15 +239,26 @@ Players.PlayerRemoving:Connect(function(player)
 end)
 
 -- Periodic update (safety net)
--- Hanya koreksi drift tanpa set attribute — mencegah trigger listener Syncing
--- yang bisa menyebabkan scheduleUpdate() berjalan berulang.
+-- 🔥 ARCHITECT FIX: O(N) batch calculation instead of O(N²) per-player getFollowerCount
 local periodicUpdateTask = task.spawn(function()
 	while true do
 		task.wait(CONFIG.PERIODIC_CHECK_INTERVAL)
 
+		-- 1. Hitung semua follower counts dalam 1 pass O(N)
+		local followerCounts = {}
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p.Character then
+				local target = p.Character:GetAttribute("Syncing")
+				if target and target ~= "" then
+					followerCounts[target] = (followerCounts[target] or 0) + 1
+				end
+			end
+		end
+
+		-- 2. Bandingkan dengan attribute saat ini, hanya update yang drift
 		for _, player in ipairs(Players:GetPlayers()) do
 			if player.Character then
-				local followerCount = SyncController.getFollowerCount(player)
+				local followerCount = followerCounts[player.Name] or 0
 				local currentIsLeader = player.Character:GetAttribute("IsLeader")
 				local currentFollowerCount = player.Character:GetAttribute("FollowerCount") or 0
 
@@ -263,9 +274,6 @@ local periodicUpdateTask = task.spawn(function()
 
 				if needsUpdate then
 					debug("⚠ Fixing status drift for", player.Name)
-					-- Panggil updatePlayerLeaderStatus yang sudah dilindungi
-					-- scheduleUpdate() tidak dipakai di sini supaya koreksi
-					-- periodic langsung terjadi tanpa menunggu debounce.
 					updatePlayerLeaderStatus(player)
 				end
 			end

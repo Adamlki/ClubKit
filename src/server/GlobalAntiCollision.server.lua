@@ -17,7 +17,7 @@ local function optimizePart(part)
 	end
 end
 
--- ?? TAMBAHAN ARCHITECT: Bunuh proses fisika Humanoid yang tidak berguna
+-- 🔥 TAMBAHAN ARCHITECT: Bunuh proses fisika Humanoid yang tidak berguna
 local function optimizeHumanoid(humanoid)
 	local disabledStates = {
 		Enum.HumanoidStateType.Climbing,
@@ -33,7 +33,26 @@ local function optimizeHumanoid(humanoid)
 	end
 end
 
-local function onCharacterAdded(character)
+-- 🔥 ARCHITECT FIX: Simpan connection per-player agar bisa di-disconnect
+local playerConnections = {}
+
+local function cleanupPlayerConnections(player)
+	local conns = playerConnections[player]
+	if conns then
+		for _, conn in ipairs(conns) do
+			if conn and conn.Connected then
+				conn:Disconnect()
+			end
+		end
+		playerConnections[player] = nil
+	end
+end
+
+local function onCharacterAdded(character, player)
+	-- Bersihkan connection karakter lama dulu
+	cleanupPlayerConnections(player)
+	playerConnections[player] = {}
+
 	-- [OPTIMASI SUPER]: Gunakan task.defer agar server tidak freeze saat 100 orang respawn!
 	task.defer(function()
 		for _, part in ipairs(character:GetDescendants()) do
@@ -50,16 +69,24 @@ local function onCharacterAdded(character)
 		end
 	end)
 
-	-- 🔥 ARCHITECT FIX: FILTER CERDAS ANTI-SPAM
-	character.DescendantAdded:Connect(function(part)
+	-- 🔥 ARCHITECT FIX: FILTER CERDAS ANTI-SPAM + SIMPAN CONNECTION
+	local descendantConn = character.DescendantAdded:Connect(function(part)
 		-- Jangan panggil fungsi jika yang masuk adalah Tulang/Decal/Weld!
 		if part:IsA("BasePart") or part:IsA("Accessory") then
 			task.defer(optimizePart, part)
 		end
 	end)
+	table.insert(playerConnections[player], descendantConn)
 end
 
 Players.PlayerAdded:Connect(function(player)
-	player.CharacterAdded:Connect(onCharacterAdded)
-	if player.Character then onCharacterAdded(player.Character) end
+	player.CharacterAdded:Connect(function(character)
+		onCharacterAdded(character, player)
+	end)
+	if player.Character then onCharacterAdded(player.Character, player) end
+end)
+
+-- 🔥 ARCHITECT FIX: Bersihkan connections saat player keluar
+Players.PlayerRemoving:Connect(function(player)
+	cleanupPlayerConnections(player)
 end)

@@ -3563,11 +3563,9 @@ local function resetCinematic()
 	rightLine.BackgroundTransparency   = 0
 end
 
-local function resetNormal()
-	normalFrame.Visible  = false
-	normalFrame.Position = UDim2.new(0.5, 0, 0, -80)
-end
-
+-- ============================================================
+-- SKIP BUTTON LOGIC
+-- ============================================================
 local function resetSkip()
 	skipFrame.Visible    = false
 	skipFrame.Position   = UDim2.new(1, 20, 0.5, 0)
@@ -4129,7 +4127,7 @@ local Input = {} do
 	MobileControls.zoomIn.TextButton.MouseButton1Down:Connect(function()
 		zoomingIn = true
 		while zoomingIn do
-			wait()
+			task.wait()
 			mouse.MouseWheel -= 0.5
 		end
 	end)
@@ -4139,7 +4137,7 @@ local Input = {} do
 	MobileControls.zoomOut.TextButton.MouseButton1Down:Connect(function()
 		zoomingOut = true
 		while zoomingOut do
-			wait()
+			task.wait()
 			mouse.MouseWheel += 0.5
 		end
 	end)
@@ -4288,8 +4286,10 @@ local function GetFocusDistance(cameraFrame)
 			local cx = (x - 0.5)*projx
 			local cy = (y - 0.5)*projy
 			local offset = fx*cx - fy*cy + fz
-			local origin = cameraFrame.p + offset*znear
-			local _, hit = Workspace:FindPartOnRay(Ray.new(origin, offset.unit*minDist))
+			local origin = cameraFrame.Position + offset*znear
+			local rayDirection = offset.unit*minDist
+			local rayResult = Workspace:Raycast(origin, rayDirection)
+			local hit = rayResult and rayResult.Position or (origin + rayDirection)
 			local dist = (hit - origin).magnitude
 			if minDist > dist then
 				minDist = dist
@@ -4315,7 +4315,7 @@ local function StepFreecam(dt)
 	cameraRot = Vector2.new(clamp(cameraRot.x, -PITCH_LIMIT, PITCH_LIMIT), cameraRot.y%(2*pi))
 
 	local cameraCFrame = CFrame.new(cameraPos)*CFrame.fromOrientation(cameraRot.x, cameraRot.y, 0)*CFrame.new(vel*NAV_GAIN*dt)
-	cameraPos = cameraCFrame.p
+	cameraPos = cameraCFrame.Position
 
 	Camera.CFrame = cameraCFrame
 	Camera.Focus = cameraCFrame*CFrame.new(0, 0, -GetFocusDistance(cameraCFrame))
@@ -4419,7 +4419,7 @@ end
 local function StartFreecam()
 	local cameraCFrame = Camera.CFrame
 	cameraRot = Vector2.new(cameraCFrame:toEulerAnglesYXZ())
-	cameraPos = cameraCFrame.p
+	cameraPos = cameraCFrame.Position
 	cameraFov = Camera.FieldOfView
 
 	velSpring:Reset(Vector3.new())

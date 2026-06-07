@@ -261,4 +261,11 @@ RoleSystem.RoleChanged:Connect(function(player, oldRole, newRole)
 	end
 end)
 
+-- ====================================
+-- PLAYER REMOVING - MEMORY CLEANUP
+-- ====================================
+Players.PlayerRemoving:Connect(function(player)
+	PlayerAccessoryData[player.UserId] = nil
+end)
+
 debugPrint("VVIP Accessory System with Equip/Unequip Loaded Successfully", true)

@@ -66,23 +66,20 @@ end)
 -- PlayerRemoving saja tidak reliable di situasi ini
 -- ============================================
 game:BindToClose(function()
-	local saveTasks = {}
-	for _, player in ipairs(Players:GetPlayers()) do
-		table.insert(saveTasks, task.spawn(function()
+	local playerList = Players:GetPlayers()
+	local totalPlayers = #playerList
+	local completed = 0
+
+	for _, player in ipairs(playerList) do
+		task.spawn(function()
 			savePlayerData(player)
-		end))
+			completed += 1
+		end)
 	end
+
 	-- Tunggu semua task selesai (max 10 detik)
 	local elapsed = 0
-	while elapsed < 10 do
-		local allDone = true
-		for _, t in ipairs(saveTasks) do
-			if coroutine.status(t) ~= "dead" then
-				allDone = false
-				break
-			end
-		end
-		if allDone then break end
+	while completed < totalPlayers and elapsed < 10 do
 		task.wait(0.1)
 		elapsed += 0.1
 	end

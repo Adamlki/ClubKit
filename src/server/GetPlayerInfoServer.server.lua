@@ -232,40 +232,22 @@ local function fetchPlayerInfo(userId, callerPlayer)
 		}
 	end
 
-	-- Fetch dengan sedikit jeda agar tidak di-spam 4 sekaligus di milidetik yang sama
+	-- Fetch sequentially dengan jeda agar roproxy tidak panik
 	local rawDescription = ""
 	local friendsCount   = 0
 	local followersCount = 0
 	local followingCount = 0
-	local done           = 0
 
-	-- KITA PERPANJANG NAPASNYA DAN GANTI METODE AGAR ROBO-PROXY TIDAK PANIK
 	rawDescription = fetchDescription(userId)
-	done += 1
-	task.wait(0.6) -- Jeda setengah detik lebih
+	task.wait(0.6)
 
 	friendsCount = fetchFriendsCount(userId)
-	done += 1
 	task.wait(0.6)
 
 	followersCount = fetchFollowersCount(userId)
-	done += 1
 	task.wait(0.6)
 
 	followingCount = fetchFollowingCount(userId)
-	done += 1
-
-	-- Tunggu semua selesai dengan timeout REQUEST_TIMEOUT detik
-	local elapsed = 0
-	while done < 4 and elapsed < REQUEST_TIMEOUT do
-		task.wait(0.05)
-		elapsed += 0.05
-	end
-
-	if done < 4 then
-		warn(string.format("[GetPlayerInfo] Timeout: %d/4 request selesai untuk userId %d",
-			done, userId))
-	end
 
 	-- Simpan raw ke cache sebelum filter
 	setCached(userId, rawDescription, friendsCount, followersCount, followingCount)

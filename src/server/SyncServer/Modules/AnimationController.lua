@@ -107,6 +107,18 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 
 	-- === PLAY & SPAM LOGIC ===
 	if character then
+		if character:GetAttribute("GlobalEffectActive") then
+			local GlobalEffectRemotes = ReplicatedStorage:FindFirstChild("GlobalEffectRemotes")
+			if GlobalEffectRemotes then
+				local NotificationEvent = GlobalEffectRemotes:FindFirstChild("NotificationEvent")
+				if NotificationEvent then
+					NotificationEvent:FireClient(player, "Efek Aktif", "Kamu tidak bisa menari saat terbang/melayang!", 3)
+				end
+			end
+			endProcessing(player)
+			return "blocked"
+		end
+		
 		character:SetAttribute("Syncing", nil)
 
 		if animation then

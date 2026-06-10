@@ -51,6 +51,7 @@ local ICON_CONFIGS = {
 	Setting   = { enabled = true, label = "Settings" },
 	MyHat     = { enabled = true, label = "Crown"    },
 	FreeCam   = { enabled = true, label = "FreeCam"  },
+	GlobalEffect = { enabled = true, label = "Global Effect" },
 }
 
 local function getCfg(name)
@@ -97,6 +98,7 @@ local guis = {
 	Teleport      = safeGet(playerGui, "Teleport"),
 	MyHat         = safeGet(playerGui, "MyHat"),
 	ServerMessage = safeGet(playerGui, "AdminNotif"),
+	GlobalEffect  = safeGet(playerGui, "GlobalEffectGui", 5),
 }
 
 -- ============================================================
@@ -405,6 +407,24 @@ if guis.MyHat then
 				end
 				local cp = frame:FindFirstChild("Header") and {"Header","CloseBtn"} or {"CloseBtn"}
 				setupFrameSync("MyHat", frame, cp)
+			end
+		end
+	end
+end
+
+if guis.GlobalEffect then
+	local frame = guis.GlobalEffect:FindFirstChild("MainFrame")
+	if frame then
+		local rf = ReplicatedStorage:WaitForChild("GlobalEffectRemotes", 5)
+		local rc = rf and rf:WaitForChild("CheckOwner", 5)
+		if rc then
+			local ok, isOwner = pcall(function() return rc:InvokeServer() end)
+			if ok and isOwner then
+				local icon = createIcon("GlobalEffect", guis.GlobalEffect, frame)
+				if icon then
+					table.insert(dropdownIcons, icon)
+					setupFrameSync("GlobalEffect", frame, {"CloseBtn"})
+				end
 			end
 		end
 	end

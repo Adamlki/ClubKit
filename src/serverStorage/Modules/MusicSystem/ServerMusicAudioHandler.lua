@@ -83,9 +83,9 @@ function ServerMusicAudioHandler:CreateServerSound()
 		compressor.Name = "ConcertCompressor"
 		compressor.Attack = 0.01      -- Bereaksi instan saat ada suara menghentak
 		compressor.Release = 0.15     -- Waktu pemulihan standar
-		compressor.Ratio = 4          -- Skala penekanan 4:1 (Standar industri untuk musik)
-		compressor.Threshold = -10    -- Jika volume melewati -10dB, suara akan otomatis ditekan
-		compressor.GainMakeup = 5    -- Mengangkat lagu-lagu pelan sebesar +5dB
+		compressor.Ratio = 4          -- Skala penekanan 4:1
+		compressor.Threshold = -8     -- Menangkap puncak (peak) suara keras agar tidak clip
+		compressor.GainMakeup = 0     -- DITURUNKAN: +5dB bikin snare/gitar pecah (clipping), 0 lebih natural
 		compressor.Parent = existingSound
 	end
 
@@ -94,9 +94,9 @@ function ServerMusicAudioHandler:CreateServerSound()
 	if not eq then
 		eq = Instance.new("EqualizerSoundEffect")
 		eq.Name = "ConcertEQ"
-		eq.LowGain = 12   -- Sub-Bass nendang layaknya subwoofer konser (+12 dB)
-		eq.MidGain = -2   -- Memotong sedikit vokal agar tidak tajam menyakiti telinga (-2 dB)
-		eq.HighGain = 5   -- Detail instrumen (Hi-hat/Cymbal) tetap tajam (+5 dB)
+		eq.LowGain = 10    -- DITURUNKAN: Bass +12 dB terlalu besar & bikin pecah/clipping saat lagu dilambatkan (+4 dB aman)
+		eq.MidGain = -5    -- Dinormalkan ke 0 dB agar gitar tidak mendem/pecah
+		eq.HighGain = 1   -- DITURUNKAN: High +5 dB terlalu tajam, bikin snare/cymbal pecah (+1 dB lebih aman)
 		eq.Parent = existingSound
 	end
 

@@ -295,15 +295,16 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 
 	-- ⏳ FIX & ANTI-BAN: Tunggu durasi lagu muncul
 	local detectedDuration = self:TryDetectDuration(musicData.id, playbackSpeed)
+	local isActuallyPlaying = self.audioHandler:IsPlaying()
 
-	if detectedDuration and detectedDuration > 0 then
-		-- ✅ LAGU AMAN: Durasi terbaca, lanjutkan pemutaran
-		self.adjustedDuration = detectedDuration
-		debugPrint(string.format("Detected duration: %.1fs for '%s' (Speed: %.2f)", 
-			detectedDuration, displayMusicData.judul, playbackSpeed))
+	if (detectedDuration and detectedDuration > 0) or isActuallyPlaying then
+		-- ✅ LAGU AMAN: Durasi terbaca ATAU mesin mendeteksi lagu berhasil bunyi
+		self.adjustedDuration = (detectedDuration and detectedDuration > 0) and detectedDuration or baseDuration
+		debugPrint(string.format("Playback allowed for '%s' (Duration: %.1fs, Playing: %s)", 
+			displayMusicData.judul, self.adjustedDuration, tostring(isActuallyPlaying)))
 	else
 		-- 🚨 SISTEM AUTO-SKIP ANTI-BAN BEKERJA!
-		-- Jika durasi tetap 0 setelah 4 detik, berarti lagu rusak / kena ban.
+		-- Jika durasi tetap 0 setelah 6 detik, dan lagu tidak bunyi, berarti lagu rusak / kena ban.
 		debugWarn("LAGU ERROR/BANNED TERDETEKSI! Auto-skipping: " .. (displayMusicData.judul or "Unknown"))
 
 		-- 1. Matikan state lagu yang nyangkut ini

@@ -298,7 +298,7 @@ local function applyFly(player)
 	state.FlyTrack = track
 
 	-- Membuat efek melayang ke atas
-	if not state.FlyAttachment then
+	if not state.FlyAttachment or not state.FlyAttachment.Parent then
 		local attachment = Instance.new("Attachment")
 		attachment.Name = "GlobalFlyAttachment"
 		attachment.Parent = rootPart
@@ -499,6 +499,19 @@ local function OnCharacterAdded(character)
 	local player = Players:GetPlayerFromCharacter(character)
 	if not player then return end
 	
+	if character:GetAttribute("EffectLoaded") then return end
+	character:SetAttribute("EffectLoaded", true)
+	
+	-- BERSIHKAN STATE DARI KARAKTER LAMA SEBELUM TERAPKAN KE KARAKTER BARU
+	local state = getPlayerState(player)
+	if state.FlyAlignOrientation then state.FlyAlignOrientation:Destroy(); state.FlyAlignOrientation = nil end
+	if state.FlyAlignPosition then state.FlyAlignPosition:Destroy(); state.FlyAlignPosition = nil end
+	if state.FlyAttachment then state.FlyAttachment:Destroy(); state.FlyAttachment = nil end
+	if state.EquippedWing then state.EquippedWing:Destroy(); state.EquippedWing = nil end
+	state.FloatingTrack = nil
+	state.FlyTrack = nil
+	state.SuspendedDanceTracks = nil
+	
 	-- Mencegah equip tool saat efek aktif
 	character.ChildAdded:Connect(function(child)
 		if child:IsA("Tool") then
@@ -516,8 +529,38 @@ local function OnCharacterAdded(character)
 		end
 	end)
 	
-	-- Tunggu sampai karakter siap
-	task.wait(1) 
+	-- MENDENGARKAN EVENT REFRESH (/RE) DARI REFRESH.SERVER.LUA
+	character:GetAttributeChangedSignal("RefreshTrigger"):Connect(function()
+		-- Bersihkan sisa-sisa efek yang hancur dihajar ApplyDescription
+		local state = getPlayerState(player)
+		if state.FlyAlignOrientation then state.FlyAlignOrientation:Destroy(); state.FlyAlignOrientation = nil end
+		if state.FlyAlignPosition then state.FlyAlignPosition:Destroy(); state.FlyAlignPosition = nil end
+		if state.FlyAttachment then state.FlyAttachment:Destroy(); state.FlyAttachment = nil end
+		if state.EquippedWing then state.EquippedWing:Destroy(); state.EquippedWing = nil end
+		state.FloatingTrack = nil
+		state.FlyTrack = nil
+		state.SuspendedDanceTracks = nil
+		
+		-- Beri waktu sejenak agar Roblox merakit ulang torso/rig
+		task.wait(0.5)
+		
+		-- Pasang ulang
+		if ActiveEffects.Floating then applyFloating(player) end
+		if ActiveEffects.Fly then applyFly(player) end
+		if ActiveEffects.Wing then applyWing(player) end
+	end)
+	
+	-- Tunggu sampai karakter benar-benar siap secara struktur fisik
+	local humanoid = character:WaitForChild("Humanoid", 10)
+	local rootPart = character:WaitForChild("HumanoidRootPart", 10)
+	
+	if not humanoid or not rootPart then return end
+	
+	-- Tidak perlu wait terlalu lama jika kita menggunakan CharacterAppearanceLoaded
+	task.wait(0.5) 
+	
+	-- Pastikan karakter masih hidup dan valid setelah menunggu
+	if not character.Parent or not player.Character or player.Character ~= character then return end
 	
 	if ActiveEffects.Floating then
 		applyFloating(player)
@@ -531,7 +574,17 @@ local function OnCharacterAdded(character)
 end
 
 Players.PlayerAdded:Connect(function(player)
-	player.CharacterAdded:Connect(OnCharacterAdded)
+	player.CharacterAppearanceLoaded:Connect(OnCharacterAdded)
+	
+	-- Fallback jika CharacterAppearanceLoaded gagal terpanggil (beberapa custom character loader tidak mentrigger ini)
+	player.CharacterAdded:Connect(function(char)
+		task.delay(3, function()
+			if player.Character == char and not char:GetAttribute("EffectLoaded") then
+				char:SetAttribute("EffectLoaded", true)
+				OnCharacterAdded(char)
+			end
+		end)
+	end)
 end)
 
 -- Handle player yang sudah ada
@@ -539,7 +592,16 @@ for _, player in ipairs(Players:GetPlayers()) do
 	if player.Character then
 		task.spawn(OnCharacterAdded, player.Character)
 	end
-	player.CharacterAdded:Connect(OnCharacterAdded)
+	player.CharacterAppearanceLoaded:Connect(OnCharacterAdded)
+	
+	player.CharacterAdded:Connect(function(char)
+		task.delay(3, function()
+			if player.Character == char and not char:GetAttribute("EffectLoaded") then
+				char:SetAttribute("EffectLoaded", true)
+				OnCharacterAdded(char)
+			end
+		end)
+	end)
 end
 
 -- ==========================================

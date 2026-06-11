@@ -92,6 +92,9 @@ local function onRefreshRequest(player)
 			if equippedTool and equippedTool.Parent == player.Backpack then
 				humanoid:EquipTool(equippedTool)
 			end
+			
+			-- BERITAHU SISTEM LAIN (GLOBAL EFFECT) BAHWA REFRESH SUDAH SELESAI
+			character:SetAttribute("RefreshTrigger", os.clock())
 		else
 			warn("[Refresh System] Gagal ApplyDescription: " .. tostring(err))
 		end

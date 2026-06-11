@@ -191,8 +191,17 @@ local function stop360Camera()
 		CameraConnection:Disconnect()
 		CameraConnection = nil
 	end
+	
 	Camera.CameraType = Enum.CameraType.Custom
 	LocalPlayer.CameraMode = Enum.CameraMode.Classic
+	
+	-- Memaksa kamera kembali ke karakter agar tidak nyangkut di atas
+	if LocalPlayer.Character then
+		local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			Camera.CameraSubject = humanoid
+		end
+	end
 end
 
 -- Listener dari Server (Bisa didengar oleh semua player termasuk non-owner)

@@ -31,7 +31,7 @@ function MusicPlayer.new()
 
 	-- UI setup
 	local playerGui = self.player:WaitForChild("PlayerGui",30)
-	local musicGui = playerGui:WaitForChild("MusicPlayer",30)
+	local musicGui = playerGui:WaitForChild("MusicPlayer",60)
 	self.uiManager = UIManager.new(musicGui)
 
 	-- State

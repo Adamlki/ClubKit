@@ -295,6 +295,13 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 
 	-- ⏳ FIX & ANTI-BAN: Tunggu durasi lagu muncul
 	local detectedDuration = self:TryDetectDuration(musicData.id, playbackSpeed)
+	
+	-- 🚨 FIX RACE CONDITION: Jika lagu sudah di-stop atau di-skip saat kita sedang menunggu durasi, batalkan!
+	if not self.currentSong or self.currentSong.id ~= displayMusicData.id then
+		debugWarn("Playback interrupted for: " .. (displayMusicData.judul or "Unknown"))
+		return false, "Playback interrupted"
+	end
+
 	local isActuallyPlaying = self.audioHandler:IsPlaying()
 
 	if (detectedDuration and detectedDuration > 0) or isActuallyPlaying then
@@ -310,14 +317,7 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 		-- 1. Matikan state lagu yang nyangkut ini
 		self:Stop(remotes)
 
-		-- 2. Tembakkan perintah SKIP ke lagu selanjutnya (jika ada)
-		if self.autoNextCallback then
-			task.spawn(function()
-				pcall(self.autoNextCallback)
-			end)
-		end
-
-		-- 3. Batalkan proses Play ini
+		-- 2. Batalkan proses Play ini (MusicSystem akan otomatis play lagu selanjutnya)
 		return false, "Audio is banned or failed to load (Auto-Skipped)"
 	end
 

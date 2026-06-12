@@ -8,10 +8,27 @@ local Events = replicatedStorage:WaitForChild("Remotes")
 local updateFavoritedAnimationsEvent = Events:WaitForChild("updateFavoritedAnimationsEvent")
 
 -- ============================================
+-- HELPER: set/get data StringValue
+local function getSavedData(player)
+	local stringVal = player:FindFirstChild("SavedFavoritedAnimations")
+	return stringVal and stringVal.Value or nil
+end
+
+local function setSavedData(player, data)
+	local stringVal = player:FindFirstChild("SavedFavoritedAnimations")
+	if not stringVal then
+		stringVal = Instance.new("StringValue")
+		stringVal.Name = "SavedFavoritedAnimations"
+		stringVal.Parent = player
+	end
+	stringVal.Value = data
+end
+
+-- ============================================
 -- HELPER: Save data player ke DataStore
 -- ============================================
 local function savePlayerData(player)
-	local savedData = player:GetAttribute("SavedFavoritedAnimations")
+	local savedData = getSavedData(player)
 	if savedData then
 		local success, errorMessage = pcall(function()
 			favoritedAnimationsStore:SetAsync("Player_" .. player.UserId, savedData)
@@ -36,20 +53,20 @@ Players.PlayerAdded:Connect(function(player)
 			return HttpService:JSONDecode(savedData)
 		end)
 		if ok and type(decodedData) == "table" then
-			-- FIX: Set attribute SETELAH data berhasil di-decode
-			-- Client akan menunggu attribute ini sebelum membaca favorites
-			player:SetAttribute("SavedFavoritedAnimations", savedData)
+			-- FIX: Set data SETELAH data berhasil di-decode
+			-- Client akan menunggu StringValue ini sebelum membaca favorites
+			setSavedData(player, savedData)
 		else
 			warn("[PersistentAnimations] Data korup untuk", player.Name, "- reset ke kosong")
-			-- Set attribute kosong agar client tidak menunggu selamanya
-			player:SetAttribute("SavedFavoritedAnimations", "[]")
+			-- Set data kosong agar client tidak menunggu selamanya
+			setSavedData(player, "[]")
 		end
 	else
 		if not success then
 			warn("[PersistentAnimations] GetAsync gagal untuk", player.Name, ":", savedData)
 		end
-		-- FIX: Tetap set attribute meski tidak ada data, agar client tidak stuck menunggu
-		player:SetAttribute("SavedFavoritedAnimations", "[]")
+		-- FIX: Tetap set data meski tidak ada data, agar client tidak stuck menunggu
+		setSavedData(player, "[]")
 	end
 end)
 
@@ -94,7 +111,7 @@ updateFavoritedAnimationsEvent.OnServerEvent:Connect(function(player, jsonData)
 	end)
 
 	if success and type(decodedData) == "table" then
-		player:SetAttribute("SavedFavoritedAnimations", jsonData)
+		setSavedData(player, jsonData)
 	else
 		warn("[PersistentAnimations] Data JSON tidak valid dari", player.Name)
 	end

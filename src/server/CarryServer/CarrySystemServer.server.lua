@@ -130,13 +130,24 @@ end
 -- PHYSICS MANAGEMENT
 -- ============================================
 
-local function makeCarriedWeightless(char, userId)
+local function makeCarriedWeightless(char, userId, carrierPlayer)
 	local properties = {}
 	for _, part in ipairs(char:GetDescendants()) do
 		if part:IsA("BasePart") then
-			properties[part] = { CanCollide = part.CanCollide, Massless = part.Massless }
+			properties[part] = { 
+				CanCollide = part.CanCollide, 
+				Massless = part.Massless,
+				RootPriority = part.RootPriority
+			}
 			part.CanCollide = false
 			part.Massless   = true
+			part.RootPriority = -1
+			
+			if carrierPlayer and part:CanSetNetworkOwnership() then
+				pcall(function()
+					part:SetNetworkOwner(carrierPlayer)
+				end)
+			end
 		end
 	end
 	savedPhysics[userId] = properties
@@ -149,6 +160,14 @@ local function restorePhysics(userId)
 		if part and part.Parent then
 			part.CanCollide = props.CanCollide
 			part.Massless   = props.Massless
+			if props.RootPriority then
+				part.RootPriority = props.RootPriority
+			end
+			if part:CanSetNetworkOwnership() then
+				pcall(function()
+					part:SetNetworkOwnershipAuto()
+				end)
+			end
 		end
 	end
 	savedPhysics[userId] = nil
@@ -242,7 +261,7 @@ local function startCarry(carrier, target, style)
 	end
 
 	local success, err = pcall(function()
-		makeCarriedWeightless(tChar, target.UserId)
+		makeCarriedWeightless(tChar, target.UserId, carrier)
 		saveHumanoidState(target.UserId, tHum)
 		applyCarriedState(tHum)
 

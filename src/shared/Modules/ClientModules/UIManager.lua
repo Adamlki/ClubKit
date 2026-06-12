@@ -49,7 +49,7 @@ function QueueItemPool:Return(item)
 	end
 
 	item.Visible = false
-	item.Parent = nil
+	-- Parent is intentionally not set to nil to avoid UI layout recalculation lag
 
 	table.insert(self.inactiveItems, item)
 end
@@ -356,18 +356,20 @@ function UIManager:UpdateQueue(queueData)
 
 	for index, songData in ipairs(queueData) do
 		local queueFrame = self.queuePool:Get()
-		queueFrame.Parent = self.queueList
+		if queueFrame.Parent ~= self.queueList then
+			queueFrame.Parent = self.queueList
+		end
 
-		local positionLabel = queueFrame:WaitForChild("PositionLabel")
-		local requesterLabel = queueFrame:WaitForChild("RequesterLabel")
-		local songTitleLabel = queueFrame:WaitForChild("SongTitleLabel")
+		local positionLabel = queueFrame:FindFirstChild("PositionLabel")
+		local requesterLabel = queueFrame:FindFirstChild("RequesterLabel")
+		local songTitleLabel = queueFrame:FindFirstChild("SongTitleLabel")
 
-		positionLabel.Text = tostring(index)
-		requesterLabel.Text = songData.uploader or "Unknown"
-		songTitleLabel.Text = songData.musicData.judul or "Unknown"
+		if positionLabel then positionLabel.Text = tostring(index) end
+		if requesterLabel then requesterLabel.Text = songData.uploader or "Unknown" end
+		if songTitleLabel then songTitleLabel.Text = songData.musicData.judul or "Unknown" end
 
-		if index % 10 == 0 then
-			-- Removed task.wait() to prevent UI freezing/delaying
+		if index % 20 == 0 then
+			task.wait() -- Allow UI to breathe if queue is massive
 		end
 	end
 end

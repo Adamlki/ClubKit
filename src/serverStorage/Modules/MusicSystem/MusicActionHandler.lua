@@ -273,6 +273,12 @@ function MusicActionHandler:HandleControlNext(player, data)
 		return
 	end
 
+	-- ✅ FIX: Check rate limit to prevent vote spamming
+	if not self.skipVoteManager:CheckRateLimit(player) then
+		self.dispatcher:Notify(player, "Please wait before starting another vote!")
+		return
+	end
+
 	-- Start skip vote
 	local success, msg = self.skipVoteManager:StartVote(player, currentSong, self.dispatcher)
 	if not success then

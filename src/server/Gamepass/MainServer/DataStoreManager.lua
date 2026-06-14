@@ -4,6 +4,7 @@
 local Logger = require(script.Parent.Logger)
 
 local DataStoreService = game:GetService("DataStoreService")
+local HttpService = game:GetService("HttpService")
 
 local DataStoreManager = {}
 DataStoreManager.FailedGivesStore = DataStoreService:GetDataStore("FailedGives_v1")
@@ -18,14 +19,22 @@ local function processQueue()
 	isSaving = true
 	while #transactionQueue > 0 do
 		local taskData = table.remove(transactionQueue, 1)
+		taskData.retries = taskData.retries or 0
+		
 		local success = pcall(function()
-			local key = "log_" .. os.time() .. "_" .. taskData.giver
+			-- 🔥 ARCHITECT FIX: Tambahkan GUID agar key tidak tertimpa di detik yang sama
+			local key = "log_" .. os.time() .. "_" .. taskData.giver .. "_" .. HttpService:GenerateGUID(false)
 			DataStoreManager.TransactionLogStore:SetAsync(key, taskData, 2592000)
 		end)
 
 		if not success then
-			Logger:Warn("Failed to log transaction, retrying later...")
-			table.insert(transactionQueue, taskData) -- Masukkan balik jika gagal
+			taskData.retries += 1
+			if taskData.retries < 3 then
+				Logger:Warn("Failed to log transaction, retrying later... (Attempt " .. taskData.retries .. ")")
+				table.insert(transactionQueue, taskData) -- Masukkan balik jika gagal
+			else
+				Logger:Warn("Failed to log transaction completely after 3 retries. Dropping data to prevent infinite loop.")
+			end
 		end
 
 		task.wait(1) -- ?? JEDA AMAN agar tidak terkena Error 429
@@ -40,7 +49,8 @@ end
 
 function DataStoreManager:LogFailedGive(giverUserId, targetUserId, targetName, gamepassType, reason)
 	local success = pcall(function()
-		local key = "failed_" .. giverUserId .. "_" .. tick()
+		-- 🔥 ARCHITECT FIX: Gunakan GUID untuk kunci gagal agar log tidak tertimpa
+		local key = "failed_" .. giverUserId .. "_" .. os.time() .. "_" .. HttpService:GenerateGUID(false)
 		local data = {
 			giver = giverUserId,
 			target = targetUserId,
@@ -74,5 +84,23 @@ function DataStoreManager:LogExpiredTransaction(transactionId, data)
 		timestamp = os.time()
 	})
 end
+
+-- 🔥 ARCHITECT FIX: PEMBERSIHAN ANTREAN SAAT SERVER SHUTDOWN (Mencegah Kehilangan Transaksi)
+game:BindToClose(function()
+	if #transactionQueue > 0 then
+		Logger:Warn("Server shutting down! Flushing " .. #transactionQueue .. " transactions...")
+		isSaving = true -- Prevent other loops from interfering
+		
+		-- Flush everything without wait
+		while #transactionQueue > 0 do
+			local taskData = table.remove(transactionQueue, 1)
+			pcall(function()
+				local key = "log_" .. os.time() .. "_" .. taskData.giver .. "_" .. HttpService:GenerateGUID(false)
+				DataStoreManager.TransactionLogStore:SetAsync(key, taskData, 2592000)
+			end)
+		end
+		Logger:Info("Transaction queue flush complete.")
+	end
+end)
 
 return DataStoreManager

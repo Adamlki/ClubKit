@@ -17,7 +17,7 @@ local CONFIG = {
 
 local activeStatues = {}
 local activeUserIds = {}
-local isRendering = false
+local currentRenderVersion = 0
 
 local function formatMoney(amount)
 	local cleanStr = string.gsub(tostring(amount), "%D", "")
@@ -137,10 +137,9 @@ local function destroyStatue(statue)
 	end)
 end
 
--- 🔥 ARCHITECT FIX: THE CURTAIN DROP (DENGAN AVATAR CACHING)
 local function onUpdate(top3Data)
-	if isRendering then return end
-	isRendering = true
+	currentRenderVersion = currentRenderVersion + 1
+	local myRenderVersion = currentRenderVersion
 
 	local expectedCount = 0
 	for rank = 1, 3 do if top3Data[rank] then expectedCount += 1 end end
@@ -149,7 +148,6 @@ local function onUpdate(top3Data)
 		for rank, statue in pairs(activeStatues) do destroyStatue(statue) end
 		table.clear(activeStatues)
 		table.clear(activeUserIds)
-		isRendering = false
 		return
 	end
 
@@ -241,6 +239,15 @@ local function onUpdate(top3Data)
 	local timeout = tick() + 10
 	while loadedCount < expectedCount and tick() < timeout do task.wait(0.1) end
 
+	-- 🔥 CLIENT FIX: Jika ada update baru yang masuk saat loading (Data Loss), atau loading sangat lambat
+	-- Hancurkan avatar yang baru saja jadi (Orphaned Object) agar tidak memicu Memory Leak!
+	if currentRenderVersion ~= myRenderVersion then
+		for _, data in pairs(pendingModels) do
+			if data.Model then data.Model:Destroy() end
+		end
+		return
+	end
+
 	-- 4. THE CURTAIN DROP
 	local universalStartTime = workspace:GetServerTimeNow()
 	for rank, data in pairs(pendingModels) do
@@ -267,8 +274,6 @@ local function onUpdate(top3Data)
 			end)
 		end
 	end
-
-	isRendering = false
 end
 
 ReplicatedStorage:WaitForChild("UpdateSaweriaTopBoard").OnClientEvent:Connect(onUpdate)

@@ -6,9 +6,11 @@
 local ServerStorage = game:GetService("ServerStorage")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
 
 -- Load RoleSystem Module
 local RoleSystem = require(ServerStorage.Modules.RoleSystem)
+local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 
 -- ====================================
 -- REMOTE EVENTS SETUP
@@ -196,6 +198,9 @@ end
 -- REMOTE EVENT HANDLERS
 -- ====================================
 AccessoryEvent.OnServerEvent:Connect(function(player, action)
+	-- 🔥 ARCHITECT FIX: Anti-Spam Micro-stutters Lag Protection
+	if not RemoteEventManager.checkRateLimit(player, "vvipHatToggle") then return end
+
 	if not ownsAccessory(player) then
 		debugPrint(player.Name .. " attempted to toggle without ownership", false)
 		return

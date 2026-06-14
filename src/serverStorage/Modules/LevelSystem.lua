@@ -79,13 +79,13 @@ local function datastoreGetAsync(key)
 		local success, result = pcall(function()
 			return LevelDataStore:GetAsync(key)
 		end)
-		if success then return result end
+		if success then return true, result end
 		if attempt < LevelSystem.Config.DATASTORE_RETRY_ATTEMPTS then
 			task.wait(LevelSystem.Config.DATASTORE_RETRY_DELAY)
 		end
 	end
 	debugWarn("Failed to load data for key:", key)
-	return nil
+	return false, nil
 end
 
 local function datastoreSetAsync(key, value)
@@ -154,7 +154,21 @@ end
 function LevelSystem:LoadPlayerLevel(player)
 	local userId = player.UserId
 	local key = self.Config.DATASTORE_PREFIX .. tostring(userId)
-	local data = datastoreGetAsync(key)
+	
+	local success, data = datastoreGetAsync(key)
+	
+	-- 🔥 ARCHITECT FIX 1: Cegah Data Wipe akibat Roblox Down
+	if not success then
+		player:Kick("\n[Server Error]\nGagal memuat data level Anda karena gangguan jaringan Roblox.\n\nSilakan coba lagi beberapa saat untuk mencegah data Anda hilang/ter-reset.")
+		return self.Config.DEFAULT_LEVEL
+	end
+	
+	-- 🔥 ARCHITECT FIX 2: Cegah Memory Leak Ghost Session (Join-Leave super cepat)
+	if not player.Parent then
+		debugWarn("Pemain " .. player.Name .. " keluar sebelum data selesai dimuat. Membatalkan inisialisasi memori.")
+		return self.Config.DEFAULT_LEVEL
+	end
+	
 	local level = self.Config.DEFAULT_LEVEL
 	local timeInGame = 0
 
@@ -166,7 +180,7 @@ function LevelSystem:LoadPlayerLevel(player)
 	playerLevelCache[userId] = {
 		Level = level,
 		TimeInGame = timeInGame,
-		SessionStartTime = tick()
+		SessionStartTime = os.clock()
 	}
 	return level
 end
@@ -180,23 +194,23 @@ function LevelSystem:SavePlayerLevel(player, forceSave)
 
 	-- ANTI SPAM DATASTORE LIMIT
 	local lastSave = saveCooldowns[userId] or 0
-	if not forceSave and (tick() - lastSave) < self.Config.SAVE_COOLDOWN then
+	if not forceSave and (os.clock() - lastSave) < self.Config.SAVE_COOLDOWN then
 		debug("Save dibatalkan untuk", player.Name, "- Masih dalam cooldown.")
 		return true -- Anggap sukses karena datanya toh aman di Cache
 	end
 
-	local sessionTime = tick() - cache.SessionStartTime
+	local sessionTime = os.clock() - cache.SessionStartTime
 	local totalTime = cache.TimeInGame + sessionTime
 
 	cache.TimeInGame = totalTime
-	cache.SessionStartTime = tick()
+	cache.SessionStartTime = os.clock()
 
 	local key = self.Config.DATASTORE_PREFIX .. tostring(userId)
 	local data = { Level = cache.Level, TimeInGame = totalTime, LastSaved = os.time() }
 
 	local success = datastoreSetAsync(key, data)
 	if success then
-		saveCooldowns[userId] = tick() -- Catat waktu save terakhir
+		saveCooldowns[userId] = os.clock() -- Catat waktu save terakhir
 
 		-- 🔥 ARCHITECT FIX: Panggil dengan 'player', BUKAN 'userId'
 		syncLeaderboard(player, cache.Level) 
@@ -259,6 +273,16 @@ local function startLevelTimer(player)
 			LevelSystem:AddLevels(player, 1)
 		end
 	end)
+	
+	-- 🔥 ARCHITECT FIX: AUTO-SAVE LOOP
+	task.spawn(function()
+		while running and player.Parent and playerTimers[userId] do
+			task.wait(LevelSystem.Config.SAVE_COOLDOWN)
+			if not running or not player.Parent or not playerTimers[userId] then break end
+			-- Lakukan save secara background (bukan force save)
+			LevelSystem:SavePlayerLevel(player, false)
+		end
+	end)
 end
 
 local function stopLevelTimer(player)
@@ -299,12 +323,15 @@ function LevelSystem:SetupCommands(player, roleSystem)
 		if role ~= "Owner" then return end
 
 		if command == "/setlevel" then
+			if not args[2] then return end
 			local targetPlayer = Players:FindFirstChild(args[2])
 			if targetPlayer and tonumber(args[3]) then LevelSystem:SetPlayerLevel(targetPlayer, tonumber(args[3])) end
 		elseif command == "/addlevel" then
+			if not args[2] then return end
 			local targetPlayer = Players:FindFirstChild(args[2])
 			if targetPlayer and tonumber(args[3]) then LevelSystem:AddLevels(targetPlayer, tonumber(args[3])) end
 		elseif command == "/resetlevel" then
+			if not args[2] then return end
 			local targetPlayer = Players:FindFirstChild(args[2])
 			if targetPlayer then LevelSystem:SetPlayerLevel(targetPlayer, LevelSystem.Config.DEFAULT_LEVEL) end
 
@@ -334,5 +361,55 @@ function LevelSystem:GetStats()
 	if stats.totalPlayers > 0 then stats.averageLevel = math.floor(stats.totalLevels / stats.totalPlayers) end
 	return stats
 end
+
+-- ====================================
+-- CLEANUP SYSTEM (ANTI MEMORY LEAK)
+-- ====================================
+function LevelSystem:CleanupPlayer(player)
+	local userId = player.UserId
+	
+	-- Hapus koneksi chat
+	if activeConnections[userId] then
+		for _, connection in ipairs(activeConnections[userId]) do
+			connection:Disconnect()
+		end
+		activeConnections[userId] = nil
+	end
+	
+	-- Hentikan timer
+	stopLevelTimer(player)
+	
+	-- Simpan data terakhir (bypass cooldown)
+	self:SavePlayerLevel(player, true)
+	
+	-- Hapus dari cache
+	playerLevelCache[userId] = nil
+	saveCooldowns[userId] = nil
+end
+
+Players.PlayerRemoving:Connect(function(player)
+	LevelSystem:CleanupPlayer(player)
+end)
+
+-- ====================================
+-- SHUTDOWN PROTECTION (BINDTOCLOSE)
+-- ====================================
+game:BindToClose(function()
+	debug("Server shutting down, saving all players data...")
+	
+	local saveCount = 0
+	-- Simpan secara paralel agar tidak kehabisan waktu shutdown (max 30 detik)
+	for _, player in ipairs(Players:GetPlayers()) do
+		task.spawn(function()
+			LevelSystem:SavePlayerLevel(player, true)
+		end)
+		saveCount += 1
+	end
+	
+	-- Beri waktu maksimal 5 detik untuk semua save process selesai
+	if saveCount > 0 then
+		task.wait(5)
+	end
+end)
 
 return LevelSystem

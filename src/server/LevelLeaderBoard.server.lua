@@ -78,20 +78,25 @@ game:BindToClose(function()
 	
 	local savedCount = 0
 	local bindable = Instance.new("BindableEvent")
+	local isFinished = false -- 🔥 FIX RACE CONDITION: Cegah Double Fire
 	
 	for _, player in ipairs(players) do
 		task.spawn(function()
 			pcall(function() LevelSystem:SavePlayerLevel(player, true) end)
 			savedCount += 1
 			if savedCount >= totalPlayers then
-				bindable:Fire()
+				if not isFinished then
+					isFinished = true
+					bindable:Fire()
+				end
 			end
 		end)
 	end
 	
 	-- Tunggu maksimal 25 detik (Batas Roblox adalah 30 detik)
 	task.delay(25, function()
-		if savedCount < totalPlayers then
+		if not isFinished then
+			isFinished = true
 			bindable:Fire()
 		end
 	end)

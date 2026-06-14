@@ -183,10 +183,19 @@ local function processQueue()
 						UserId      = item.userId,
 						DisplayName = item.displayName,
 					}
+					
+					-- FILTERING RICHTEXT UNTUK DISPLAY NAME (Mencegah eksploitasi <font>)
+					local safeDisplayName = item.displayName
+					safeDisplayName = string.gsub(safeDisplayName, "&", "&amp;")
+					safeDisplayName = string.gsub(safeDisplayName, "<", "&lt;")
+					safeDisplayName = string.gsub(safeDisplayName, ">", "&gt;")
+					safeDisplayName = string.gsub(safeDisplayName, '"', "&quot;")
+					safeDisplayName = string.gsub(safeDisplayName, "'", "&apos;")
+
 					-- Langsung update tanpa filtering (message sudah difilter saat masuk antrian)
 					local displayNameText = string.format(
 						DonationConfig.SCREEN_BOARD.NAME_FORMAT,
-						item.displayName,
+						safeDisplayName,
 						item.amount
 					)
 					-- Fire manual ke semua client
@@ -265,15 +274,18 @@ end
 -- REMOTES  Products
 -- ============================================
 
+local cachedProducts = nil
 getProductsRemote.OnServerInvoke = function(player)
 	debugLog("BROADCAST", player.Name, "meminta daftar produk")
 
-	local products = {}
-	for _, p in ipairs(DonationConfig.PRODUCTS) do
-		table.insert(products, {Id = p.id, Name = p.name, Price = p.price})
+	if not cachedProducts then
+		cachedProducts = {}
+		for _, p in ipairs(DonationConfig.PRODUCTS) do
+			table.insert(cachedProducts, {Id = p.id, Name = p.name, Price = p.price})
+		end
+		table.sort(cachedProducts, function(a, b) return a.Price < b.Price end)
 	end
-	table.sort(products, function(a, b) return a.Price < b.Price end)
-	return products
+	return cachedProducts
 end
 
 -- ============================================
@@ -353,12 +365,8 @@ Players.PlayerRemoving:Connect(function(player)
 	DonationDataStore:CleanupPlayer(player)
 	cleanupPlayerSecurity(player.UserId)
 
-	-- Hapus dari antrian
-	for i = #broadcastQueue, 1, -1 do
-		if broadcastQueue[i].userId == player.UserId then
-			table.remove(broadcastQueue, i)
-		end
-	end
+	-- (REMOVED) Tidak lagi menghapus pesan dari antrian saat player keluar.
+	-- Hak donasi tetap berjalan agar player tidak rugi jika putus koneksi.
 
 	debugLog("BROADCAST", "Cleanup selesai:", player.Name)
 end)

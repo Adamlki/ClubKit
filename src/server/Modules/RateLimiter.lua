@@ -61,7 +61,7 @@ local function getPlayerKey(player)
 end
 
 local function cleanOldRequests(requests, window)
-	local now = tick()
+	local now = os.clock()
 	local validRequests = {}
 
 	for _, timestamp in ipairs(requests) do
@@ -85,24 +85,27 @@ function RateLimiter.check(player, actionName)
 
 	local playerKey = getPlayerKey(player)
 	local limit = CONFIG[actionName] or CONFIG.default
-	local now = tick()
+	
+	-- 🔥 ARCHITECT FIX: Jika action tidak ada di config, gunakan key tunggal untuk mencegah Memory Exhaustion (DoS)
+	local trackActionName = CONFIG[actionName] and actionName or "default_unknown"
+	local now = os.clock()
 
 	-- Initialize player storage if not exists
 	if not playerRequests[playerKey] then
 		playerRequests[playerKey] = {}
 	end
 
-	if not playerRequests[playerKey][actionName] then
-		playerRequests[playerKey][actionName] = {}
+	if not playerRequests[playerKey][trackActionName] then
+		playerRequests[playerKey][trackActionName] = {}
 	end
 
 	-- Clean old requests
-	playerRequests[playerKey][actionName] = cleanOldRequests(
-		playerRequests[playerKey][actionName],
+	playerRequests[playerKey][trackActionName] = cleanOldRequests(
+		playerRequests[playerKey][trackActionName],
 		limit.window
 	)
 
-	local requests = playerRequests[playerKey][actionName]
+	local requests = playerRequests[playerKey][trackActionName]
 
 	-- Check if limit exceeded
 	if #requests >= limit.count then
@@ -119,10 +122,11 @@ end
 function RateLimiter.checkWithInfo(player, actionName)
 	local allowed, reason = RateLimiter.check(player, actionName)
 	local limit = CONFIG[actionName] or CONFIG.default
+	local trackActionName = CONFIG[actionName] and actionName or "default_unknown"
 	local playerKey = getPlayerKey(player)
 	local currentCount = playerRequests[playerKey] 
-		and playerRequests[playerKey][actionName] 
-		and #playerRequests[playerKey][actionName] 
+		and playerRequests[playerKey][trackActionName] 
+		and #playerRequests[playerKey][trackActionName] 
 		or 0
 
 	return allowed, reason, {
@@ -158,17 +162,18 @@ function RateLimiter.getUsage(player, actionName)
 
 	local playerKey = getPlayerKey(player)
 	local limit = CONFIG[actionName] or CONFIG.default
+	local trackActionName = CONFIG[actionName] and actionName or "default_unknown"
 
-	if not playerRequests[playerKey] or not playerRequests[playerKey][actionName] then
+	if not playerRequests[playerKey] or not playerRequests[playerKey][trackActionName] then
 		return 0, limit.count
 	end
 
-	playerRequests[playerKey][actionName] = cleanOldRequests(
-		playerRequests[playerKey][actionName],
+	playerRequests[playerKey][trackActionName] = cleanOldRequests(
+		playerRequests[playerKey][trackActionName],
 		limit.window
 	)
 
-	return #playerRequests[playerKey][actionName], limit.count
+	return #playerRequests[playerKey][trackActionName], limit.count
 end
 
 -- Update config (untuk admin/debug)
@@ -202,12 +207,13 @@ task.spawn(function()
 	while true do
 		task.wait(60)
 
-		local now = tick()
-		local maxWindow = 10  -- Maximum window time
+		local now = os.clock()
 
 		for playerKey, actions in pairs(playerRequests) do
 			for actionName, requests in pairs(actions) do
-				actions[actionName] = cleanOldRequests(requests, maxWindow)
+				-- 🔥 ARCHITECT FIX: Gunakan window dinamis milik config asli, bukan paksaan angka 10.
+				local limit = CONFIG[actionName] or CONFIG.default
+				actions[actionName] = cleanOldRequests(requests, limit.window)
 
 				-- Remove empty tables
 				if #actions[actionName] == 0 then

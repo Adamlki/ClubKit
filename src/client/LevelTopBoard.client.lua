@@ -61,7 +61,10 @@ local function getPlayerName(userId)
 		nameCache[userId] = name
 		return name
 	end
-	return "Player_" .. tostring(userId)
+	
+	-- 🔥 CLIENT FIX: Simpan fallback ke cache untuk mencegah API Spam jika Roblox error
+	nameCache[userId] = "Player_" .. tostring(userId)
+	return nameCache[userId]
 end
 
 -- ====================================

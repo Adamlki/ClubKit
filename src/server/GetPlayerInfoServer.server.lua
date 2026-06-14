@@ -2,6 +2,9 @@ local HttpService       = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TextService       = game:GetService("TextService")
 local Players           = game:GetService("Players")
+local ServerScriptService = game:GetService("ServerScriptService")
+
+local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 
 -- ============================================
 -- SETUP REMOTE
@@ -301,6 +304,11 @@ end
 -- REMOTE HANDLER
 -- ============================================
 getPlayerInfoRF.OnServerInvoke = function(callerPlayer, targetUserId)
+	-- 🔥 SECURITY FIX: Anti-DDoS Rate Limiter untuk Mencegah Server IP diblokir (Error 429) oleh API Roproxy
+	if not RemoteEventManager.checkRateLimit(callerPlayer, "getPlayerInfo") then
+		return { description = "", friendsCount = 0, followersCount = 0, followingCount = 0 }
+	end
+
 	-- Validasi input
 	if type(targetUserId) ~= "number" or targetUserId <= 0 then
 		warn("[GetPlayerInfo] UserId tidak valid:", tostring(targetUserId))

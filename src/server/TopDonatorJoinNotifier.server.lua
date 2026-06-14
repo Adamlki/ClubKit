@@ -86,6 +86,9 @@ local function onPlayerJoin(player)
 	debugLog("👤 Player Join:", player.Name)
 	task.wait(math.random(3, 12)) -- Tunggu player load
 
+	-- 🔥 UX FIX: Mencegah Notifikasi "Hantu" jika player langsung keluar
+	if not player or not player.Parent then return end
+
 	debugLog("🔍 Mulai mengecek Rank untuk:", player.DisplayName)
 	local robuxRank = getRobuxRank(player.UserId)
 	debugLog("💎 Hasil Cek Robux Rank:", robuxRank or "TIDAK ADA")

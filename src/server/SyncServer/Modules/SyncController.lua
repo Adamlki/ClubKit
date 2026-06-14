@@ -244,6 +244,9 @@ function module.handleSyncRequest(player, targetPlayer, condition, loadedAnimati
 	if not targetPlayer or typeof(targetPlayer) ~= "Instance" or not targetPlayer:IsA("Player") then return end
 	if not waitForCharacterReady(player, 3) or not waitForCharacterReady(targetPlayer, 3) then return end
 
+	-- 🔥 VALIDASI ASINKRON: Pastikan kedua player belum keluar server saat Yielding 3 detik
+	if not player or not player.Parent or not targetPlayer or not targetPlayer.Parent then return end
+
 	if condition and module.isLeader(player) and module.isFollowingPlayer(targetPlayer, player) then
 		syncNotificationRE:FireClient(player, "leader_blocked", targetPlayer.Name)
 		return

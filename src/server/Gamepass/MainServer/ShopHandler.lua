@@ -144,10 +144,14 @@ function ShopHandler:HandlePurchaseFinished(player, purchasedPassID, purchaseSuc
 					task.spawn(function()
 						task.wait(Config.UpdateDelay)
 
-						local finalRole = self:UpdatePlayerRole(player)
-
-						Logger:Success(string.format("Final role for %s: %s", 
-							player.Name, finalRole))
+						-- 🔥 VALIDASI: Cek eksistensi pemain setelah jeda (yield)
+						if player and player.Parent == game:GetService("Players") then
+							local finalRole = self:UpdatePlayerRole(player)
+							if finalRole then
+								Logger:Success(string.format("Final role for %s: %s", 
+									player.Name, finalRole))
+							end
+						end
 					end)
 				end
 
@@ -166,6 +170,11 @@ function ShopHandler:UpdatePlayerRole(player)
 	Logger:Debug(string.format("Updating role for player: %s", player.Name))
 
 	task.wait(Config.UpdateDelay)
+
+	-- 🔥 VALIDASI: Cek eksistensi pemain lagi setelah jeda (yield)
+	if not player or player.Parent ~= game:GetService("Players") then 
+		return nil 
+	end
 
 	-- Force cache refresh
 	self.roleSystem:InvalidateOwnershipCache(player.UserId)

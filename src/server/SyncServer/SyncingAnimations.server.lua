@@ -22,6 +22,7 @@ local emotesFolder = AnimationLoader.initializeEmotesFolder()
 
 local AnimationController = require(ServerModules:WaitForChild("AnimationController"))
 local SyncController = require(ServerModules:WaitForChild("SyncController"))
+local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 
 -- ============================================
 -- LOAD SHARED MODULES
@@ -35,16 +36,18 @@ local AnimatorUtils = require(SharedModules:WaitForChild("AnimatorUtils"))
 local loadedAnimations = AnimationLoader.loadAnimations()
 
 -- ============================================
--- RATE LIMIT PER PLAYER untuk changeSpeed
--- Cegah spam slider dari 100 client sekaligus
+-- RATE LIMIT DITANGANI OLEH REMOTE EVENT MANAGER
 -- ============================================
-local speedDebounce = {}
-local SPEED_DEBOUNCE_TIME = 0.05 -- max 20x per detik per player
 
 -- ============================================
 -- REMOTE HANDLERS
 -- ============================================
 animationStartRE.OnServerEvent:Connect(function(player, animationId, shouldPlay, speed, clientFadeTime, isSpam, clientStartTime)
+	-- 🔥 SECURITY FIX: Cegah Type Spoofing
+	if animationId ~= nil and type(animationId) ~= "string" and type(animationId) ~= "number" then return end
+	if type(shouldPlay) ~= "boolean" then return end
+	if speed ~= nil and type(speed) ~= "number" then return end
+
 	local animation = nil
 	if animationId then
 		-- Cari di loadedAnimations dulu (lebih efisien dari buat baru)
@@ -64,12 +67,12 @@ animationStartRE.OnServerEvent:Connect(function(player, animationId, shouldPlay,
 end)
 
 changeSpeedRE.OnServerEvent:Connect(function(player, speed)
-	-- Rate limit per player untuk cegah spam slider
-	local now = tick()
-	if speedDebounce[player] and (now - speedDebounce[player]) < SPEED_DEBOUNCE_TIME then
-		return
-	end
-	speedDebounce[player] = now
+	-- 🔥 SECURITY FIX: Cegah Type Spoofing
+	if type(speed) ~= "number" then return end
+
+	-- 🔥 ARCHITECT FIX: Gunakan RemoteEventManager
+	if not RemoteEventManager.checkRateLimit(player, "changeAnimationSpeed") then return end
+
 	AnimationController.adjustAnimationSpeed(player, speed, loadedAnimations)
 end)
 
@@ -125,7 +128,7 @@ local function setupPlayerRespawnHandler(player)
 
 		if not humanoid or not hrp then
 			warn("[SyncSystem] Character load timeout for", player.Name)
-			return
+			-- 🔥 SILENT FAILURE FIX: Jangan return! Tetap setel atribut dasar agar sistem tidak error mencari atribut
 		end
 
 		task.wait(0.5)
@@ -175,7 +178,6 @@ end
 Players.PlayerRemoving:Connect(function(leavingPlayer)
 	pcall(forceUnsyncAllFollowers, leavingPlayer)
 	cleanupPlayerConnections(leavingPlayer)
-	speedDebounce[leavingPlayer] = nil
 	
 	AnimatorUtils.clearCacheForPlayer(leavingPlayer)
 
@@ -196,6 +198,8 @@ end)
 -- ============================================
 Players.PlayerAdded:Connect(function(player)
 	task.wait(0.5)
+	-- 🔥 VALIDASI: Cegah Memory Leak (Ghost Player) jika player DC saat yield
+	if not player or not player.Parent then return end
 	setupPlayerRespawnHandler(player)
 end)
 

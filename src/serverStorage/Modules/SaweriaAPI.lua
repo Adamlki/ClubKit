@@ -12,6 +12,7 @@ local WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwCfybjVBntG6MsBmwu
 -- SISTEM CACHE ANTI-MELEDAK
 local cachedData = nil
 local lastFetchTime = 0
+local isFetching = false
 
 -- 🔥 ARCHITECT FIX: Jeda Aman 15 Detik. 
 -- Walau ada 100 skrip yang minta data di detik yang sama, 
@@ -19,17 +20,29 @@ local lastFetchTime = 0
 local FETCH_COOLDOWN = 15 
 
 function SaweriaAPI:GetDonationData()
-	local currentTime = tick()
+	local currentTime = os.clock()
 
 	-- 1. CEK CACHE: Jika masih dalam masa cooldown 15 detik, 
 	-- berikan data lama (0% Lag, 0 API Call)
 	if cachedData and (currentTime - lastFetchTime) < FETCH_COOLDOWN then
 		return cachedData
 	end
+	
+	-- 2. DEBOUNCE (ANTI RACE-CONDITION)
+	-- Mencegah 10 pemain yang memanggil bersamaan memicu 10 request API sekaligus
+	if isFetching then
+		while isFetching do
+			task.wait(0.1)
+		end
+		return cachedData
+	end
 
-	-- 2. FETCH BARU: Jika sudah lewat masa tunggu, baru telepon Google Sheets
+	isFetching = true
+	lastFetchTime = os.clock() -- Update waktu SEBELUM nge-yield agar tertutup rapat!
+
+	-- 3. FETCH BARU: Telepon Google Sheets
 	local success, response = pcall(function()
-		return HttpService:GetAsync(WEB_APP_URL .. "?action=getLatest&t=" .. currentTime)
+		return HttpService:GetAsync(WEB_APP_URL .. "?action=getLatest&t=" .. os.time())
 	end)
 
 	if success and response then
@@ -40,12 +53,13 @@ function SaweriaAPI:GetDonationData()
 		if ok and type(result) == "table" then
 			-- Simpan data terbaru ke ingatan Modul
 			cachedData = result.data or result
-			lastFetchTime = currentTime
+			isFetching = false
 			return cachedData
 		end
 	end
 
-	-- Jika Google sedang down/error, jangan panik, kembalikan data terakhir yang kita punya
+	-- Jika Google sedang down/error, lepaskan kunci dan kembalikan data terakhir
+	isFetching = false
 	return cachedData
 end
 

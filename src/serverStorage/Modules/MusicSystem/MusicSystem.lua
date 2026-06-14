@@ -66,6 +66,7 @@ function MusicSystem.new()
 		InitialPreloadComplete = false,
 		IsUIBlocked = false
 	}
+	self.isTransitioning = false
 
 	-- Initialize managers
 	self.queueManager = MusicQueueManager.new(CONFIG)
@@ -150,6 +151,9 @@ end
 -- PLAY NEXT SONG
 -- ====================================
 function MusicSystem:PlayNext()
+	if self.isTransitioning then return end
+	self.isTransitioning = true
+
 	-- Check if there's a song in queue
 	local nextSong = self.queueManager:GetNext()
 
@@ -166,6 +170,7 @@ function MusicSystem:PlayNext()
 			warn("[MusicSystem] Failed to play queued song:", err)
 			-- Try next song
 			task.delay(1, function()
+				self.isTransitioning = false
 				self:PlayNext()
 			end)
 			return
@@ -174,6 +179,7 @@ function MusicSystem:PlayNext()
 		-- Sync queue to all players
 		self.dispatcher:SyncQueueOnly()
 		self.dispatcher:SyncState()
+		self.isTransitioning = false
 
 	else
 		-- Queue is empty, play from auto-playlist
@@ -191,14 +197,17 @@ function MusicSystem:PlayNext()
 				warn("[MusicSystem] Failed to play playlist song:", err)
 				-- Try next song
 				task.delay(1, function()
+					self.isTransitioning = false
 					self:PlayNext()
 				end)
 			else
 				self.dispatcher:SyncState()
+				self.isTransitioning = false
 			end
 		else
 			warn("[MusicSystem] No songs available in queue or playlist!")
 			self.playbackManager:Stop(self.remotes)
+			self.isTransitioning = false
 		end
 	end
 end
@@ -223,26 +232,17 @@ function MusicSystem:Start()
 		end)
 	end
 
-	-- ✅ PERBAIKAN EXTRA: Tambahkan Anti-Spam (Debounce)
-	local syncDebounce = {} -- Menyimpan waktu kapan terakhir pemain minta sync
+	local ServerScriptService = game:GetService("ServerScriptService")
+	local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 
 	self.remotes.MusicAction.OnServerEvent:Connect(function(player, action)
 		if action.type == "REQUEST_SYNC" then
-			-- Cek apakah pemain baru saja minta sync kurang dari 5 detik yang lalu
-			if syncDebounce[player] and (os.clock() - syncDebounce[player]) < 5 then
-				return -- Abaikan kalau spam!
-			end
-			syncDebounce[player] = os.clock() -- Catat waktu sekarang
-
+			if not RemoteEventManager.checkRateLimit(player, "musicSync") then return end
 			self.playerManager:OnPlayerAdded(player)
 		else
+			if not RemoteEventManager.checkRateLimit(player, "musicAction") then return end
 			self.actionHandler:DispatchAction(player, action)
 		end
-	end)
-
-	-- Bersihkan data debounce kalau pemain keluar biar memori tidak penuh
-	Players.PlayerRemoving:Connect(function(player)
-		syncDebounce[player] = nil
 	end)
 
 	-- Mark as ready

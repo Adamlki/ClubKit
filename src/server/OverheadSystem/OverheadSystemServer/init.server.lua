@@ -1,6 +1,10 @@
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage     = game:GetService("ServerStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
+local TextService       = game:GetService("TextService")
+
+local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 
 -- ====================================
 -- MODULES
@@ -45,15 +49,15 @@ NametagDisabler:Init()
 -- CHARACTER EVENTS
 -- ====================================
 local function onCharacterAdded(player, character)
-	-- Tunggu beberapa frame agar:
-	-- 1. Roblox selesai proses character (Head, HumanoidRootPart, dll)
-	-- 2. CustomTeams.AssignNewPlayer selesai assign team (sync DS load)
-	-- 3. player.Team sudah settled sebelum overhead dibuat
-	--
-	-- FIX: task.wait() 1 frame tidak cukup di Studio maupun live server
-	-- saat player baru join dengan DS load yang lambat.
-	-- task.wait(0.5) memberi buffer yang lebih aman.
-	task.wait(0.5)
+	-- 🔥 FIX MAGIC NUMBER: Tunggu komponen krusial dimuat oleh Roblox dengan Timeout 10 detik
+	local head = character:WaitForChild("Head", 10)
+	local hrp = character:WaitForChild("HumanoidRootPart", 10)
+	local humanoid = character:WaitForChild("Humanoid", 10)
+	
+	if not head or not hrp or not humanoid then 
+		DebugSystem:Warn("Character load timeout for", player.Name)
+		return 
+	end
 
 	-- Pastikan player masih online dan character masih valid
 	if not player or not player.Parent then return end
@@ -239,6 +243,9 @@ end
 -- UPDATE TITLE REMOTE
 -- ====================================
 updateTitleRemote.OnServerEvent:Connect(function(sender, targetPlayer, titleData)
+	-- 🔥 ARCHITECT FIX: Rate Limiting
+	if not RemoteEventManager.checkRateLimit(sender, "updateTitle") then return end
+
 	DebugSystem:Log("UpdateTitle Request from", sender and sender.Name or "nil")
 
 	if not sender or not targetPlayer or not titleData then
@@ -252,22 +259,43 @@ updateTitleRemote.OnServerEvent:Connect(function(sender, targetPlayer, titleData
 		return
 	end
 
-	local titleText = titleData.Title or ""
+	if type(titleData) ~= "table" then return end
 
-	if titleText == "" then
+	-- 🔥 SECURITY FIX: Dekonstruksi & Validasi ketat (Table Injection Protection)
+	local rawTitle = titleData.Title
+	if type(rawTitle) ~= "string" then rawTitle = "" end
+	rawTitle = string.sub(rawTitle, 1, 50) -- Batasi panjang string
+
+	local rawColor = titleData.Color
+	if typeof(rawColor) ~= "Color3" then rawColor = Color3.fromRGB(255, 255, 255) end
+
+	local isGradient = titleData.Gradient or titleData.GradientEnabled
+	if type(isGradient) ~= "boolean" then isGradient = false end
+
+	local gradEffect = titleData.GradientEffect
+	if type(gradEffect) ~= "string" then gradEffect = "wave" end
+
+	if rawTitle == "" then
 		TitleDataManager:UpdateCache(targetPlayer.UserId, {
 			Title = "", Color = Color3.fromRGB(255, 255, 255),
 			GradientEnabled = false, GradientEffect = "wave",
 		})
 		DebugSystem:Log("Title removed for", targetPlayer.Name)
 	else
+		-- 🔥 COMPLIANCE FIX: Roblox Text Filtering (Bypass Mencegah Ban)
+		local filteredTitle = rawTitle
+		pcall(function()
+			local filterResult = TextService:FilterStringAsync(rawTitle, sender.UserId)
+			filteredTitle = filterResult:GetNonChatStringForBroadcastAsync()
+		end)
+
 		TitleDataManager:UpdateCache(targetPlayer.UserId, {
-			Title           = titleData.Title,
-			Color           = titleData.Color,
-			GradientEnabled = titleData.Gradient or false,
-			GradientEffect  = titleData.GradientEffect or "wave",
+			Title           = filteredTitle,
+			Color           = rawColor,
+			GradientEnabled = isGradient,
+			GradientEffect  = gradEffect,
 		})
-		DebugSystem:Log("Title updated for", targetPlayer.Name, "->", titleData.Title)
+		DebugSystem:Log("Title updated for", targetPlayer.Name, "->", filteredTitle)
 	end
 
 	-- FIX: Rebuild overhead hanya jika character valid
@@ -280,6 +308,9 @@ end)
 -- ASSIGN DONATUR RANK REMOTE
 -- ====================================
 assignDonaturRemote.OnServerEvent:Connect(function(sender, targetPlayer, rank)
+	-- 🔥 ARCHITECT FIX: Rate Limiting
+	if not RemoteEventManager.checkRateLimit(sender, "assignDonatur") then return end
+
 	DebugSystem:Log("AssignDonaturRank Request from", sender and sender.Name or "nil")
 
 	if not sender or not targetPlayer then

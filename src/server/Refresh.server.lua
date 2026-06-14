@@ -46,6 +46,10 @@ local function onRefreshRequest(player)
 		return Players:GetHumanoidDescriptionFromUserId(userId)
 	end)
 
+	-- 🔥 FATAL CRASH FIX: Pastikan karakter dan part masih ada sesudah tertahan (Yield) oleh API Web
+	if not player or not player.Parent or not character or not character.Parent then return end
+	if not humanoid or not humanoid.Parent or not rootPart or not rootPart.Parent then return end
+
 	if success and description then
 		local head = character:FindFirstChild("Head")
 		local savedBillboards = {}

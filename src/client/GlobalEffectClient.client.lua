@@ -77,8 +77,15 @@ if GlobalEffectGui then
 			end
 		end
 
+		local lastClickTime = 0
+		local CLICK_DEBOUNCE = 0.5
+		
 		local function setupButton(btnObj, stateName)
 			btnObj.MouseButton1Click:Connect(function()
+				-- 🔥 CLIENT FIX: Cegah UI Desync karena Rate Limiter Server
+				if tick() - lastClickTime < CLICK_DEBOUNCE then return end
+				lastClickTime = tick()
+				
 				ButtonStates[stateName] = not ButtonStates[stateName]
 				updateButtonUI(stateName, ButtonStates[stateName])
 				ToggleEffectEvent:FireServer(stateName, ButtonStates[stateName])
@@ -272,6 +279,16 @@ local function stopAllExceptGlobalEffects()
 				if isRegisteredDanceOrPose(track.Animation.AnimationId) then
 					-- Simpan posisi waktu untuk tarian yang aktif
 					local currentDanceID = char:GetAttribute("CurrentDanceID")
+					
+					-- Cek apakah player adalah follower
+					local syncTarget = char:GetAttribute("Syncing")
+					if syncTarget and syncTarget ~= "" then
+						local leaderPlayer = Players:FindFirstChild(syncTarget)
+						if leaderPlayer and leaderPlayer.Character then
+							currentDanceID = leaderPlayer.Character:GetAttribute("CurrentDanceID")
+						end
+					end
+
 					if currentDanceID and getNumericId(currentDanceID) == numId then
 						suspendedTimePosition = track.TimePosition
 						suspendedDanceID = currentDanceID
@@ -305,6 +322,18 @@ local function resumeLocalDance()
 	local char = LocalPlayer.Character
 	if not char then return end
 	local currentDanceID = char:GetAttribute("CurrentDanceID")
+	local speed = char:GetAttribute("DanceSpeed") or 1
+	
+	-- Cek apakah player adalah follower
+	local syncTarget = char:GetAttribute("Syncing")
+	if syncTarget and syncTarget ~= "" then
+		local leaderPlayer = Players:FindFirstChild(syncTarget)
+		if leaderPlayer and leaderPlayer.Character then
+			currentDanceID = leaderPlayer.Character:GetAttribute("CurrentDanceID")
+			speed = leaderPlayer.Character:GetAttribute("DanceSpeed") or speed
+		end
+	end
+	
 	if not currentDanceID or currentDanceID == "" then return end
 	
 	local humanoid = char:FindFirstChildOfClass("Humanoid")
@@ -332,7 +361,6 @@ local function resumeLocalDance()
 	track.Priority = Enum.AnimationPriority.Action4
 	track.Looped = true
 	
-	local speed = char:GetAttribute("DanceSpeed") or 1
 	track:Play(0.2, 1, speed)
 	resumedDanceTrack = track
 	

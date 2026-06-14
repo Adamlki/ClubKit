@@ -140,6 +140,7 @@ function MusicPlaybackManager:ConnectEndedEvent()
 	self.endedConnection = sound.Ended:Connect(function()
 		if self.autoNextCallback and self.isPlaying then
 			task.spawn(function()
+				task.wait(1.5)
 				pcall(self.autoNextCallback)
 			end)
 		end
@@ -291,47 +292,49 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 	self.currentUploader = uploaderName or "System"
 	self.songStartTime = workspace:GetServerTimeNow() -- Waktu absolut serentak
 	self.songDuration = baseDuration
+	self.adjustedDuration = baseDuration -- Gunakan base duration dulu agar UI langsung update
 	self.isPlaylistMode = isFromPlaylist or false
 
-	-- ⏳ FIX & ANTI-BAN: Tunggu durasi lagu muncul
-	local detectedDuration = self:TryDetectDuration(musicData.id, playbackSpeed)
-	
-	-- 🚨 FIX RACE CONDITION: Jika lagu sudah di-stop atau di-skip saat kita sedang menunggu durasi, batalkan!
-	if not self.currentSong or self.currentSong.id ~= displayMusicData.id then
-		debugWarn("Playback interrupted for: " .. (displayMusicData.judul or "Unknown"))
-		return false, "Playback interrupted"
-	end
-
-	local isActuallyPlaying = self.audioHandler:IsPlaying()
-
-	if (detectedDuration and detectedDuration > 0) or isActuallyPlaying then
-		-- ✅ LAGU AMAN: Durasi terbaca ATAU mesin mendeteksi lagu berhasil bunyi
-		self.adjustedDuration = (detectedDuration and detectedDuration > 0) and detectedDuration or baseDuration
-		debugPrint(string.format("Playback allowed for '%s' (Duration: %.1fs, Playing: %s)", 
-			displayMusicData.judul, self.adjustedDuration, tostring(isActuallyPlaying)))
-	else
-		-- 🚨 SISTEM AUTO-SKIP ANTI-BAN BEKERJA!
-		-- Jika durasi tetap 0 setelah 6 detik, dan lagu tidak bunyi, berarti lagu rusak / kena ban.
-		debugWarn("LAGU ERROR/BANNED TERDETEKSI! Auto-skipping: " .. (displayMusicData.judul or "Unknown"))
-
-		-- 1. Matikan state lagu yang nyangkut ini
-		self:Stop(remotes)
-
-		-- 2. Batalkan proses Play ini (MusicSystem akan otomatis play lagu selanjutnya)
-		return false, "Audio is banned or failed to load (Auto-Skipped)"
-	end
-
-	-- Success - setup playback
+	-- Success - setup playback instantly!
 	self.isPlaying = true
 
 	-- Connect ended event
 	self:ConnectEndedEvent()
 
-	-- Start progress broadcast
+	-- Start progress broadcast immediately
 	self:StartProgressBroadcast(remotes)
 
-	-- 📡 FIX: Broadcast ONCE with CORRECT duration
+	-- 📡 BROADCAST INSTAN: Agar UI pemain langsung ganti tanpa delay (menggunakan durasi sementara)
 	self:BroadcastSongUpdate(remotes, displayMusicData, uploaderName, self.adjustedDuration, playbackSpeed)
+
+	-- ⏳ DETEKSI DURASI ASLI DI BACKGROUND: Jangan nge-block script utama
+	task.spawn(function()
+		local detectedDuration = self:TryDetectDuration(musicData.id, playbackSpeed)
+		
+		-- 🚨 BATALKAN JIKA LAGU SUDAH BERGANTI
+		if not self.currentSong or self.currentSong.id ~= displayMusicData.id then
+			return
+		end
+
+		local isActuallyPlaying = self.audioHandler:IsPlaying()
+
+		if (detectedDuration and detectedDuration > 0) or isActuallyPlaying then
+			if detectedDuration and detectedDuration > 0 then
+				self.adjustedDuration = detectedDuration
+				debugPrint(string.format("Duration corrected for '%s': %.1fs", displayMusicData.judul, self.adjustedDuration))
+				
+				-- 📡 BROADCAST KOREKSI: Update durasi yang benar ke UI pemain
+				self:BroadcastSongUpdate(remotes, displayMusicData, uploaderName, self.adjustedDuration, playbackSpeed)
+			end
+		else
+			-- 🚨 SISTEM AUTO-SKIP ANTI-BAN BEKERJA!
+			debugWarn("LAGU ERROR/BANNED TERDETEKSI! Auto-skipping: " .. (displayMusicData.judul or "Unknown"))
+			
+			if self.autoNextCallback then
+				pcall(self.autoNextCallback)
+			end
+		end
+	end)
 
 	return true, nil
 end

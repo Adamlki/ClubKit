@@ -4,10 +4,12 @@ local Players          = game:GetService("Players")
 local TextService      = game:GetService("TextService")
 local TextChatService  = game:GetService("TextChatService")
 local MessagingService = game:GetService("MessagingService")
+local ServerScriptService = game:GetService("ServerScriptService")
 
 -- Sesuaikan path modul dengan struktur project kamu
 local RoleSystem    = require(ServerStorage.Modules.RoleSystem)
 local MessageConfig = require(script.AdminNotifConfig)
+local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 
 -- ====================================
 -- REMOTE SETUP
@@ -85,6 +87,9 @@ end
 -- TIMER REMOTE
 -- ====================================
 CheckTimerRemote.OnServerInvoke = function(player)
+	-- 🔥 ARCHITECT FIX: Anti-DDoS Rate Limiter
+	if not RemoteEventManager.checkRateLimit(player, "adminNotifCheck") then return {} end
+
 	local _, role   = hasAccess(player)
 	local remaining = getRemainingTime(player, role)
 
@@ -99,6 +104,9 @@ end
 -- ACCESS REMOTE
 -- ====================================
 CheckAccessRemote.OnServerInvoke = function(player)
+	-- 🔥 ARCHITECT FIX: Anti-DDoS Rate Limiter
+	if not RemoteEventManager.checkRateLimit(player, "adminNotifCheck") then return false end
+
 	local ok, _ = hasAccess(player)
 	return ok
 end
@@ -221,8 +229,12 @@ end
 -- SEND MESSAGE HANDLER
 -- ====================================
 SendMessageRemote.OnServerEvent:Connect(function(player, message, isGlobal)
+	-- 🔥 ARCHITECT FIX: Anti-DDoS Spam (Rate Limiter lapis pertama)
+	if not RemoteEventManager.checkRateLimit(player, "adminNotifSend") then return end
+
 	-- Sanity check tipe data dari client
 	if type(message) ~= "string" then return end
+	if type(isGlobal) ~= "boolean" then isGlobal = false end
 
 	local isValid, errorMsg, role, trimmedMessage = validateMessage(player, message)
 

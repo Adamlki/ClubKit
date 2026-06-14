@@ -48,6 +48,9 @@ Players.PlayerAdded:Connect(function(player)
 		-- [BUG FIX ROBLOX LEADERBOARD]
 		player.Team = nil
 		task.wait(0.1)
+		
+		-- 🔥 FIX GHOST PLAYER: Pastikan pemain masih ada di game setelah jeda
+		if not player or not player.Parent then return end
 		TeamGroups.AssignPlayer(player)
 	end)
 end)

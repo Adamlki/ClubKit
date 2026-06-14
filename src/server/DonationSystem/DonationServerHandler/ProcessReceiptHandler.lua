@@ -32,14 +32,14 @@ end
 
 local function markReceiptProcessed(purchaseId)
 	processedReceipts[purchaseId] = {
-		timestamp = tick(),
+		timestamp = os.time(),
 		processed = true
 	}
 end
 
 -- Hapus receipt lama (lebih dari 1 jam)
 local function cleanupOldReceipts()
-	local now = tick()
+	local now = os.time()
 	local cleaned = 0
 	for purchaseId, data in pairs(processedReceipts) do
 		if now - data.timestamp > 3600 then
@@ -116,25 +116,30 @@ function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 	-- Cari harga produk dari config
 	local amount = DonationConfig.PRODUCT_PRICES[productId]
 	if not amount then
-		-- Produk tidak dikenal — tetap grant agar player tidak kehilangan purchase
-		warn("[RECEIPT] Unknown productId:", productId, "- granting anyway")
-		markReceiptProcessed(purchaseId)
-		return Enum.ProductPurchaseDecision.PurchaseGranted
+		-- Produk tidak dikenal — kembalikan NotProcessedYet agar uang aman (Roblox akan refund setelah 3 hari)
+		warn("[RECEIPT] Unknown productId:", productId, "- returning NotProcessedYet")
+		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
 	debugLog("RECEIPT", "Player:", player.Name, "| Amount:", amount, "Robux")
 
 	-- Jalankan semua callback yang terdaftar
+	local allSuccess = true
 	for callbackName, callback in pairs(registeredCallbacks) do
 		local ok, result = pcall(function()
 			return callback(player, productId, amount, receiptInfo)
 		end)
-		if ok then
+		if ok and result == true then
 			debugLog("RECEIPT", "Callback OK:", callbackName, "->", tostring(result))
 		else
-			debugLog("ERROR", "Callback FAILED:", callbackName, "->", result)
-			-- Tidak menghentikan callback lain; lanjutkan
+			debugLog("ERROR", "Callback FAILED:", callbackName, "->", tostring(result))
+			allSuccess = false
 		end
+	end
+
+	if not allSuccess then
+		debugLog("ERROR", "Satu atau lebih callback gagal (misal DataStore). Transaksi ditunda.")
+		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
 	-- Tandai sudah diproses (setelah semua callback selesai)

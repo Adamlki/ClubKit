@@ -195,5 +195,8 @@ updateBoard()
 -- 🔴 FIX 3: Loop utama tidak lagi menggunakan logika tumpang tindih. Jauh lebih hemat CPU Server!
 while true do
 	task.wait(CHECK_INTERVAL)
-	pcall(fetchDonationData)
+	-- 🔥 ARCHITECT FIX: Bungkus dalam Thread agar Jaringan tidak Deadlock jika API lambat
+	task.spawn(function()
+		pcall(fetchDonationData)
+	end)
 end

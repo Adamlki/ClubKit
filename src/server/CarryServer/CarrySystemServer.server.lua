@@ -331,6 +331,7 @@ local function startCarry(carrier, target, style)
 			cChar.Carryable.Value = true
 		end
 		restorePhysics(target.UserId)
+		if tHum then restoreHumanoidState(target.UserId, tHum) end
 
 		return false, tostring(err)
 	end
@@ -580,6 +581,17 @@ end)
 
 Players.PlayerRemoving:Connect(function(player)
 	pendingRequests[player.UserId] = nil
+
+	-- 🔥 ARCHITECT FIX: Jika pemain yang keluar adalah carrier dari request pending orang lain
+	for targetId, data in pairs(pendingRequests) do
+		if data.carrier and data.carrier.UserId == player.UserId then
+			local target = Players:GetPlayerByUserId(targetId)
+			if target and target.Parent == Players then
+				target.CanAskCarry.Value = true
+			end
+			pendingRequests[targetId] = nil
+		end
+	end
 
 	local partnerUserId = activeCarries[player.UserId]
 	if partnerUserId then

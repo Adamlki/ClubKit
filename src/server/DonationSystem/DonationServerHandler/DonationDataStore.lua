@@ -49,54 +49,86 @@ function DonationDataStore:GetPlayerDonation(userId)
 	return PlayerDataCache[userIdStr] 
 end
 
-function DonationDataStore:UpdatePlayerDonation(player, amount)
+function DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
 	local userIdStr = "Player_" .. tostring(player.UserId)
+	
+	-- 🔥 ARCHITECT FIX: Cache info penting SEBELUM yield (UpdateAsync).
+	-- Jika pemain leave saat loading, object player akan terhapus dan error!
+	local safeUserId = tostring(player.UserId)
+	local safePlayerName = player.Name
+	local safeDisplayName = player.DisplayName
+	
+	local saveSuccess = false
+	local totalAmount = 0
 
-	-- 1. Update di Memory (Instant Feedback)
-	local cache = PlayerDataCache[userIdStr]
-	if cache then
-		cache.DisplayName = player.DisplayName
-		cache[DonationConfig.DONATION_FIELD] = (cache[DonationConfig.DONATION_FIELD] or 0) + amount
+	-- 1. Simpan ke Database asli (Synchronous agar bisa return sukses/gagal ke ProcessReceipt)
+	for attempt = 1, 3 do
+		local ok, err = pcall(function()
+			dataStore:UpdateAsync(userIdStr, function(current)
+				current = current or {
+					DisplayName = safeDisplayName,
+					["Donated - Studio"] = 0,
+					["Donated - Experience"] = 0,
+					ProcessedReceipts = {}
+				}
+				current.ProcessedReceipts = current.ProcessedReceipts or {}
+
+				-- IDEMPOTENSI: Jika receipt sudah ada di DataStore, abaikan penambahan amount
+				if receiptInfo and receiptInfo.PurchaseId then
+					if current.ProcessedReceipts[receiptInfo.PurchaseId] then
+						totalAmount = (current["Donated - Studio"] or 0) + (current["Donated - Experience"] or 0)
+						return current
+					end
+					current.ProcessedReceipts[receiptInfo.PurchaseId] = os.time()
+
+					-- Hapus receipt lama (3 hari) agar batas kuota DataStore tidak jebol
+					local now = os.time()
+					for pid, time in pairs(current.ProcessedReceipts) do
+						if now - time > 86400 * 3 then
+							current.ProcessedReceipts[pid] = nil
+						end
+					end
+				end
+
+				current.DisplayName = safeDisplayName
+				current[DonationConfig.DONATION_FIELD] = (current[DonationConfig.DONATION_FIELD] or 0) + amount
+				totalAmount = (current["Donated - Studio"] or 0) + (current["Donated - Experience"] or 0)
+
+				return current
+			end)
+		end)
+
+		if ok then
+			debugLog("DATASTORE", "Berhasil disimpan untuk", safePlayerName)
+			saveSuccess = true
+			break
+		else
+			task.wait(2)
+		end
 	end
 
-	-- 2. Simpan ke Database asli dan Papan Peringkat
-	task.spawn(function()
-		local totalAmount = 0
+	if saveSuccess then
+		-- Update Memory Cache
+		local cache = PlayerDataCache[userIdStr]
+		if cache then
+			cache.DisplayName = safeDisplayName
+			cache[DonationConfig.DONATION_FIELD] = (cache[DonationConfig.DONATION_FIELD] or 0) + amount
+		end
 
-		for attempt = 1, 3 do
-			local ok, err = pcall(function()
-				dataStore:UpdateAsync(userIdStr, function(current)
-					current = current or {
-						DisplayName = player.DisplayName,
-						["Donated - Studio"] = 0,
-						["Donated - Experience"] = 0,
-					}
-					current.DisplayName = player.DisplayName
-					current[DonationConfig.DONATION_FIELD] = (current[DonationConfig.DONATION_FIELD] or 0) + amount
-
-					-- Hitung total gabungan untuk papan
-					totalAmount = (current["Donated - Studio"] or 0) + (current["Donated - Experience"] or 0)
-
-					return current
+		-- 2. Papan Peringkat 3D (Dengan Sistem Retry Mandiri)
+		task.spawn(function()
+			local safeAmount = math.floor(totalAmount)
+			for attempt = 1, 3 do
+				local ok = pcall(function()
+					orderedDataStore:SetAsync(safeUserId, safeAmount)
 				end)
-			end)
-
-			if ok then
-				debugLog("DATASTORE", "Berhasil disimpan untuk", player.Name)
-
-				-- 🔥 ARCHITECT FIX: Setor Laporan ke Papan Peringkat 3D (OrderedDataStore)
-				pcall(function()
-					orderedDataStore:SetAsync(tostring(player.UserId), totalAmount)
-				end)
-
-				break
-			else
+				if ok then break end
 				task.wait(2)
 			end
-		end
-	end)
+		end)
+	end
 
-	return true
+	return saveSuccess
 end
 
 function DonationDataStore:CleanupPlayer(player)

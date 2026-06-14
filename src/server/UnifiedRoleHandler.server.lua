@@ -2,6 +2,10 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local DataStoreService = game:GetService("DataStoreService")
+local HttpService = game:GetService("HttpService")
+local ServerScriptService = game:GetService("ServerScriptService")
+
+local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 
 -- Load Systems
 local RoleSystem = require(ServerStorage:WaitForChild("Modules"):WaitForChild("RoleSystem"))
@@ -136,7 +140,8 @@ local function datastoreRetry(operation, maxAttempts)
 end
 
 local function saveTransaction(giverUserId, targetUserId, roleType, receiptInfo)
-	local key = string.format("txn_%d_%d_%d", giverUserId, targetUserId, os.time())
+	-- 🔥 FIX DATASTORE COLLISION & KEY LIMIT: Gunakan GUID saja (maksimal 50 karakter)
+	local key = string.format("txn_%s", HttpService:GenerateGUID(false))
 	return datastoreRetry(function()
 		transactionStore:SetAsync(key, {
 			giver       = giverUserId,
@@ -152,6 +157,9 @@ end
 -- REMOTE EVENT HANDLER
 -- ====================================
 giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
+	-- 🔥 ARCHITECT FIX: Rate Limiter Sentral
+	if not RemoteEventManager.checkRateLimit(player, "adminRoleAction") then return end
+
 	if type(requestData) ~= "table" then
 		warn("[UnifiedRole] Invalid request from", player.Name)
 		return
@@ -180,7 +188,17 @@ giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
 				return
 			end
 
-			local targetUserId = requestData.targetUserId
+			-- 🔥 FATAL SECURITY FIX: Cegah Type Mismatch Crash
+			local targetUserId = tonumber(requestData.targetUserId)
+			if not targetUserId then
+				giveRoleRemote:FireClient(player, {
+					source  = "AdminPanel",
+					success = false,
+					message = "Target User ID harus berupa angka valid!",
+				})
+				return
+			end
+
 			local roleType     = requestData.roleType
 			local targetPlayer = Players:GetPlayerByUserId(targetUserId)
 
@@ -291,7 +309,16 @@ giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
 				return
 			end
 
-			local targetUserId = requestData.targetUserId
+			-- 🔥 FATAL SECURITY FIX: Cegah Type Mismatch Crash di RemoveRole
+			local targetUserId = tonumber(requestData.targetUserId)
+			if not targetUserId then
+				giveRoleRemote:FireClient(player, {
+					source  = "AdminPanel",
+					success = false,
+					message = "Target User ID harus berupa angka valid!",
+				})
+				return
+			end
 			local targetPlayer = Players:GetPlayerByUserId(targetUserId)
 
 			if not targetPlayer then

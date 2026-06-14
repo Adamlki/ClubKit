@@ -17,6 +17,9 @@ local COOLDOWN_TIME = 1 -- Jeda 1 detik untuk setiap perintah admin
 local playerCooldowns = {}
 
 local function isSpamming(player)
+	-- 🔥 SECURITY FIX: Validasi tipe data sender untuk mencegah Error Crash
+	if not player or typeof(player) ~= "Instance" or not player:IsA("Player") then return true end
+
 	local lastRequest = playerCooldowns[player.UserId] or 0
 	local now = tick()
 	if now - lastRequest < COOLDOWN_TIME then

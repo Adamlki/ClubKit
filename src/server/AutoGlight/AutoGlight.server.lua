@@ -39,28 +39,6 @@ end
 task.defer(function() task.wait(2); foldersReady = true end)
 
 -- ============================================================
--- KONFIGURASI BEAT DETECTION (sama persis seperti versi client lama,
--- tapi sekarang jalan di SERVER — HP tidak kena beban sama sekali)
--- ============================================================
-local SAMPLE_RATE       = 1 / 120  -- sample 120x per detik
-local LOUDNESS_MAX      = 2000
-local SMOOTHING_ALPHA   = 0.35
-local HISTORY_SIZE      = 30
-local BEAT_THRESHOLD    = 0.30
-local BEAT_MIN_GAP      = 0.10
-local ADAPTIVE_MULT     = 0.12
-local ADAPTIVE_MIN      = 0.12
-local ADAPTIVE_MAX      = 0.70
-local BASS_SMOOTHING    = 0.30
-local BASS_ENERGY_DECAY = 0.78
-local BASS_PEAK_MULT    = 1.70
-local BASS_LONG_SIZE    = 90
-
--- Ganti warna setiap N beat sesuai intensitas bass
--- (sama logikanya seperti GlightBeatDetecter lama)
-local FALLBACK_INTV     = 0.45  -- ganti warna kalau lama tidak ada beat
-
--- ============================================================
 -- WARNA & MOTOR
 -- ============================================================
 local CHASE_RAINBOW = {
@@ -81,91 +59,12 @@ local PHASE_CONFIGS = {
 }
 
 -- ============================================================
--- RING BUFFER (sama persis seperti versi lama)
--- ============================================================
-local function newRingBuffer(size)
-	local data, head, count = table.create(size, 0), 1, 0
-	return {
-		push = function(v)
-			data[head] = v
-			head = (head % size) + 1
-			if count < size then count += 1 end
-		end,
-		avg = function()
-			if count == 0 then return 0 end
-			local s = 0
-			for i = 1, count do s += data[i] end
-			return s / count
-		end,
-		avgFiltered = function(minVal)
-			local s, c = 0, 0
-			for i = 1, count do
-				if data[i] > minVal then s += data[i]; c += 1 end
-			end
-			return c > 0 and (s / c) or 0
-		end,
-		size = function() return count end,
-		reset = function()
-			data = table.create(size, 0)
-			head = 1; count = 0
-		end,
-	}
-end
-
--- ============================================================
 -- STATE
 -- ============================================================
 local isPlaying       = false
 local soundPlaying    = false
 local colorChaseStep  = 0
-local AM_colorBeatCount = 0
-local lastBeatTime    = 0
-local lastColorTime   = 0
-local lastSampleTime  = 0
 local currentStagePhase = 0
-
-local smoothedLoudness = 0
-local bassAvgShort, bassAvgLong, bassEnergy, songBassLevel = 0, 0, 0, 0
-local loudnessBuf = newRingBuffer(HISTORY_SIZE)
-local bassLongBuf = newRingBuffer(BASS_LONG_SIZE)
-
-local function resetState()
-	loudnessBuf.reset(); bassLongBuf.reset()
-	smoothedLoudness = 0
-	bassAvgShort = 0; bassAvgLong = 0; bassEnergy = 0; songBassLevel = 0
-	AM_colorBeatCount = 0; lastBeatTime = 0; lastColorTime = 0; lastSampleTime = 0
-end
-
--- ============================================================
--- ADAPTIVE THRESHOLD (sama seperti versi lama)
--- ============================================================
-local function getAdaptiveThreshold()
-	if loudnessBuf.size() < 5 then return BEAT_THRESHOLD end
-	local avg = loudnessBuf.avg()
-	return math.clamp(avg + ADAPTIVE_MULT * avg, ADAPTIVE_MIN, ADAPTIVE_MAX)
-end
-
--- ============================================================
--- BASS DETECTION (sama seperti versi lama)
--- ============================================================
-local function updateBass(raw)
-	bassAvgShort = bassAvgShort + (raw - bassAvgShort) * BASS_SMOOTHING
-	bassAvgLong  = bassAvgLong  + (raw - bassAvgLong)  * 0.03
-	local surge  = math.max(0, bassAvgShort - bassAvgLong)
-	local normalized = math.clamp(surge / 0.20, 0, 1)
-
-	bassEnergy = bassEnergy * BASS_ENERGY_DECAY
-	if normalized > bassEnergy then bassEnergy = normalized end
-
-	local isBassHit = (surge > bassAvgLong * BASS_PEAK_MULT) and (raw > 0.25)
-
-	bassLongBuf.push(normalized)
-	if bassLongBuf.size() >= 20 then
-		songBassLevel = math.clamp(bassLongBuf.avgFiltered(0.08) * 2.2, 0, 1)
-	end
-
-	return bassEnergy, isBassHit, songBassLevel
-end
 
 -- ============================================================
 -- MOTOR & PHASE
@@ -218,10 +117,11 @@ end
 -- ============================================================
 -- STATIC COLOR LOOP — PENGGANTI BEAT LOOP (Sangat Ringan)
 -- ============================================================
-local function simpleColorLoop()
-	while isPlaying do
+local loopVersion = 0
+local function simpleColorLoop(version)
+	while isPlaying and loopVersion == version do
 		task.wait(0.5) -- Ganti warna setiap setengah detik secara konstan
-		if sound.IsPlaying then
+		if sound.IsPlaying and loopVersion == version then
 			nextColor()
 		end
 	end
@@ -234,12 +134,15 @@ local function onMusicStarted()
 	isPlaying = true
 	colorChaseStep = 0
 	currentStagePhase = 0
-	resetState()
+	
+	-- 🔥 FIX: Gunakan Loop Version agar thread lama otomatis mati jika musik di-restart cepat
+	loopVersion = loopVersion + 1
+	local version = loopVersion
+	
 	task.delay(0.3, function()
-		if isPlaying then
+		if isPlaying and loopVersion == version then
 			startAutoMove()
-			-- 🔥 ARCHITECT FIX: Gunakan loop statis ringan tanpa mendeteksi Audio Loudness (yang nilainya 0 di Server)
-			task.spawn(simpleColorLoop) 
+			task.spawn(simpleColorLoop, version) 
 		end
 	end)
 end

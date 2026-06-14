@@ -158,9 +158,19 @@ local function fetchDonationData()
 				local rawAmount = tostring(currentDonation.amount or currentDonation.jumlah or currentDonation.Jumlah or "0")
 				local rawMessage = tostring(currentDonation.message or currentDonation.pesan or currentDonation.Pesan or "")
 
+				local totalAmount = 0
+				for _, donation in ipairs(donationArray) do
+					local dName = tostring(donation.donator or donation.nama or donation.Nama or "Unknown")
+					if dName == rawDonator then
+						local amt = tonumber(donation.amount) or tonumber(donation.jumlah) or tonumber(donation.Jumlah) or 0
+						totalAmount = totalAmount + amt
+					end
+				end
+
 				local notifData = {
 					donator = rawDonator,
 					amount = rawAmount,
+					total = totalAmount,
 					message = rawMessage,
 					timestamp = os.time()
 				}

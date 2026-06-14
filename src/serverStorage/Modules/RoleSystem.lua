@@ -142,13 +142,16 @@ local function checkSingleGamepass(player, gamepassId, retryCount)
 		return false
 	end
 
+	-- 🔥 ARCHITECT FIX: Amankan UserId SEBELUM task.spawn/yield
+	local safeUserId = player.UserId
+
 	local result = false
 	local completed = false
 	local checkError = nil
 
 	task.spawn(function()
 		local success, hasPass = pcall(function()
-			return MarketplaceService:UserOwnsGamePassAsync(player.UserId, gamepassId)
+			return MarketplaceService:UserOwnsGamePassAsync(safeUserId, gamepassId)
 		end)
 
 		if success then
@@ -159,8 +162,8 @@ local function checkSingleGamepass(player, gamepassId, retryCount)
 		completed = true
 	end)
 
-	local startTime = tick()
-	while not completed and (tick() - startTime) < RoleSystem.Config.GAMEPASS_CHECK_TIMEOUT do
+	local startTime = os.clock()
+	while not completed and (os.clock() - startTime) < RoleSystem.Config.GAMEPASS_CHECK_TIMEOUT do
 		task.wait(0.1)
 	end
 
@@ -213,7 +216,7 @@ function RoleSystem:CachePlayerOwnership(player)
 		VVIP = false,
 		VIP = false,
 		GivenPass = "None",
-		CheckedAt = tick()
+		CheckedAt = os.clock()
 	}
 
 	-- 1. Check Given Pass dari DataStore (sync - cepat)
@@ -298,12 +301,12 @@ function RoleSystem:UpdateOwnershipCache(player, gamepassType, owned)
 			VVIP = false,
 			VIP = false,
 			GivenPass = "None",
-			CheckedAt = tick()
+			CheckedAt = os.clock()
 		}
 	end
 
 	playerOwnershipCache[userId][gamepassType] = owned
-	playerOwnershipCache[userId].CheckedAt = tick()
+	playerOwnershipCache[userId].CheckedAt = os.clock()
 end
 
 function RoleSystem:InvalidateOwnershipCache(userId)
@@ -400,7 +403,7 @@ function RoleSystem:GivePassToPlayer(targetUserId, passType, giverUserId)
 		passType  = passType,
 		givenBy   = giverUserId,
 		givenAt   = os.time(),
-		timestamp = tick()
+		timestamp = os.time()
 	}
 
 	local success = datastoreSetAsync(key, data)

@@ -21,7 +21,7 @@ local function isSpamming(player)
 	if not player or typeof(player) ~= "Instance" or not player:IsA("Player") then return true end
 
 	local lastRequest = playerCooldowns[player.UserId] or 0
-	local now = tick()
+	local now = os.clock()
 	if now - lastRequest < COOLDOWN_TIME then
 		return true -- Ketahuan spamming!
 	end
@@ -71,7 +71,7 @@ end
 -- [PERBAIKAN] MENGIRIM TEMPLATE WARNA KE CLIENT (ADMIN PANEL)
 -- =========================================================
 GetColorTemplatesRemote.OnServerInvoke = function(sender)
-	if not sender then return {} end
+	if not sender or isSpamming(sender) then return {} end
 
 	local templates = {}
 	-- Langsung ambil dari TeamGroups dan kirim format brickColorName
@@ -86,7 +86,7 @@ GetColorTemplatesRemote.OnServerInvoke = function(sender)
 end
 
 GetTeamListRemote.OnServerInvoke = function(sender)
-	if not sender or not isAdminOrMod(sender) then return {} end
+	if not sender or isSpamming(sender) or not isAdminOrMod(sender) then return {} end
 	return CustomTeams.GetTeamList()
 end
 
@@ -106,7 +106,14 @@ TeamActionRemote.OnServerEvent:Connect(function(sender, data)
 	local action = data.action
 
 	if action == "MovePlayer" then
-		local target = Players:GetPlayerByUserId(data.targetUserId)
+		-- 🔥 SECURITY FIX: Validasi type data agar tidak crash saat di-exploit
+		local targetId = tonumber(data.targetUserId)
+		if not targetId then
+			TeamActionResultRemote:FireClient(sender, { success=false, message="ID Player tidak valid!" })
+			return
+		end
+		
+		local target = Players:GetPlayerByUserId(targetId)
 		if not target then
 			TeamActionResultRemote:FireClient(sender, { success=false, message="Player tidak ditemukan!" })
 			return

@@ -76,6 +76,20 @@ function GlobalEffectManager:_setupRemotes()
 		self.NotificationEvent.Parent = GlobalEffectRemotes
 	end
 	
+	self.ToggleNotificationEvent = GlobalEffectRemotes:FindFirstChild("ToggleNotification")
+	if not self.ToggleNotificationEvent then
+		self.ToggleNotificationEvent = Instance.new("RemoteEvent")
+		self.ToggleNotificationEvent.Name = "ToggleNotification"
+		self.ToggleNotificationEvent.Parent = GlobalEffectRemotes
+	end
+
+	self.ToggleFollowEvent = GlobalEffectRemotes:FindFirstChild("ToggleFollow")
+	if not self.ToggleFollowEvent then
+		self.ToggleFollowEvent = Instance.new("RemoteEvent")
+		self.ToggleFollowEvent.Name = "ToggleFollow"
+		self.ToggleFollowEvent.Parent = GlobalEffectRemotes
+	end
+	
 	self.CheckOwnerFunction.OnServerInvoke = function(player)
 		for _, id in ipairs(self.RoleSystem.Config.OwnerIds) do
 			if player.UserId == id then
@@ -87,6 +101,17 @@ function GlobalEffectManager:_setupRemotes()
 	
 	self.ToggleEffectEvent.OnServerEvent:Connect(function(player, effectName, isActive)
 		self:_handleToggleEffect(player, effectName, isActive)
+	end)
+	
+	self.ToggleFollowEvent.OnServerEvent:Connect(function(player, isFollowing)
+		player:SetAttribute("FollowGlobalEffect", isFollowing)
+		self:UpdatePlayerEffects(player)
+		
+		if isFollowing and self.ActiveEffects.Camera360 then
+			self.CameraEffectEvent:FireClient(player, true)
+		elseif not isFollowing and self.ActiveEffects.Camera360 then
+			self.CameraEffectEvent:FireClient(player, false)
+		end
 	end)
 end
 
@@ -109,11 +134,37 @@ function GlobalEffectManager:_handleToggleEffect(player, effectName, isActive)
 		return
 	end
 
+	local wasActive = false
+	for _, state in pairs(self.ActiveEffects) do
+		if state then wasActive = true end
+	end
+
 	if self.ActiveEffects[effectName] ~= nil then
 		self.ActiveEffects[effectName] = isActive
 		
+		local isNowActive = false
+		for _, state in pairs(self.ActiveEffects) do
+			if state then isNowActive = true end
+		end
+
+		if not wasActive and isNowActive then
+			for _, p in ipairs(Players:GetPlayers()) do
+				p:SetAttribute("FollowGlobalEffect", true)
+			end
+			self.ToggleNotificationEvent:FireAllClients(true)
+		elseif wasActive and not isNowActive then
+			self.ToggleNotificationEvent:FireAllClients(false)
+		end
+		
 		if effectName == "Camera360" then
-			self.CameraEffectEvent:FireAllClients(isActive)
+			-- Send 360 only to those following
+			for _, p in ipairs(Players:GetPlayers()) do
+				local isFollowing = p:GetAttribute("FollowGlobalEffect")
+				if isFollowing == nil then isFollowing = true end
+				if isFollowing then
+					self.CameraEffectEvent:FireClient(p, isActive)
+				end
+			end
 		else
 			self:UpdateAllPlayers()
 		end
@@ -127,6 +178,11 @@ function GlobalEffectManager:ClearAllEffects()
 	self.ActiveEffects.Floating = false
 	self.ActiveEffects.Fly = false
 	self.ActiveEffects.Wing = false
+	
+	self.ToggleNotificationEvent:FireAllClients(false)
+	for _, p in ipairs(Players:GetPlayers()) do
+		p:SetAttribute("FollowGlobalEffect", true)
+	end
 	
 	self:UpdateAllPlayers()
 	
@@ -197,15 +253,7 @@ function GlobalEffectManager:_onCharacterAdded(character)
 	
 	if not character.Parent or not player.Character or player.Character ~= character then return end
 	
-	if self.ActiveEffects.Floating then
-		state:ApplyFloating()
-	end
-	if self.ActiveEffects.Fly then
-		state:ApplyFly()
-	end
-	if self.ActiveEffects.Wing then
-		state:ApplyWing()
-	end
+	self:UpdatePlayerEffects(player)
 end
 
 function GlobalEffectManager:_setupEvents()
@@ -281,36 +329,48 @@ end
 
 function GlobalEffectManager:UpdateAllPlayers()
 	for _, player in ipairs(Players:GetPlayers()) do
-		if player.Character then
-			local state = self:GetPlayerState(player)
-			
-			if self.ActiveEffects.Floating then
-				if not state.FloatingTrack then
-					state:ApplyFloating()
-				end
-			else
-				if state.FloatingTrack then
-					state:RemoveFloating()
-				end
-				state:ResumeDance()
-			end
+		self:UpdatePlayerEffects(player)
+	end
+end
 
-			if self.ActiveEffects.Fly then
-				if not state.FlyTrack then
-					state:ApplyFly()
-				end
-			else
-				if state.FlyTrack then
-					state:RemoveFly()
-				end
-				state:ResumeDance()
-			end
+function GlobalEffectManager:UpdatePlayerEffects(player)
+	if player.Character then
+		local state = self:GetPlayerState(player)
+		local isFollowing = player:GetAttribute("FollowGlobalEffect")
+		if isFollowing == nil then isFollowing = true end
+		
+		local shouldFloating = self.ActiveEffects.Floating and isFollowing
+		local shouldFly = self.ActiveEffects.Fly and isFollowing
+		local shouldWing = self.ActiveEffects.Wing and isFollowing
 
-			if self.ActiveEffects.Wing then
-				state:ApplyWing()
-			else
-				state:RemoveWing()
+		if shouldFloating then
+			if not state.FloatingTrack then
+				state:ApplyFloating()
 			end
+		else
+			if state.FloatingTrack then
+				state:RemoveFloating()
+			end
+		end
+
+		if shouldFly then
+			if not state.FlyTrack then
+				state:ApplyFly()
+			end
+		else
+			if state.FlyTrack then
+				state:RemoveFly()
+			end
+		end
+		
+		if not shouldFloating and not shouldFly then
+			state:ResumeDance()
+		end
+
+		if shouldWing then
+			state:ApplyWing()
+		else
+			state:RemoveWing()
 		end
 	end
 end

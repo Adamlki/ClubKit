@@ -13,7 +13,6 @@ local Config             = require(script.Config)
 local DebugSystem        = require(script.DebugSystem)
 local OverheadManager    = require(script.OverheadManager)
 local NametagDisabler    = require(script.NametagDisabler)
-local DonationRankSystem = require(script.RobuxRankSystem)
 local DonaturRankSystem  = require(script.DonaturRankSystem)
 
 local RoleSystem         = require(ServerStorage.Modules.RoleSystem)
@@ -28,18 +27,12 @@ TitleDataManager:Init(Config)
 
 DonaturRankSystem:Init(Config)
 
-DonationRankSystem.Config.DATASTORE_NAME     = Config.DONATION_DATASTORE_NAME
-DonationRankSystem.Config.UPDATE_INTERVAL    = Config.DONATION_RANK_UPDATE_INTERVAL
-DonationRankSystem.Config.TOP_RANKS_TO_TRACK = Config.DONATION_TOP_RANKS
-DonationRankSystem.Config.DEBUG_ENABLED      = Config.DEBUG_ENABLED
-DonationRankSystem:Init()
-
 OverheadManager:Init(
 	Config,
 	RoleSystem,
 	LevelSystem,
 	TitleDataManager,
-	DonationRankSystem,
+	nil, -- Old DonationRankSystem removed
 	DonaturRankSystem
 )
 
@@ -147,13 +140,7 @@ LevelSystem.LevelUp:Connect(function(player, oldLevel, newLevel)
 	OverheadManager:UpdateLevel(player, newLevel)
 end)
 
--- Auto donation rank changes (TopRobux)
-DonationRankSystem.RankChanged:Connect(function(userId, oldRank, newRank)
-	local player = Players:GetPlayerByUserId(userId)
-	if player then
-		OverheadManager:UpdateDonationRank(player, oldRank, newRank)
-	end
-end)
+-- Auto donation rank changes now handled by _G.LeaderboardControl checks in OverheadManager
 
 -- ====================================
 -- REMOTE EVENTS SETUP

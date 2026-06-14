@@ -30,7 +30,7 @@ end
 SaweriaEffectEvent.Event:Connect(function(donorData, amount)
 	if amount >= 50000 and amount <= 199999 then
 		local donorName = tostring(donorData or "Anonymous")
-		local userId = 1
+		local userId = 156
 
 		if userIdCache[donorName] then
 			userId = userIdCache[donorName]

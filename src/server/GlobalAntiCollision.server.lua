@@ -25,7 +25,6 @@ local function optimizeHumanoid(humanoid)
 		Enum.HumanoidStateType.Ragdoll,
 		-- GettingUp DIHAPUS agar fitur "Pose" di EmoteHandler tidak rusak!
 		Enum.HumanoidStateType.Flying,
-		Enum.HumanoidStateType.Seated, -- Matikan jika game Anda tidak ada kursi
 	}
 
 	for _, state in ipairs(disabledStates) do

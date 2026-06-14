@@ -141,7 +141,8 @@ end
 
 local function saveTransaction(giverUserId, targetUserId, roleType, receiptInfo)
 	-- 🔥 FIX DATASTORE COLLISION & KEY LIMIT: Gunakan GUID saja (maksimal 50 karakter)
-	local key = string.format("txn_%s", HttpService:GenerateGUID(false))
+	local uniqueId = string.sub(HttpService:GenerateGUID(false), 1, 8)
+	local key = string.format("txn_%s", uniqueId)
 	return datastoreRetry(function()
 		transactionStore:SetAsync(key, {
 			giver       = giverUserId,

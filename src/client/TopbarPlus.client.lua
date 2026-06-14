@@ -25,7 +25,7 @@ local CONFIG = {
 	InitDelay = 2,
 
 	UseStroke       = false,
-	StrokeThickness = 1,
+	StrokeThickness = 0,
 	StrokeColor     = Color3.fromRGB(255, 255, 255),
 
 	UseGradient   = false,

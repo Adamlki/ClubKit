@@ -262,10 +262,7 @@ local function updateEditableFrame(editableFrame, player, titleData)
 		end
 	end
 
-	-- Fallback jika _G belum siap saat player baru masuk
-	if robuxRank == nil and DonationRankSystem then
-		robuxRank = DonationRankSystem:GetPlayerRank(player.UserId)
-	end
+	-- No more fallback to old DonationRankSystem
 
 	local hasRobuxRank = robuxRank ~= nil and robuxRank >= 1 and robuxRank <= CONFIG.DONATION_TOP_RANKS
 

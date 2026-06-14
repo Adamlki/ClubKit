@@ -301,8 +301,9 @@ module.Dances = {
 	["Spongebob Shuffle"] = "rbxassetid://77558928620404",
 	["Special Zombie Dance"] = "rbxassetid://117708570576445",
 	["WISH NLE"] = "rbxassetid://82501710348206",
-	["NLE CHOPPA"] = "rbxassetid://74144258832057",
+	["NLE CHOPPA"] = "rbxassetid://138847072995537",
 	["POP DAT THANG"] = "rbxassetid://120615013035083",
+	["DropKick"] = "rbxassetid://133566007754001",
 	-- Add your dance animation IDs here
 }
 

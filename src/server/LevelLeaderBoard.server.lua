@@ -30,17 +30,6 @@ for _, player in ipairs(Players:GetPlayers()) do
 	end)
 end
 
-Players.PlayerRemoving:Connect(function(player)
-	debugPrint("Player leaving:", player.Name)
-	pcall(function()
-		if LevelSystem.CleanupPlayer then
-			LevelSystem:CleanupPlayer(player)
-		elseif LevelSystem.SavePlayerLevel then
-			LevelSystem:SavePlayerLevel(player, true)
-		end
-	end)
-end)
-
 -- ====================================
 -- AUTO-SAVE & REFRESH LOOP
 -- ====================================
@@ -66,42 +55,4 @@ task.spawn(function()
 		end
 		task.wait(60) 
 	end
-end)
-
--- ====================================
--- SHUTDOWN HANDLER
--- ====================================
-game:BindToClose(function()
-	local players = Players:GetPlayers()
-	local totalPlayers = #players
-	if totalPlayers == 0 then return end
-	
-	local savedCount = 0
-	local bindable = Instance.new("BindableEvent")
-	local isFinished = false -- 🔥 FIX RACE CONDITION: Cegah Double Fire
-	
-	for _, player in ipairs(players) do
-		task.spawn(function()
-			pcall(function() LevelSystem:SavePlayerLevel(player, true) end)
-			savedCount += 1
-			if savedCount >= totalPlayers then
-				if not isFinished then
-					isFinished = true
-					bindable:Fire()
-				end
-			end
-		end)
-	end
-	
-	-- Tunggu maksimal 25 detik (Batas Roblox adalah 30 detik)
-	task.delay(25, function()
-		if not isFinished then
-			isFinished = true
-			bindable:Fire()
-		end
-	end)
-	
-	bindable.Event:Wait()
-	bindable:Destroy()
-	debugPrint("All player levels saved successfully on shutdown!")
 end)

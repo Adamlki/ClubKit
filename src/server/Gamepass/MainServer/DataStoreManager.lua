@@ -23,7 +23,8 @@ local function processQueue()
 		
 		local success = pcall(function()
 			-- 🔥 ARCHITECT FIX: Tambahkan GUID agar key tidak tertimpa di detik yang sama
-			local key = "log_" .. os.time() .. "_" .. taskData.giver .. "_" .. HttpService:GenerateGUID(false)
+			local uniqueId = string.sub(HttpService:GenerateGUID(false), 1, 8)
+			local key = "log_" .. os.time() .. "_" .. taskData.giver .. "_" .. uniqueId
 			DataStoreManager.TransactionLogStore:SetAsync(key, taskData, 2592000)
 		end)
 
@@ -50,7 +51,8 @@ end
 function DataStoreManager:LogFailedGive(giverUserId, targetUserId, targetName, gamepassType, reason)
 	local success = pcall(function()
 		-- 🔥 ARCHITECT FIX: Gunakan GUID untuk kunci gagal agar log tidak tertimpa
-		local key = "failed_" .. giverUserId .. "_" .. os.time() .. "_" .. HttpService:GenerateGUID(false)
+		local uniqueId = string.sub(HttpService:GenerateGUID(false), 1, 8)
+		local key = "failed_" .. giverUserId .. "_" .. os.time() .. "_" .. uniqueId
 		local data = {
 			giver = giverUserId,
 			target = targetUserId,
@@ -95,7 +97,8 @@ game:BindToClose(function()
 		while #transactionQueue > 0 do
 			local taskData = table.remove(transactionQueue, 1)
 			pcall(function()
-				local key = "log_" .. os.time() .. "_" .. taskData.giver .. "_" .. HttpService:GenerateGUID(false)
+				local uniqueId = string.sub(HttpService:GenerateGUID(false), 1, 8)
+				local key = "log_" .. os.time() .. "_" .. taskData.giver .. "_" .. uniqueId
 				DataStoreManager.TransactionLogStore:SetAsync(key, taskData, 2592000)
 			end)
 		end

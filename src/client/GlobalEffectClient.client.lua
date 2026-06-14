@@ -37,10 +37,42 @@ local GlobalEffectGui = PlayerGui:WaitForChild("GlobalEffectGui", 10)
 local isOwner = false
 if GlobalEffectGui then
 	isOwner = CheckOwnerFunction:InvokeServer()
+	
+	local MainFrame = GlobalEffectGui:WaitForChild("MainFrame")
+	local NotifikasiFrame = GlobalEffectGui:WaitForChild("NotifikasiFrame")
+	
+	local ToggleNotificationEvent = GlobalEffectRemotes:WaitForChild("ToggleNotification")
+	local ToggleFollowEvent = GlobalEffectRemotes:WaitForChild("ToggleFollow")
+	
+	local isFollowing = true
+	local FollowBtn = NotifikasiFrame:WaitForChild("FollowBtn")
+	local FollowBtnText = FollowBtn:WaitForChild("TextLabel")
+	
+	NotifikasiFrame.Visible = false
+	
+	FollowBtn.MouseButton1Click:Connect(function()
+		isFollowing = not isFollowing
+		if isFollowing then
+			FollowBtnText.Text = "Unfollow"
+		else
+			FollowBtnText.Text = "Follow"
+		end
+		ToggleFollowEvent:FireServer(isFollowing)
+	end)
+	
+	ToggleNotificationEvent.OnClientEvent:Connect(function(show)
+		if show then
+			isFollowing = true
+			FollowBtnText.Text = "Unfollow"
+			NotifikasiFrame.Visible = true
+		else
+			NotifikasiFrame.Visible = false
+		end
+	end)
+
 	if not isOwner then
-		GlobalEffectGui:Destroy()
+		MainFrame:Destroy()
 	else
-		local MainFrame = GlobalEffectGui:WaitForChild("MainFrame")
 		local BtnFrame = MainFrame:WaitForChild("BtnFrame")
 		
 		local Btn360 = BtnFrame:WaitForChild("360Btn")

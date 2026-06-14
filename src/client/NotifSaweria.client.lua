@@ -33,9 +33,10 @@ if not notifGui then
 end
 
 local notifFrame = notifGui:WaitForChild("NotifFrame")
-local donatorLabel = notifFrame:WaitForChild("DonatorLabel")
+local usernameLabel = notifFrame:WaitForChild("UsernameLabel")
 local amountLabel = notifFrame:WaitForChild("AmountLabel")
 local messageLabel = notifFrame:WaitForChild("MessageLabel")
+local profilAvaLabel = notifFrame:WaitForChild("ProfilAvaLabel")
 
 -- Kumpulkan semua elemen GUI yang perlu di-fade
 local guiObjectsToFade = {}
@@ -78,14 +79,14 @@ debugPrint("✅ Donation UI Client Ready! (Versi Pure Fade)")
 -- ========================================
 -- FUNGSI FORMAT RUPIAH MANUAL (FIX ERROR %d)
 -- ========================================
-local function formatRupiah(amount)
+local function formatIDR(amount)
 	local formatted = tostring(math.floor(amount))
 	local k
 	while true do  
 		formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1.%2')
 		if k == 0 then break end
 	end
-	return "Rp " .. formatted
+	return "IDR " .. formatted
 end
 
 -- ========================================
@@ -159,15 +160,28 @@ donationEvent.OnClientEvent:Connect(function(data)
 	debugPrint("🔔 Menerima sinyal donasi dari:", data.donator, "| Rp", data.amount)
 
 	-- Update Data
-	donatorLabel.Text = "👤 " .. data.donator
-	amountLabel.Text = "💵 " .. formatRupiah(tonumber(data.amount) or 0)
+	usernameLabel.Text = "@" .. data.donator
+	amountLabel.Text = "Saweria : " .. formatIDR(tonumber(data.amount) or 0) .. " | Total : " .. formatIDR(tonumber(data.total) or tonumber(data.amount) or 0)
 
 	if data.message and data.message ~= "" and data.message ~= "N/A" then
-		messageLabel.Text = '💬 "' .. data.message .. '"'
+		messageLabel.Text = "Mssg : " .. data.message
 		messageLabel.Visible = true
 	else
 		messageLabel.Visible = false
 	end
+
+	-- Avatar Fetching
+	profilAvaLabel.Image = "rbxthumb://type=AvatarHeadShot&id=156&w=150&h=150"
+	task.spawn(function()
+		local success, userId = pcall(function()
+			return Players:GetUserIdFromNameAsync(data.donator)
+		end)
+		if success and userId then
+			if currentNotifId == thisNotifId then
+				profilAvaLabel.Image = "rbxthumb://type=AvatarHeadShot&id=" .. userId .. "&w=150&h=150"
+			end
+		end
+	end)
 
 	notifFrame.Visible = true
 	pcall(playDonationSound)

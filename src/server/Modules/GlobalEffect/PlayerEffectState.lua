@@ -19,6 +19,7 @@ function PlayerEffectState.new(player, config, animationRegistry, notificationEv
 	self.FlyAlignOrientation = nil
 	self.EquippedWing = nil
 	self.SuspendedDanceTracks = nil
+	self.ToolBlockConnection = nil
 	
 	-- Build lookup set of all registered dance and pose numeric IDs for quick check
 	self.RegisteredAnimIds = {}
@@ -56,7 +57,7 @@ function PlayerEffectState:_getItemOffset(itemName, torsoType)
 end
 
 function PlayerEffectState:ForceUnequipTools()
-	if not self.Player then return end
+	if not self.Player or typeof(self.Player) ~= "Instance" or not self.Player.Parent then return end
 	local char = self.Player.Character
 	if not char then return end
 	local backpack = self.Player:FindFirstChild("Backpack")
@@ -76,7 +77,7 @@ function PlayerEffectState:ForceUnequipTools()
 end
 
 function PlayerEffectState:SuspendDance()
-	if not self.Player then return end
+	if not self.Player or typeof(self.Player) ~= "Instance" or not self.Player.Parent then return end
 	local char = self.Player.Character
 	if not char then return end
 	local humanoid = char:FindFirstChild("Humanoid")
@@ -133,11 +134,39 @@ function PlayerEffectState:SuspendDance()
 end
 
 function PlayerEffectState:ResumeDance()
-	if not self.Player then return end
+	if not self.Player or typeof(self.Player) ~= "Instance" or not self.Player.Parent then return end
 	local char = self.Player.Character
 	if not char then return end
 	
 	char:SetAttribute("GlobalEffectActive", nil)
+	
+	if self.ToolBlockConnection then
+		self.ToolBlockConnection:Disconnect()
+		self.ToolBlockConnection = nil
+	end
+	
+	if self.SuspendedDanceTracks then
+		local humanoid = char:FindFirstChild("Humanoid")
+		local animator = humanoid and humanoid:FindFirstChild("Animator")
+		
+		if animator then
+			for _, danceData in ipairs(self.SuspendedDanceTracks) do
+				local anim = Instance.new("Animation")
+				anim.AnimationId = danceData.AnimationId
+				local track = animator:LoadAnimation(anim)
+				track:Play()
+				track:AdjustWeight(danceData.Weight)
+				track:AdjustSpeed(danceData.Speed)
+				
+				task.defer(function()
+					if track.IsPlaying then
+						track.TimePosition = danceData.TimePosition
+					end
+				end)
+			end
+		end
+	end
+	
 	self.SuspendedDanceTracks = nil
 end
 
@@ -155,7 +184,7 @@ function PlayerEffectState:StopCustomAnimations()
 end
 
 function PlayerEffectState:ApplyFloating()
-	if not self.Player then return end
+	if not self.Player or typeof(self.Player) ~= "Instance" or not self.Player.Parent then return end
 	local char = self.Player.Character
 	if not char then return end
 	local humanoid = char:FindFirstChild("Humanoid")
@@ -167,6 +196,22 @@ function PlayerEffectState:ApplyFloating()
 	
 	self:SuspendDance()
 	char:SetAttribute("GlobalEffectActive", true)
+
+	if not self.ToolBlockConnection then
+		self.ToolBlockConnection = char.ChildAdded:Connect(function(child)
+			if child:IsA("Tool") then
+				if not char:GetAttribute("GlobalEffectActive") then return end
+				task.defer(function()
+					if self.Player and self.Player:FindFirstChild("Backpack") then
+						child.Parent = self.Player.Backpack
+						if self.NotificationEvent then
+							self.NotificationEvent:FireClient(self.Player, "Efek Aktif", "Alat dikunci saat terbang!", 3)
+						end
+					end
+				end)
+			end
+		end)
+	end
 
 	local anim = Instance.new("Animation")
 	anim.AnimationId = self.Config.FloatingAnimationId
@@ -187,7 +232,7 @@ function PlayerEffectState:RemoveFloating()
 end
 
 function PlayerEffectState:ApplyFly()
-	if not self.Player then return end
+	if not self.Player or typeof(self.Player) ~= "Instance" or not self.Player.Parent then return end
 	local char = self.Player.Character
 	if not char then return end
 	local humanoid = char:FindFirstChild("Humanoid")
@@ -200,6 +245,22 @@ function PlayerEffectState:ApplyFly()
 
 	self:SuspendDance()
 	char:SetAttribute("GlobalEffectActive", true)
+
+	if not self.ToolBlockConnection then
+		self.ToolBlockConnection = char.ChildAdded:Connect(function(child)
+			if child:IsA("Tool") then
+				if not char:GetAttribute("GlobalEffectActive") then return end
+				task.defer(function()
+					if self.Player and self.Player:FindFirstChild("Backpack") then
+						child.Parent = self.Player.Backpack
+						if self.NotificationEvent then
+							self.NotificationEvent:FireClient(self.Player, "Efek Aktif", "Alat dikunci saat terbang!", 3)
+						end
+					end
+				end)
+			end
+		end)
+	end
 
 	local anim = Instance.new("Animation")
 	anim.AnimationId = self.Config.FlyAnimationId
@@ -220,7 +281,19 @@ function PlayerEffectState:ApplyFly()
 		alignPos.Name = "GlobalFlyAlignPosition"
 		alignPos.Mode = Enum.PositionAlignmentMode.OneAttachment
 		alignPos.Attachment0 = attachment
-		alignPos.Position = rootPart.Position + Vector3.new(0, self.Config.FlyHeight, 0)
+		
+		local targetY = self.Config.FlyHeight
+		local rayParams = RaycastParams.new()
+		rayParams.FilterDescendantsInstances = {char}
+		rayParams.FilterType = Enum.RaycastFilterType.Exclude
+		
+		local rayResult = workspace:Raycast(rootPart.Position, Vector3.new(0, targetY + 2, 0), rayParams)
+		if rayResult then
+			local safeDistance = rayResult.Distance - 3
+			targetY = math.max(0, safeDistance)
+		end
+		
+		alignPos.Position = rootPart.Position + Vector3.new(0, targetY, 0)
 		alignPos.MaxForce = 1000000
 		alignPos.MaxVelocity = self.Config.FlySpeed
 		alignPos.Responsiveness = 200
@@ -260,7 +333,7 @@ function PlayerEffectState:RemoveFly()
 		self.FlyTrack = nil
 	end
 	
-	if not self.Player then return end
+	if not self.Player or typeof(self.Player) ~= "Instance" or not self.Player.Parent then return end
 	local char = self.Player.Character
 	if char then
 		local humanoid = char:FindFirstChild("Humanoid")
@@ -278,7 +351,7 @@ function PlayerEffectState:RemoveFly()
 end
 
 function PlayerEffectState:ApplyWing()
-	if not self.Player then return end
+	if not self.Player or typeof(self.Player) ~= "Instance" or not self.Player.Parent then return end
 	local char = self.Player.Character
 	if not char then return end
 
@@ -328,19 +401,20 @@ function PlayerEffectState:ApplyWing()
 	end
 
 	if itemHandle then
+		local offset = self:_getItemOffset(ItemModel.Name, torso.Name)
+		itemHandle.CFrame = torso.CFrame * offset
+
 		local weld = Instance.new("WeldConstraint")
 		weld.Part0 = torso
 		weld.Part1 = itemHandle
 		weld.Parent = itemHandle
-
-		local offset = self:_getItemOffset(ItemModel.Name, torso.Name)
-		itemHandle.CFrame = torso.CFrame * offset
 	end
 
 	for _, part in ipairs(item:GetDescendants()) do
 		if part:IsA("BasePart") then
 			part.CanCollide = false
 			part.Anchored = false
+			part.Massless = true
 		end
 	end
 
@@ -356,7 +430,12 @@ function PlayerEffectState:RemoveWing()
 end
 
 function PlayerEffectState:Destroy()
-	if not self.Player then return end
+	if self.ToolBlockConnection then
+		self.ToolBlockConnection:Disconnect()
+		self.ToolBlockConnection = nil
+	end
+
+	if not self.Player or typeof(self.Player) ~= "Instance" or not self.Player.Parent then return end
 	self:StopCustomAnimations()
 	self:RemoveFly()
 	self:RemoveWing()

@@ -40,10 +40,10 @@ local CONFIG = {
 -- PER-ICON CONFIG
 -- ============================================================
 local ICON_CONFIGS = {
-	Menu      = { enabled = true, label = "Menu",     order = 1 },
-	Dance     = { enabled = true, label = "Dance",    order = 2 },
-	Music     = { enabled = true, label = "Music",    order = 3 },
-	Gamepass  = { enabled = true, label = "Shop",     order = 5 }, -- Shop di luar menu
+	Menu      = { enabled = true, image = "rbxassetid://87603332567027",  label = "Menu", order = 1 },
+	Dance     = { enabled = true, image = "rbxassetid://113394514826547", label = "", order = 2 },
+	Music     = { enabled = true, image = "rbxassetid://123643550590893", label = "", order = 3 },
+	Gamepass  = { enabled = true, image = "rbxassetid://140276937557646", label = "", order = 4 }, -- Shop di luar menu
 
 	-- Item di dalam Menu:
 	Broadcast = { enabled = true, label = "BC"       },

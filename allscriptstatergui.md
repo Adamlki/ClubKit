@@ -3922,26 +3922,46 @@ end
 -- ============================================================
 -- TERIMA EVENT DARI SERVER
 -- ============================================================
+local isPlayingCinematic = false
+local cinematicQueue = {}
+
+local function processCinematicQueue()
+	if isPlayingCinematic or #cinematicQueue == 0 then return end
+	isPlayingCinematic = true
+
+	local donationData = table.remove(cinematicQueue, 1)
+
+	task.spawn(playSound)
+
+	local donorPlayer = Players:GetPlayerByUserId(donationData.donorUserId)
+	if donorPlayer then
+		local character = donorPlayer.Character
+		if character and character:FindFirstChild("HumanoidRootPart") then
+			showSkip(function() skipRequested = true end)
+			startOrbitCamera(character, donationData.cinematicDuration or 8, function()
+				task.spawn(hideSkip)
+			end)
+		end
+	end
+
+	task.spawn(function()
+		showCinematic(donationData)
+	end)
+
+	-- Tunggu durasi cinematic selesai sebelum lanjut ke antrean berikutnya
+	task.delay(donationData.cinematicDuration or 8, function()
+		isPlayingCinematic = false
+		processCinematicQueue()
+	end)
+end
+
 CinematicRemote.OnClientEvent:Connect(function(donationData)
 	if not donationData or not donationData.donorName then return end
 
 	if donationData.useCinematic then
-		task.spawn(playSound)
-
-		local donorPlayer = Players:GetPlayerByUserId(donationData.donorUserId)
-		if donorPlayer then
-			local character = donorPlayer.Character
-			if character and character:FindFirstChild("HumanoidRootPart") then
-				showSkip(function() skipRequested = true end)
-				startOrbitCamera(character, donationData.cinematicDuration or 8, function()
-					task.spawn(hideSkip)
-				end)
-			end
-		end
-
-		task.spawn(function()
-			showCinematic(donationData)
-		end)
+		-- Masukkan ke antrean
+		table.insert(cinematicQueue, donationData)
+		processCinematicQueue()
 	end
 end)
 

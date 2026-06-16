@@ -68,6 +68,16 @@ local function onCharacterAdded(player, character)
 		if player and player.Parent and character and character.Parent then
 			OverheadManager:UpdateTeam(player)
 		end
+
+		-- 🔥 ARCHITECT FIX: Reload data Donasi & Saweria setelah beberapa detik
+		-- Seringkali saat player baru join, data Leaderboard/Saweria belum siap
+		-- sehingga label "Top Donate" tidak muncul. Ini akan me-refresh label tersebut.
+		task.wait(3.5)
+		if player and player.Parent and character and character.Parent then
+			if OverheadManager.UpdateDonationRank then
+				OverheadManager:UpdateDonationRank(player, nil, nil)
+			end
+		end
 	end)
 
 	character.AncestryChanged:Connect(function(_, parent)

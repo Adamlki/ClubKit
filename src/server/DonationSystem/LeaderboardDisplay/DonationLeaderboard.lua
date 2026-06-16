@@ -14,14 +14,21 @@ local userNameCache = {}
 
 local function getPlayerName(userId)
 	if userNameCache[userId] then return userNameCache[userId] end
-	local success, name = pcall(function()
-		return Players:GetNameFromUserIdAsync(userId)
+	
+	-- 🔥 AAA FIX: Set nama default secara instan agar loop TIDAK MENUNGGU!
+	userNameCache[userId] = "Sultan_" .. tostring(userId)
+	
+	-- Cari nama asli di background thread (Tidak memblokir jalannya script)
+	task.spawn(function()
+		local success, name = pcall(function()
+			return Players:GetNameFromUserIdAsync(userId)
+		end)
+		if success and name then
+			userNameCache[userId] = name -- Cache terupdate untuk refresh board 60 detik berikutnya
+		end
 	end)
-	if success and name then
-		userNameCache[userId] = name
-		return name
-	end
-	return "Sultan_" .. tostring(userId)
+	
+	return userNameCache[userId]
 end
 
 function DonationLeaderboard.new()

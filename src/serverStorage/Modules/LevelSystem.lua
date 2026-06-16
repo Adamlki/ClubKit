@@ -395,21 +395,22 @@ end)
 -- SHUTDOWN PROTECTION (BINDTOCLOSE)
 -- ====================================
 game:BindToClose(function()
-	debug("Server shutting down, saving all players data...")
+	print("[LevelSystem] Server shutting down, saving all player data safely...")
+	local players = Players:GetPlayers()
 	
-	local saveCount = 0
-	-- Simpan secara paralel agar tidak kehabisan waktu shutdown (max 30 detik)
-	for _, player in ipairs(Players:GetPlayers()) do
+	for i, player in ipairs(players) do
 		task.spawn(function()
-			LevelSystem:SavePlayerLevel(player, true)
+			-- Paksa save mengabaikan cooldown
+			LevelSystem:SavePlayerLevel(player, true) 
 		end)
-		saveCount += 1
+		
+		-- 🔥 KUNCI ANTI-LAG: Kasih napas ke Roblox API setiap 10 pemain
+		if i % 10 == 0 then
+			task.wait(0.2)
+		end
 	end
 	
-	-- Beri waktu maksimal 5 detik untuk semua save process selesai
-	if saveCount > 0 then
-		task.wait(5)
-	end
+	task.wait(3) -- Beri waktu 3 detik terakhir untuk memastikan semua request beres
 end)
 
 return LevelSystem

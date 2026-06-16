@@ -114,39 +114,44 @@ local BLACK = Color3.new(0, 0, 0)
 local TWEEN_OUT = TweenInfo.new(FADE_OUT_TIME, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
 local TWEEN_IN  = TweenInfo.new(FADE_IN_TIME,  Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
 
-local activeTweens = {}  -- [obj] = tween aktif saat ini
+local activeProxyTween = nil
+local proxyColor = Instance.new("Color3Value")
+proxyColor.Value = BLACK
 local pendingColor  = nil -- warna terakhir yang diminta (buat skip kalau ganti cepat)
 
-local function cancelAll()
-	for obj, tw in pairs(activeTweens) do
-		tw:Cancel()
-		activeTweens[obj] = nil
-	end
-end
-
--- Tween semua objek ke target warna, simpan tween-nya
-local function tweenAllTo(color, tweenInfo)
+-- THE AAA PROXY FIX: 
+-- Menyalin 1 warna ke 100+ part secara instan setiap frame animasi berjalan.
+proxyColor.Changed:Connect(function(newColor)
 	for neon in pairs(daftarNeon) do
 		if neon.Parent then
-			local tw = TweenService:Create(neon, tweenInfo, { Color = color })
-			activeTweens[neon] = tw
-			tw:Play()
+			neon.Color = newColor
 		end
 	end
 	for screen in pairs(daftarScreen) do
 		if screen.Parent then
-			local tw = TweenService:Create(screen, tweenInfo, { Color = color })
-			activeTweens[screen] = tw
-			tw:Play()
+			screen.Color = newColor
 		end
 	end
-	-- Lampu: langsung set brightness (tidak perlu tween, tidak keliatan artifak)
 	for lampu, origBright in pairs(daftarLampu) do
 		if lampu.Parent then
-			lampu.Color = color
-			lampu.Brightness = (color == BLACK) and 0 or origBright
+			lampu.Color = newColor
+			lampu.Brightness = (newColor == BLACK) and 0 or origBright
 		end
 	end
+end)
+
+local function cancelAll()
+	if activeProxyTween then
+		activeProxyTween:Cancel()
+		activeProxyTween = nil
+	end
+end
+
+-- Tween SEMUA part cukup dengan menggerakkan 1 Value saja!
+local function tweenAllTo(color, tweenInfo)
+	cancelAll()
+	activeProxyTween = TweenService:Create(proxyColor, tweenInfo, { Value = color })
+	activeProxyTween:Play()
 end
 
 -- Efek utama: redup → nyala warna baru

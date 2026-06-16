@@ -32,14 +32,7 @@ local function formatMoney(amount)
 	return "Rp " .. formatted
 end
 
--- MENGGUNAKAN TEMPLATE DARI REPLICATED STORAGE
-local function createInfoGui(parent, rank, name, amount)
-	local template = ReplicatedStorage:FindFirstChild("TamplateTopDonation")
-	if not template then warn("BillboardGui tidak ditemukan di ReplicatedStorage!") return end
-
-	local bgui = template:Clone()
-	bgui.Enabled = true
-
+local function updateInfoGui(bgui, rank, name, amount)
 	local frame = bgui:FindFirstChild("MainFrame")
 	if frame then
 		local namaLabel = frame:FindFirstChild("PlayerName")
@@ -52,11 +45,20 @@ local function createInfoGui(parent, rank, name, amount)
 
 		if valueLabel then
 			valueLabel.Text = formatMoney(amount)
-			-- Warnanya dibiarkan mengikuti settingan asli di template Anda
 		end
 	end
+end
 
+-- MENGGUNAKAN TEMPLATE DARI REPLICATED STORAGE
+local function createInfoGui(parent, rank, name, amount)
+	local template = ReplicatedStorage:FindFirstChild("TamplateTopDonation")
+	if not template then warn("BillboardGui tidak ditemukan di ReplicatedStorage!") return nil end
+
+	local bgui = template:Clone()
+	bgui.Enabled = true
+	updateInfoGui(bgui, rank, name, amount)
 	bgui.Parent = parent
+	return bgui
 end
 
 local function renderStatue(rank, data)
@@ -174,8 +176,12 @@ local function onUpdate(top3Data)
 				local head = activeStatues[rank]:FindFirstChild("Head")
 				if head then
 					local oldGui = head:FindFirstChildOfClass("BillboardGui")
-					if oldGui then oldGui:Destroy() end
-					pcall(function() createInfoGui(head, rank, name, amount) end)
+					if oldGui then 
+						-- 🔥 AAA FIX: Daur ulang UI yang sudah ada (Object Pooling)
+						updateInfoGui(oldGui, rank, name, amount)
+					else
+						pcall(function() createInfoGui(head, rank, name, amount) end)
+					end
 				end
 			else
 				-- CACHE MISS! Orang beda, hancurkan yang lama

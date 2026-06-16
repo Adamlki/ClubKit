@@ -160,7 +160,8 @@ end
 -- TITLE EFFECT APPLICATION
 -- ====================================
 local function applyTitleEffect(titleFrame, titleLabel, titleData, character)
-	local base = titleData.Color
+	-- 🔥 FIX: Tambahkan fallback Color3.new(1, 1, 1) jika DataStore pemain corrupt
+	local base = titleData.Color or Color3.new(1, 1, 1)
 	local f    = CONFIG.FRAME_DARKEN_FACTOR
 
 	titleFrame.BackgroundColor3 = Color3.fromRGB(

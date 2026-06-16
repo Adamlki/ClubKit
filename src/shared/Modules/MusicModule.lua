@@ -881,7 +881,7 @@ local MusicDatabase = {
 		PlaybackSpeed = 0.9
 	},
 	{
-		id = "123133787276766", 
+		id = "91068299807070", 
 		judul = "BREAKBEAT Pure Love", 
 		sampul = "rbxassetid://110370706778065", 
 		album = "BREAKBEAT", 
@@ -1673,6 +1673,14 @@ local MusicDatabase = {
 		Duration = nil, 
 		PlaybackSpeed = 0.9
 	},
+	-- 	{
+	-- 	id = "123133787276766", 
+	-- 	judul = "Kupu-Kupu", 
+	-- 	sampul = "rbxassetid://110370706778065", 
+	-- 	album = "BREAKBEAT", 
+	-- 	Duration = nil, 
+	-- 	PlaybackSpeed = 1
+	-- },
 	{
 		id = "95728842583428", 
 		judul = "DESPACITO", 
@@ -2040,7 +2048,7 @@ local MusicDatabase = {
 		album = "LANY", 
 		Duration = nil, 
 		PlaybackSpeed = 0.7,
-		PitchOctave = 1.2
+		PitchOctave = 1.1
 	},
 	{
 		id = "81257869135562",
@@ -2049,7 +2057,7 @@ local MusicDatabase = {
 		album = "LANY",
 		Duration = nil,
 		PlaybackSpeed = 0.7,
-		PitchOctave = 1.2
+		PitchOctave = 1.1
 	},
 	{
 		id = "125816766946068",
@@ -2058,7 +2066,7 @@ local MusicDatabase = {
 		album = "LANY",
 		Duration = nil,
 		PlaybackSpeed = 0.7,
-		PitchOctave = 1.2
+		PitchOctave = 1.1
 	},
 	{
 		id = "85428778844636",
@@ -2067,7 +2075,7 @@ local MusicDatabase = {
 		album = "LANY",
 		Duration = nil,
 		PlaybackSpeed = 0.7,
-		PitchOctave = 1.2
+		PitchOctave = 1.1
 	},
 	{
 		id = "114204415546617",
@@ -2076,7 +2084,7 @@ local MusicDatabase = {
 		album = "LANY",
 		Duration = nil,
 		PlaybackSpeed = 0.7,
-		PitchOctave = 1.2
+		PitchOctave = 1.1
 	},
 	{
 		id = "75331949790916",
@@ -2085,7 +2093,7 @@ local MusicDatabase = {
 		album = "LANY",
 		Duration = nil,
 		PlaybackSpeed = 0.7,
-		PitchOctave = 1.2
+		PitchOctave = 1.1
 	},
 	{
 		id = "108268996390872",
@@ -2094,7 +2102,7 @@ local MusicDatabase = {
 		album = "LANY",
 		Duration = nil,
 		PlaybackSpeed = 0.7,
-		PitchOctave = 1.2
+		PitchOctave = 1.1
 	},
 	{
 		id = "91656074831192",
@@ -2103,7 +2111,7 @@ local MusicDatabase = {
 		album = "LANY",
 		Duration = nil,
 		PlaybackSpeed = 0.7,
-		PitchOctave = 1.2
+		PitchOctave = 1.1
 	},
 
 	-- PLAYLIST THE WEEKND
@@ -2114,16 +2122,7 @@ local MusicDatabase = {
 		album = "The Weeknd",
 		Duration = nil,
 		PlaybackSpeed = 0.7,
-		PitchOctave = 1.2
-	},
-	{
-		id = "106666109694332",
-		judul = "The Weeknd x Ariana Grande - Love Me Harder",
-		sampul = "rbxassetid://110370706778065",
-		album = "The Weeknd",
-		Duration = nil,
-		PlaybackSpeed = 0.7,
-		PitchOctave = 1.2
+		PitchOctave = 1.1
 	},
 	{
 		id = "90343504797110",
@@ -2132,7 +2131,7 @@ local MusicDatabase = {
 		album = "The Weeknd",
 		Duration = nil,
 		PlaybackSpeed = 0.7,
-		PitchOctave = 1.2
+		PitchOctave = 1.1
 	},
 	{
 		id = "79527978829243",
@@ -2141,7 +2140,7 @@ local MusicDatabase = {
 		album = "The Weeknd",
 		Duration = nil,
 		PlaybackSpeed = 0.7,
-		PitchOctave = 1.2
+		PitchOctave = 1.1
 	},
 	{
 		id = "88854879737198",
@@ -2150,8 +2149,44 @@ local MusicDatabase = {
 		album = "The Weeknd",
 		Duration = nil,
 		PlaybackSpeed = 0.7,
-		PitchOctave = 1.2
-	}
+		PitchOctave = 1.1
+	},
+	{
+		id = "97419595340862",
+		judul = "hold on thailand edit",
+		sampul = "rbxassetid://110370706778065",
+		album = "THAILAND STYLE",
+		Duration = nil,
+		PlaybackSpeed = 0.7,
+		PitchOctave = 1
+	},
+	{
+		id = "124885931890954",
+		judul = "Armada Mabuk Cinta - Thailand Edit",
+		sampul = "rbxassetid://110370706778065",
+		album = "THAILAND STYLE",
+		Duration = nil,
+		PlaybackSpeed = 0.7,
+		PitchOctave = 1
+	},
+	{
+		id = "107402047715247",
+		judul = "Shine Of Black Jang Ganggu - Thailand Edit",
+		sampul = "rbxassetid://110370706778065",
+		album = "THAILAND STYLE",
+		Duration = nil,
+		PlaybackSpeed = 0.7,
+		PitchOctave = 1
+	},
+	{
+		id = "78758780594659",
+		judul = "Goyang Dumang X Hold On - Thailand Edit",
+		sampul = "rbxassetid://110370706778065",
+		album = "THAILAND STYLE",
+		Duration = nil,
+		PlaybackSpeed = 0.7,
+		PitchOctave = 1
+	},
 }
 
 -- ====================================

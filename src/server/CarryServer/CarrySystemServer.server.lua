@@ -260,6 +260,10 @@ local function startCarry(carrier, target, style)
 		return false, "Player busy"
 	end
 
+	if carrier:GetAttribute("GlobalEffectAirborne") or target:GetAttribute("GlobalEffectAirborne") then
+		return false, "Cannot carry while floating/flying"
+	end
+
 	local success, err = pcall(function()
 		makeCarriedWeightless(tChar, target.UserId, carrier)
 		saveHumanoidState(target.UserId, tHum)
@@ -487,6 +491,10 @@ RequestRemote.OnServerEvent:Connect(function(carrier, data)
 		return failRequest("Player busy")
 	end
 
+	if carrier:GetAttribute("GlobalEffectAirborne") or target:GetAttribute("GlobalEffectAirborne") then
+		return failRequest("Cannot carry while floating/flying")
+	end
+
 	local _, cHRP = getCharHRP(carrier)
 	local _, tHRP = getCharHRP(target)
 	if not (cHRP and tHRP) then
@@ -611,6 +619,36 @@ Players.PlayerRemoving:Connect(function(player)
 	restorePhysics(player.UserId)
 	savedHumanoidStates[player.UserId] = nil
 end)
+
+-- ============================================
+-- GLOBAL BINDABLES
+-- ============================================
+local ServerStorage = game:GetService("ServerStorage")
+local CarryEventsFolder = ServerStorage:FindFirstChild("CarryEvents")
+if not CarryEventsFolder then
+	CarryEventsFolder = Instance.new("Folder")
+	CarryEventsFolder.Name = "CarryEvents"
+	CarryEventsFolder.Parent = ServerStorage
+end
+
+local ForceEndCarryFunc = CarryEventsFolder:FindFirstChild("ForceEndCarryFunc")
+if not ForceEndCarryFunc then
+	ForceEndCarryFunc = Instance.new("BindableFunction")
+	ForceEndCarryFunc.Name = "ForceEndCarryFunc"
+	ForceEndCarryFunc.Parent = CarryEventsFolder
+end
+
+ForceEndCarryFunc.OnInvoke = function(player)
+	if not player then return false end
+	local partnerUserId = activeCarries[player.UserId]
+	if not partnerUserId then return false end
+	local partner = Players:GetPlayerByUserId(partnerUserId)
+	if partner then
+		endCarry(player, partner)
+		return true
+	end
+	return false
+end
 
 -- ============================================
 -- INITIALIZATION

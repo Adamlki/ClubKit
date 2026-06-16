@@ -1,5 +1,6 @@
 local cam = workspace.CurrentCamera
-local event = game.ReplicatedStorage:WaitForChild("SpeedCam")
+local event = game.ReplicatedStorage:WaitForChild("SpeedCam", 5)
+if not event then return end
 local tween = game.TweenService
 
 local normal = 70

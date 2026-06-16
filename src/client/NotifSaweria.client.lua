@@ -151,13 +151,19 @@ end
 -- ========================================
 -- LISTEN EVENT DARI SERVER
 -- ========================================
-donationEvent.OnClientEvent:Connect(function(data)
-	if not data or not data.donator then return end
+local donationQueue = {}
+local isPlayingNotification = false
+
+local function processQueue()
+	if isPlayingNotification or #donationQueue == 0 then return end
+	isPlayingNotification = true
+
+	local data = table.remove(donationQueue, 1)
 
 	currentNotifId = currentNotifId + 1
 	local thisNotifId = currentNotifId
 
-	debugPrint("🔔 Menerima sinyal donasi dari:", data.donator, "| Rp", data.amount)
+	debugPrint("🔔 Menampilkan donasi dari:", data.donator, "| Rp", data.amount)
 
 	-- Update Data
 	usernameLabel.Text = "@" .. data.donator
@@ -189,7 +195,7 @@ donationEvent.OnClientEvent:Connect(function(data)
 	debugPrint("Mulai animasi Fade-In...")
 	setAllTransparency(0)
 
-	-- Timer untuk Fade Out
+	-- Timer untuk Fade Out dan pemanggilan antrean selanjutnya
 	task.delay(DISPLAY_TIME, function()
 		if currentNotifId == thisNotifId then
 			debugPrint("Mulai animasi Fade-Out...")
@@ -201,8 +207,17 @@ donationEvent.OnClientEvent:Connect(function(data)
 				notifFrame.Visible = false
 				debugPrint("UI Donasi kembali disembunyikan.")
 			end
-		else
-			debugPrint("Fade-Out dibatalkan karena ada notifikasi donasi baru yang masuk.")
 		end
+		
+		-- Lanjut ke antrean berikutnya jika ada
+		isPlayingNotification = false
+		processQueue()
 	end)
+end
+
+donationEvent.OnClientEvent:Connect(function(data)
+	if not data or not data.donator then return end
+	debugPrint("📥 Memasukkan donasi ke antrean dari:", data.donator)
+	table.insert(donationQueue, data)
+	processQueue()
 end)

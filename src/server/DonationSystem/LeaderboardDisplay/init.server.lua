@@ -34,6 +34,27 @@ if not renderer then
 end
 
 -- ============================================
+-- MANUAL CONTROL (DIPINDAHKAN KE ATAS)
+-- ============================================
+_G.LeaderboardControl = {
+	Refresh = function()
+		leaderboard:ClearCache()
+		updateLeaderboard()
+	end,
+	ShowStudio = function()
+		leaderboard:SetMode(true)
+		updateLeaderboard()
+	end,
+	ShowExperience = function()
+		leaderboard:SetMode(false)
+		updateLeaderboard()
+	end,
+	GetData = function()
+		return leaderboard:GetTopDonors(TOP_ENTRIES)
+	end,
+}
+
+-- ============================================
 -- STATE (CACHE) - OPTIMASI UNTUK 100 PLAYER
 -- ============================================
 local cachedTop3 = {}
@@ -114,24 +135,3 @@ task.spawn(function()
 		updateLeaderboard()
 	end
 end)
-
--- ============================================
--- MANUAL CONTROL
--- ============================================
-_G.LeaderboardControl = {
-	Refresh = function()
-		leaderboard:ClearCache()
-		updateLeaderboard()
-	end,
-	ShowStudio = function()
-		leaderboard:SetMode(true)
-		updateLeaderboard()
-	end,
-	ShowExperience = function()
-		leaderboard:SetMode(false)
-		updateLeaderboard()
-	end,
-	GetData = function()
-		return leaderboard:GetTopDonors(TOP_ENTRIES)
-	end,
-}

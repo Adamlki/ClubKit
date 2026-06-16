@@ -12,7 +12,7 @@ globalEvent.OnClientEvent:Connect(function(shooterPlayer, toolName, state)
 	local shooterTool = shooterPlayer.Character:FindFirstChild(toolName)
 	if not shooterTool then return end
 
-	-- DISTANCE CULLING (Optimasi Performa yang sangat baik dari kode Anda)
+	-- DISTANCE CULLING: Jaga FPS Client tetap tinggi!
 	local myChar = localPlayer.Character
 	if myChar and myChar:FindFirstChild("HumanoidRootPart") then
 		local shooterRoot = shooterPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -24,9 +24,7 @@ globalEvent.OnClientEvent:Connect(function(shooterPlayer, toolName, state)
 		end
 	end
 
-
 	if toolName == "WaterGun" then
-		-- 🔥 ARCHITECT FIX: Gunakan nama yang sangat spesifik
 		local muzzlePart = shooterTool:FindFirstChild("MuzzlePart")
 		local handle = shooterTool:FindFirstChild("Handle")
 
@@ -34,21 +32,14 @@ globalEvent.OnClientEvent:Connect(function(shooterPlayer, toolName, state)
 			local water = muzzlePart:FindFirstChild("Water")
 			local sound = handle:FindFirstChild("Explosion")
 
+			-- 🔥 PERBAIKAN: Hapus warn() agar terhindar dari Console FPS Drop (Lag Klien)
 			if water then 
 				water.Enabled = state 
-			else
-				warn("[Global Handler] Gagal: Objek 'Water' tidak ditemukan di MuzzlePart milik " .. shooterPlayer.Name)
 			end
 
 			if sound then 
 				if state then sound:Play() else sound:Stop() end 
-			else
-				warn("[Global Handler] Gagal: Objek 'Explosion' tidak ditemukan di Handle milik " .. shooterPlayer.Name)
 			end
-		else
-			warn("[Global Handler] Gagal: MuzzlePart atau Handle tidak ditemukan pada WaterGun milik " .. shooterPlayer.Name)
 		end
 	end
-
-	-- Note: Anda bisa menambahkan blok 'elseif toolName == "MoneyGun"' di sini nanti
 end)

@@ -227,6 +227,7 @@ function ServerMusicAudioHandler:Play(soundId, timePosition, playbackSpeed, pitc
 
 	if not isLoaded then
 		warn("[ServerAudio] Gagal total memuat lagu setelah 3 kali percobaan: " .. soundId)
+		return false
 	end
 
 	-- Atur Waktu dan Kecepatan

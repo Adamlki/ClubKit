@@ -245,14 +245,13 @@ end
 -- ============================================================
 -- EVENT LISTENERS (LATE JOINERS)
 -- ============================================================
+-- 🔥 FIX: Jangan kirim CinematicRemote ke Late Joiner. 
+-- Efek donasi (Popup UI/Cinematic) bersifat live/real-time. 
+-- Mengirim histori masa lalu ke pemain yang baru masuk akan membuat 
+-- mereka mengira ada donasi hantu, padahal itu donasi lama.
+
 Players.PlayerAdded:Connect(function(player)
-	-- Sync untuk Late Joiners
-	task.wait(3)
-	if #recentDonations == 0 then return end
-	for _, data in ipairs(recentDonations) do
-		fireToPlayer(player, data)
-		task.wait(0.1)
-	end
+	-- Tidak perlu sync Cinematic UI untuk late joiners.
 end)
 
 local RequestDonationState = RS:FindFirstChild("RequestDonationState")
@@ -264,12 +263,8 @@ local RequestDonationState = RS:FindFirstChild("RequestDonationState")
 	end)()
 
 RequestDonationState.OnServerEvent:Connect(function(player)
-	if not canRequestState(player) then return end
-	task.wait(0.5)
-	for _, data in ipairs(recentDonations) do
-		fireToPlayer(player, data)
-		task.wait(0.1)
-	end
+	-- Jika ada UI History khusus, gunakan remote lain. 
+	-- CinematicRemote HANYA untuk efek live!
 end)
 
 Players.PlayerRemoving:Connect(function(player)

@@ -343,6 +343,23 @@ function GlobalEffectManager:UpdatePlayerEffects(player)
 		local shouldFly = self.ActiveEffects.Fly and isFollowing
 		local shouldWing = self.ActiveEffects.Wing and isFollowing
 
+		player:SetAttribute("GlobalEffectAirborne", shouldFloating or shouldFly)
+
+		if shouldFloating or shouldFly then
+			local CarryEventsFolder = ServerStorage:FindFirstChild("CarryEvents")
+			if CarryEventsFolder then
+				local ForceEndCarryFunc = CarryEventsFolder:FindFirstChild("ForceEndCarryFunc")
+				if ForceEndCarryFunc then
+					pcall(function()
+						local dropped = ForceEndCarryFunc:Invoke(player)
+						if dropped and self.NotificationEvent then
+							self.NotificationEvent:FireClient(player, "Global Effect Aktif", "Carry otomatis dilepas karena efek sedang aktif!", 3)
+						end
+					end)
+				end
+			end
+		end
+
 		if shouldFloating then
 			if not state.FloatingTrack then
 				state:ApplyFloating()

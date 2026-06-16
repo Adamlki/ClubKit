@@ -90,19 +90,24 @@ end
 -- 🔥 ARCHITECT FIX: PEMBERSIHAN ANTREAN SAAT SERVER SHUTDOWN (Mencegah Kehilangan Transaksi)
 game:BindToClose(function()
 	if #transactionQueue > 0 then
-		Logger:Warn("Server shutting down! Flushing " .. #transactionQueue .. " transactions...")
-		isSaving = true -- Prevent other loops from interfering
+		Logger:Warn("Server shutting down! Flushing " .. #transactionQueue .. " transactions to DataStore...")
 		
-		-- Flush everything without wait
-		while #transactionQueue > 0 do
-			local taskData = table.remove(transactionQueue, 1)
-			pcall(function()
+		local HttpService = game:GetService("HttpService")
+		
+		for i, taskData in ipairs(transactionQueue) do
+			task.spawn(function()
 				local uniqueId = string.sub(HttpService:GenerateGUID(false), 1, 8)
 				local key = "log_" .. os.time() .. "_" .. taskData.giver .. "_" .. uniqueId
 				DataStoreManager.TransactionLogStore:SetAsync(key, taskData, 2592000)
 			end)
+			
+			-- 🔥 KUNCI ANTI-LAG: Kasih napas setiap 10 antrean log
+			if i % 10 == 0 then
+				task.wait(0.2)
+			end
 		end
-		Logger:Info("Transaction queue flush complete.")
+		
+		task.wait(3)
 	end
 end)
 

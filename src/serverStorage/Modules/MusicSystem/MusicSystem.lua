@@ -180,6 +180,9 @@ function MusicSystem:PlayNext()
 		self.dispatcher:SyncQueueOnly()
 		self.dispatcher:SyncState()
 		self.isTransitioning = false
+		
+		-- 🔥 BROADCAST PRELOAD UNTUK LAGU BERIKUTNYA
+		self:BroadcastPreloadNext()
 
 	else
 		-- Queue is empty, play from auto-playlist
@@ -203,12 +206,42 @@ function MusicSystem:PlayNext()
 			else
 				self.dispatcher:SyncState()
 				self.isTransitioning = false
+				
+				-- 🔥 BROADCAST PRELOAD UNTUK LAGU BERIKUTNYA
+				self:BroadcastPreloadNext()
 			end
 		else
 			warn("[MusicSystem] No songs available in queue or playlist!")
 			self.playbackManager:Stop(self.remotes)
 			self.isTransitioning = false
 		end
+	end
+end
+
+-- ====================================
+-- BROADCAST PRELOAD NEXT SONG
+-- ====================================
+function MusicSystem:BroadcastPreloadNext()
+	local queue = self.queueManager:GetQueue()
+	local nextUp = queue[1]
+	local nextId = nil
+	
+	if nextUp and nextUp.musicData then
+		nextId = nextUp.musicData.id
+	else
+		local peekSong = self.playlistManager:PeekNextSong()
+		if peekSong then
+			nextId = peekSong.id
+		end
+	end
+	
+	if nextId then
+		pcall(function()
+			self.remotes.DispatchEvent:FireAllClients({
+				type = "PRELOAD_AUDIO",
+				payload = { id = nextId }
+			})
+		end)
 	end
 end
 

@@ -372,6 +372,34 @@ function MusicPlayer:HandleDispatchEvent(data)
 
 	elseif eventType == "QUEUE_UPDATE" then
 		self.uiManager:UpdateQueue(payload.queue or {})
+		
+		-- 🔥 PRELOAD AUDIO ANTRIAN: Agar transisi mulus dan tidak nge-lag/masuk di tengah-tengah
+		if payload.queue and #payload.queue > 0 then
+			task.spawn(function()
+				local ContentProvider = game:GetService("ContentProvider")
+				local soundsToPreload = {}
+				
+				-- Preload up to 2 next songs
+				for i = 1, math.min(2, #payload.queue) do
+					local item = payload.queue[i]
+					if item and item.musicData and item.musicData.id then
+						local sound = Instance.new("Sound")
+						sound.SoundId = "rbxassetid://" .. item.musicData.id
+						table.insert(soundsToPreload, sound)
+					end
+				end
+				
+				if #soundsToPreload > 0 then
+					pcall(function()
+						ContentProvider:PreloadAsync(soundsToPreload)
+					end)
+					-- Clean up temp sounds
+					for _, sound in ipairs(soundsToPreload) do
+						sound:Destroy()
+					end
+				end
+			end)
+		end
 
 	elseif eventType == "SKIP_VOTE_START" then
 		self.uiManager:ShowSkipVote(payload.initiator, payload.songTitle, payload.totalVoters)
@@ -400,6 +428,20 @@ function MusicPlayer:HandleDispatchEvent(data)
 
 	elseif eventType == "FAVORITES_UPDATE" then
 		self.uiManager:UpdateFavorites(payload.favoriteSongs or {})
+		
+	elseif eventType == "PRELOAD_AUDIO" then
+		-- 🔥 Menerima instruksi dari server untuk memuat lagu otomatis (Auto-Playlist/Queue) berikutnya
+		if payload.id then
+			task.spawn(function()
+				local ContentProvider = game:GetService("ContentProvider")
+				local sound = Instance.new("Sound")
+				sound.SoundId = "rbxassetid://" .. payload.id
+				pcall(function()
+					ContentProvider:PreloadAsync({sound})
+				end)
+				sound:Destroy()
+			end)
+		end
 	end
 end
 
@@ -431,14 +473,20 @@ function MusicPlayer:ForceAudioSync(payload)
 
 	-- Gunakan task.spawn agar tidak memblokir antarmuka UI
 	task.spawn(function()
-		-- 1. Tunggu chipset HP selesai mengunduh & mendecode audio (Tunggu hingga 60 detik untuk HP kentang/lag)
+		local expectedAssetId = "rbxassetid://" .. payload.SoundId
 		local timeout = tick() + 300 
+		
+		-- 0. Tunggu sampai SoundId benar-benar terupdate oleh Roblox Native Replication
+		while serverSound.SoundId ~= expectedAssetId and tick() < timeout do
+			task.wait(0.1)
+		end
+
+		-- 1. Tunggu chipset HP selesai mengunduh & mendecode audio (Tunggu hingga 60 detik untuk HP kentang/lag)
 		while serverSound.TimeLength == 0 and tick() < timeout do
 			task.wait(0.2)
 		end
 
 		-- 2. Pastikan lagu yang selesai didecode ini adalah lagu yang benar (belum di-skip)
-		local expectedAssetId = "rbxassetid://" .. payload.SoundId
 		if serverSound.TimeLength > 0 and payload.ServerTime and serverSound.SoundId == expectedAssetId then
 
 			-- 3. Hitung persis berapa detik HP ini tertinggal dari Server

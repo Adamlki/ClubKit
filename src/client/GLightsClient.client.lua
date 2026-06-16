@@ -105,25 +105,13 @@ end)
 
 -- ============================================================
 -- APPLY WARNA — dipanggil SEKALI saat warna ganti
--- Tidak ada loop, tidak ada tween per-frame
--- Efek ganti warna: redup ke hitam dulu → lalu nyala warna baru
--- Semua pakai TweenService — nol Heartbeat loop, nol beban HP
+-- Efek ganti warna secara INSTAN untuk mengurangi lag drastis.
+-- Tidak menggunakan TweenService agar tidak mengubah ratusan part setiap frame.
 -- ============================================================
-local FADE_OUT_TIME = 0.10  -- seberapa cepat redup ke hitam (detik)
-local FADE_IN_TIME  = 0.20  -- seberapa cepat nyala warna baru (detik)
 local BLACK = Color3.new(0, 0, 0)
+local pendingColor = nil 
 
-local TWEEN_OUT = TweenInfo.new(FADE_OUT_TIME, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
-local TWEEN_IN  = TweenInfo.new(FADE_IN_TIME,  Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
-
-local activeProxyTween = nil
-local proxyColor = Instance.new("Color3Value")
-proxyColor.Value = BLACK
-local pendingColor  = nil -- warna terakhir yang diminta (buat skip kalau ganti cepat)
-
--- THE AAA PROXY FIX: 
--- Menyalin 1 warna ke 100+ part secara instan setiap frame animasi berjalan.
-proxyColor.Changed:Connect(function(newColor)
+local function setColors(newColor)
 	for neon in pairs(daftarNeon) do
 		if neon.Parent then
 			neon.Color = newColor
@@ -140,52 +128,31 @@ proxyColor.Changed:Connect(function(newColor)
 			lampu.Brightness = (newColor == BLACK) and 0 or origBright
 		end
 	end
-end)
-
-local function cancelAll()
-	if activeProxyTween then
-		activeProxyTween:Cancel()
-		activeProxyTween = nil
-	end
 end
 
--- Tween SEMUA part cukup dengan menggerakkan 1 Value saja!
-local function tweenAllTo(color, tweenInfo)
-	cancelAll()
-	activeProxyTween = TweenService:Create(proxyColor, tweenInfo, { Value = color })
-	activeProxyTween:Play()
-end
-
--- Efek utama: redup → nyala warna baru
--- Kalau warna ganti lagi sebelum selesai, tween lama di-cancel dan mulai dari posisi saat ini
 local colorTransitionActive = false
 
 local function applyColorWithFlash(color)
 	pendingColor = color
-	if colorTransitionActive then return end -- biarkan yang aktif selesai fade out, lalu ambil warna terbaru
+	if colorTransitionActive then return end
 
 	colorTransitionActive = true
 	task.spawn(function()
-		-- FASE 1: Redup ke hitam
-		cancelAll()
-		tweenAllTo(BLACK, TWEEN_OUT)
-		task.wait(FADE_OUT_TIME)
+		-- FASE 1: Redup ke hitam (Instan)
+		setColors(BLACK)
+		task.wait(0.05) -- Flash hitam sangat singkat
 
-		-- Ambil warna terbaru (kalau ganti lagi saat fade out)
-		local targetColor = pendingColor
+		-- FASE 2: Nyala warna baru (Instan)
+		setColors(pendingColor)
 
-		-- FASE 2: Nyala warna baru
-		cancelAll()
-		tweenAllTo(targetColor, TWEEN_IN)
-
+		task.wait(0.1) -- Cooldown agar tidak terlalu cepat
 		colorTransitionActive = false
 	end)
 end
 
 local function turnOffAll()
 	pendingColor = BLACK
-	cancelAll()
-	tweenAllTo(BLACK, TWEEN_OUT)
+	setColors(BLACK)
 	colorTransitionActive = false
 end
 

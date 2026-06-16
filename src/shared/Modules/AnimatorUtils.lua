@@ -1,3 +1,5 @@
+--!native
+--!optimize 2
 local module = {}
 
 -- Cache dengan weak keys agar otomatis dibersihkan GC

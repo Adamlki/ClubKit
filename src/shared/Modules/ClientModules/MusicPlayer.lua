@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SoundService = game:GetService("SoundService")
 local UserInputService = game:GetService("UserInputService")
+local BridgeNet = require(game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet"))
 
 local UIManager = require(script.Parent.UIManager)
 
@@ -339,8 +340,11 @@ function MusicPlayer:SetupRemoteListeners()
 	end)
 
 	-- Music broadcast (playback events - UI ONLY)
-	self.remotes.MusicBroadcast.OnClientEvent:Connect(function(eventType, payload)
-		self:HandleMusicBroadcast(eventType, payload)
+	local musicBroadcastBridge = BridgeNet.CreateBridge("MusicBroadcast")
+	musicBroadcastBridge:Connect(function(payload)
+		if type(payload) == "table" and payload.eventType then
+			self:HandleMusicBroadcast(payload.eventType, payload.data)
+		end
 	end)
 
 	-- Music update (sync events - UI ONLY)

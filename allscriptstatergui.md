@@ -21,22 +21,19 @@ local CheckAccessRemote    = RemoteFolder:WaitForChild("CheckAccess")
 -- ====================================
 local gui          = script.Parent
 local mainframe    = gui:WaitForChild("MainFrame")
-local frame        = mainframe:WaitForChild("Frame") -- Ini tempat tombol Server & Global
-local textbox      = mainframe:WaitForChild("TextBox") -- TextBox aslinya ada di MainFrame
+local frame        = mainframe:WaitForChild("Frame") 
+local textbox      = mainframe:WaitForChild("TextBox") 
 local serverBtn    = frame:WaitForChild("ServerBtn")
 local globalBtn    = frame:WaitForChild("GlobalBtn")
-local closeBtn     = mainframe:WaitForChild("CloseBtn") -- Sekalian kita siapkan tombol Closenya
+local closeBtn     = mainframe:WaitForChild("CloseBtn") 
 local messageFrame = gui:WaitForChild("MessageFrame")
 
--- Template notifikasi (clone sekali, jangan ubah yang asli)
 local templateNotif = messageFrame:Clone()
 templateNotif.Parent  = nil
 templateNotif.Visible = false
 
 -- ====================================
 -- CONFIG (dari ModuleScript)
--- Jika tidak ingin require ModuleScript di client, duplikasi nilai yang
--- dibutuhkan di sini. Nilai harus sinkron dengan MessageConfig.lua.
 -- ====================================
 local Config = {
 	Notification = {
@@ -71,7 +68,33 @@ local timerData = {
 	TimerDuration = 0
 }
 local lastTimerNotifTime = 0
-local isSending = false  -- Mencegah double-send
+local isSending = false  
+
+-- ====================================
+-- SAFE INVOKE UTILITY (ANTI-FREEZE)
+-- ====================================
+local function SafeInvoke(remote, timeout, ...)
+	local args = {...}
+	local finished = false
+	local success = false
+	local data = nil
+
+	task.spawn(function()
+		local ok, result = pcall(function()
+			return remote:InvokeServer(unpack(args))
+		end)
+		success = ok
+		data = result
+		finished = true
+	end)
+
+	local elapsed = 0
+	while not finished and elapsed < timeout do
+		elapsed = elapsed + task.wait()
+	end
+
+	return finished and success, data
+end
 
 -- ====================================
 -- NOTIFICATION CONTAINER
@@ -98,13 +121,25 @@ local function formatTime(seconds)
 	return string.format("%d second(s)", secs)
 end
 
+-- 🔥 SECURITY FIX: Fungsi untuk membersihkan teks HTML berbahaya
+local function sanitizeHtml(text)
+	text = tostring(text)
+	text = text:gsub("&", "&amp;")
+	text = text:gsub("<", "&lt;")
+	text = text:gsub(">", "&gt;")
+	text = text:gsub('"', "&quot;")
+	text = text:gsub("'", "&apos;")
+	return text
+end
+
 -- ====================================
 -- TIMER FUNCTIONS
 -- ====================================
 local function showTimerNotification(remainingTime)
 	if not Config.Timer.ShowNotification then return end
 
-	local now = tick()
+	-- 🔥 ARCHITECT FIX: Ganti tick() ke os.clock()
+	local now = os.clock()
 	if now - lastTimerNotifTime < 5 then return end
 	lastTimerNotifTime = now
 
@@ -119,14 +154,14 @@ local function showTimerNotification(remainingTime)
 end
 
 local function refreshTimerData()
-	local ok, result = pcall(function()
-		return CheckTimerRemote:InvokeServer()
+	task.spawn(function()
+		local ok, result = SafeInvoke(CheckTimerRemote, 3) 
+		if ok and result then
+			timerData.HasTimer      = result.HasTimer
+			timerData.RemainingTime = result.RemainingTime
+			timerData.TimerDuration = result.TimerDuration
+		end
 	end)
-	if ok and result then
-		timerData.HasTimer      = result.HasTimer
-		timerData.RemainingTime = result.RemainingTime
-		timerData.TimerDuration = result.TimerDuration
-	end
 end
 
 -- ====================================
@@ -169,7 +204,6 @@ local function tweenTransparency(frame, tweenInfo, targetAlpha)
 end
 
 local function removeNotification(notifData)
-	-- Hapus dari tabel aktif
 	for i, data in ipairs(activeNotifications) do
 		if data == notifData then
 			table.remove(activeNotifications, i)
@@ -179,7 +213,6 @@ local function removeNotification(notifData)
 
 	local fadeInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 
-	-- Fade out frame dan semua children
 	if notifData.Frame and notifData.Frame.Parent then
 		tweenTransparency(notifData.Frame, fadeInfo, 1)
 		for _, child in ipairs(notifData.Frame:GetDescendants()) do
@@ -195,21 +228,17 @@ local function removeNotification(notifData)
 end
 
 local function updateNotificationPositions()
-	for i, notifData in ipairs(activeNotifications) do
+	-- 🔥 ARCHITECT FIX: Iterasi mundur (backward) agar table.remove tidak menyebabkan skip
+	for i = #activeNotifications, 1, -1 do
+		local notifData = activeNotifications[i]
+
 		if i > Config.Notification.MaxVisible then
-			-- Hapus notifikasi yang melebihi batas tanpa animasi fade
 			if notifData.Frame and notifData.Frame.Parent then
 				notifData.Frame:Destroy()
 			end
 			table.remove(activeNotifications, i)
 		elseif i > 1 then
-			-- Geser notifikasi ke bawah sesuai urutan
 			local orig    = notifData.OriginalPosition
-
-			-- 👇 DI SINI TEMPAT ATUR JARAKNYA 👇
-			-- 0.05 artinya jaraknya 5% dari layar. 
-			-- Kalau masih terlalu jauh, kecilkan jadi 0.04 atau 0.03. 
-			-- Kalau terlalu mepet, naikkan jadi 0.06 atau 0.07.
 			local offsetY = 0.10 * (i - 1) 
 
 			local newPos  = UDim2.new(
@@ -227,7 +256,7 @@ local function updateNotificationPositions()
 end
 
 -- ====================================
--- NOTIFICATION DISPLAY
+-- NOTIFICATION CREATION
 -- ====================================
 local function createNotification(messageData)
 	setupNotificationContainer()
@@ -235,7 +264,6 @@ local function createNotification(messageData)
 	local notif = templateNotif:Clone()
 	notif.Parent  = notificationContainer
 
-	-- SEMBUNYIKAN DULU DI LUAR LAYAR UNTUK MENGUKUR LEBAR NAMA
 	local originalPos = notif.Position
 	notif.Position = UDim2.new(2, 0, 2, 0)
 	notif.Visible = true 
@@ -244,49 +272,42 @@ local function createNotification(messageData)
 	local verifIcon = messageLabel and messageLabel:FindFirstChild("VerifiedBadge")
 
 	if messageLabel and verifIcon then
-		-- Pastikan RichText nyala
 		messageLabel.RichText = true
 
-		-- Bersihkan teks "[Global]" (Kebal huruf besar/kecil dan tanda baca)
 		local rawMessage = messageData.Message or ""
 		local cleanMessage = string.gsub(rawMessage, "%[[Gg][Ll][Oo][Bb][Aa][Ll]%]%s*:?%s*", "")
 
-		-- 1. UKUR LEBAR NAMA DENGAN AKURAT (Tanpa merusak settingan manualmu)
-		messageLabel.Text = "<b>" .. messageData.SenderName .. "</b>"
+		-- 🔥 SECURITY FIX: Proteksi RichText dari injeksi `<>`
+		local safeSenderName = sanitizeHtml(messageData.SenderName or "Unknown")
+		local safeMessage = sanitizeHtml(cleanMessage)
 
-		-- Tunggu 1 frame agar mesin Roblox selesai menghitung ukuran font
+		messageLabel.Text = "<b>" .. safeSenderName .. "</b>"
 		task.wait()
 
 		local nameWidth = messageLabel.TextBounds.X
 		local lineHeight = messageLabel.TextBounds.Y
 
-		-- 2. POSISIKAN ICON BAWAAN GUI-MU
-		local iconWidth = 15 -- Ukuran logomu
+		local iconWidth = 15
 		verifIcon.BackgroundTransparency = 1
 		verifIcon.Size = UDim2.new(0, iconWidth, 0, iconWidth)
 		verifIcon.AnchorPoint = Vector2.new(0, 0)
 
-		-- Hitung agar posisi icon pas di tengah-tengah teks baris pertama
 		local yOffset = (lineHeight - iconWidth) / 2
 
-		-- Posisikan persis di sebelah nama (kasih jarak 4 pixel)
 		verifIcon.Position = UDim2.new(0, nameWidth + 4, 0, yOffset)
 		verifIcon.Visible = true
 
-		-- 3. FORMAT TEKS KESELURUHAN (NAMA MENJADI KUNING)
-		-- Kita pakai 5 spasi manual yang pasti pas untuk tempat icon 18px
 		local emptySpaces = "     " 
-		-- Perhatikan tag <font color="#FFD700"> yang mengapit %s (SenderName)
-		messageLabel.Text = string.format('<font color="#FFD700"><b>%s</b></font>%s: %s', messageData.SenderName, emptySpaces, cleanMessage)
+		messageLabel.Text = string.format('<font color="#FFD700"><b>%s</b></font>%s: %s', safeSenderName, emptySpaces, safeMessage)
 	end
 
-	-- Kembalikan posisi ke atas layar untuk persiapan animasi turun
 	notif.Position = UDim2.new(originalPos.X.Scale, originalPos.X.Offset, -0.25, 0)
 
 	local notifData = {
 		Frame           = notif,
 		OriginalPosition = originalPos,
-		Timestamp       = tick(),
+		-- 🔥 ARCHITECT FIX: Ganti tick() ke os.clock()
+		Timestamp       = os.clock(),
 		Duration        = Config.Notification.Duration
 	}
 	table.insert(activeNotifications, 1, notifData)
@@ -325,10 +346,8 @@ local function sendMessage(isGlobal)
 	isSending = true
 	textbox.Text = ""
 
-	-- Kirim ke server (dengan status isGlobal boolean)
 	SendMessageRemote:FireServer(message, isGlobal)
 
-	-- Refresh timer setelah mengirim
 	task.delay(0.5, function()
 		refreshTimerData()
 		if timerData.HasTimer and timerData.RemainingTime > 0 then
@@ -341,34 +360,36 @@ end
 -- ====================================
 -- UI SETUP
 -- ====================================
-mainframe.Visible = false  -- Kontrol visibilitas dari luar (misal toolbar)
+mainframe.Visible = false  
 
--- Tombol Server mengirim dengan isGlobal = false
 serverBtn.MouseButton1Click:Connect(function()
 	sendMessage(false)
 end)
 
--- Tombol Global mengirim dengan isGlobal = true
 globalBtn.MouseButton1Click:Connect(function()
 	sendMessage(true)
 end)
 
 textbox.FocusLost:Connect(function(enterPressed)
 	if enterPressed then
-		-- Jika menekan tombol Enter, kita anggap sebagai pesan Server biasa
 		sendMessage(false)
 	end
 end)
+
+-- 🔥 FUNCTION FIX: Hidupkan Tombol Close agar UI bisa ditutup
+if closeBtn then
+	closeBtn.MouseButton1Click:Connect(function()
+		mainframe.Visible = false
+	end)
+end
 
 -- ====================================
 -- RECEIVE MESSAGE FROM SERVER
 -- ====================================
 ReceiveMessageRemote.OnClientEvent:Connect(function(messageData)
-	-- Validasi tipe data dasar dari server
 	if type(messageData) ~= "table" then return end
 
 	if messageData.Type == "Error" then
-		-- Tampilkan error kepada pengirim
 		pcall(function()
 			SG:SetCore("SendNotification", {
 				Title    = "Broadcast Error",
@@ -377,14 +398,12 @@ ReceiveMessageRemote.OnClientEvent:Connect(function(messageData)
 			})
 		end)
 
-		-- Perbarui info timer jika error terkait cooldown
 		local msg = messageData.Message or ""
 		if msg:find("wait") or msg:find("broadcast") or msg:find("minute") or msg:find("second") then
 			refreshTimerData()
 		end
 
 	elseif messageData.Type == "Message" then
-		-- Hanya tampilkan jika data pesan lengkap
 		if messageData.Message and messageData.SenderId then
 			createNotification(messageData)
 		end
@@ -396,11 +415,9 @@ end)
 -- ====================================
 refreshTimerData()
 
-
 local CONFIG = {
 	DEBUG_ENABLED = false,
 
-	-- GANTI GRADIENT_EFFECTS MENJADI INI:
 	COLOR_PRESETS = {
 		{ name = "White",       color = Color3.fromRGB(255, 255, 255) },
 		{ name = "Black",       color = Color3.fromRGB(0, 0, 0) },
@@ -428,8 +445,8 @@ local CONFIG = {
 	ROLE_BTN_ACTIVE_COLOR   = Color3.fromRGB(255, 200, 50),
 	ROLE_BTN_INACTIVE_COLOR = Color3.fromRGB(70,  70,  70),
 
-	ADMIN_ICON_IMAGE     = nil,
-	ADMIN_ICON_LABEL     = "🛠",
+	ADMIN_ICON_IMAGE     = "rbxassetid://87144040887420",
+	ADMIN_ICON_LABEL     = "",
 	ADMIN_ICON_ALIGNMENT = "left",
 	ADMIN_ICON_SETORDER  = -1,
 
@@ -444,7 +461,6 @@ local CONFIG = {
 	GradientColor2 = Color3.fromRGB(255, 255, 255),
 }
 
--- [BARU] Fallback warna agar tombol warna tidak pernah putih/error
 local COLOR_FALLBACKS = {
 	["Merah"] = "Bright red", ["Oranye"] = "Deep orange", ["Kuning"] = "New Yeller",
 	["Hijau"] = "Dark green", ["Hijau Tua"] = "Earth green", ["Cyan"] = "Cyan",
@@ -461,9 +477,35 @@ local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService      = game:GetService("TweenService")
 local RunService        = game:GetService("RunService")
-local Teams             = game:GetService("Teams") -- [BARU] Ambil data langsung dari Teams
+local Teams             = game:GetService("Teams")
 
 local LocalPlayer = Players.LocalPlayer
+
+-- ====================================
+-- SAFE INVOKE UTILITY (ANTI-FREEZE)
+-- ====================================
+local function SafeInvoke(remote, timeout, ...)
+	local args = {...}
+	local finished = false
+	local success = false
+	local data = nil
+
+	task.spawn(function()
+		local ok, result = pcall(function()
+			return remote:InvokeServer(unpack(args))
+		end)
+		success = ok
+		data = result
+		finished = true
+	end)
+
+	local elapsed = 0
+	while not finished and elapsed < timeout do
+		elapsed = elapsed + task.wait()
+	end
+
+	return finished and success, data
+end
 
 -- ====================================
 -- GUI REFERENCES
@@ -549,7 +591,6 @@ local allPlayers      = {}
 local selectedUserId  = nil
 
 local currentDonaturRank    = nil
-local isLoadingPlayerData   = false
 
 local selectedRole = nil
 local roleButtons  = {}
@@ -685,22 +726,35 @@ local function updatePlayerInfoDisplay(userId)
 	local target = Players:GetPlayerByUserId(userId)
 	if not target then return end
 	playername.Text = target.DisplayName
+
+	local roleVal = target:FindFirstChild("Role")
+	local roleName = roleVal and roleVal.Value or "Player"
+
+	if roleName ~= "Player" and target.Team then
+		playername.TextColor3 = target.Team.TeamColor.Color
+	else
+		playername.TextColor3 = Color3.fromRGB(255, 255, 255) 
+	end
+
 	local ok, thumbUrl = pcall(function()
 		return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
 	end)
 	if ok and thumbUrl then playerimage.Image = thumbUrl end
-	local roleVal = target:FindFirstChild("Role")
-	rolelabel.Text = roleVal and ("Role: "..roleVal.Value) or "Role: -"
+
+	rolelabel.Text = "Role: " .. roleName
 	teamlabel.Text = "Team: "..(target.Team and target.Team.Name or "-")
 	titlelabel.Text = "Title: Loading..."
+
 	task.spawn(function()
-		local ok2, data = pcall(function() return GetPlayerDataRemote:InvokeServer(target) end)
+		local ok2, data = SafeInvoke(GetPlayerDataRemote, 3, target)
+		-- 🔥 ARCHITECT FIX: Jangan timpa teks UI jika Admin sudah klik player lain!
+		if selectedUserId ~= userId then return end
 		titlelabel.Text = (ok2 and data) and "Title: "..(data.Title ~= "" and data.Title or "-") or "Title: -"
 	end)
 end
 
 -- ====================================
--- PLAYER LIST (OPTIMIZED SMART REFRESH)
+-- PLAYER LIST
 -- ====================================
 local function clearPlayerList()
 	for _, btn in pairs(playerButtons) do 
@@ -724,11 +778,20 @@ local function refreshPlayerList()
 		local existingBtn = playerButtons[plr.UserId]
 		local isVisible = (filterText == "" or plr.DisplayName:lower():find(filterText, 1, true))
 
+		local nameColor = Color3.fromRGB(255, 255, 255) 
+		local roleVal = plr:FindFirstChild("Role")
+		local roleName = roleVal and roleVal.Value or "Player"
+
+		if roleName ~= "Player" and plr.Team then
+			nameColor = plr.Team.TeamColor.Color
+		end
+
 		if existingBtn then
 			if isVisible then
 				existingBtn.Position = UDim2.new(0, 0, 0, yOffset)
 				existingBtn.Visible  = true
 				existingBtn.Text = (plr == LocalPlayer) and (plr.DisplayName.." (Saya)") or plr.DisplayName
+				existingBtn.TextColor3 = nameColor 
 				yOffset = yOffset + existingBtn.Size.Y.Offset + 5
 			else
 				existingBtn.Visible = false
@@ -740,6 +803,7 @@ local function refreshPlayerList()
 				newBtn.Text     = (plr == LocalPlayer) and (plr.DisplayName.." (Saya)") or plr.DisplayName
 				newBtn.Position = UDim2.new(0, 0, 0, yOffset)
 				newBtn.Visible  = true
+				newBtn.TextColor3 = nameColor 
 				newBtn.Parent   = playerlist
 
 				newBtn.MouseButton1Click:Connect(function()
@@ -764,6 +828,7 @@ local function refreshPlayerList()
 	playerlist.CanvasSize = UDim2.new(0, 0, 0, yOffset)
 	isRefreshing = false
 end
+
 
 -- ====================================
 -- ROLE SYSTEM
@@ -830,8 +895,6 @@ end)
 -- ====================================
 -- TITLE SYSTEM
 -- ====================================
-
-
 local function updateDonaturButtonStates()
 	for i, btn in ipairs(topBtns) do
 		if i == currentDonaturRank then
@@ -843,7 +906,6 @@ local function updateDonaturButtonStates()
 		end
 	end
 end
-
 
 local function assignDonaturRank(rank)
 	if not selectedUserId then showNotification("Pilih player terlebih dahulu!", false); return end
@@ -873,7 +935,7 @@ local function updateColorPreview()
 end
 
 -- ====================================
--- COLOR PRESET SYSTEM (PENGGANTI EFEK)
+-- COLOR PRESET SYSTEM
 -- ====================================
 local function buildEffectButtons()
 	for _, btn in ipairs(effectBtns) do if btn and btn.Parent then btn:Destroy() end end
@@ -888,14 +950,10 @@ local function buildEffectButtons()
 		newBtn.Visible  = true
 		newBtn.Parent   = effectframe
 
-		-- Buat warna tombol sesuai warnanya langsung!
 		newBtn.BackgroundColor3 = preset.color
-
-		-- Buat teks jadi hitam/putih agar kontras dan mudah dibaca
 		local brightness = (preset.color.R + preset.color.G + preset.color.B)
 		newBtn.TextColor3 = brightness < 1.5 and Color3.new(1, 1, 1) or Color3.new(0, 0, 0)
 
-		-- Jika diklik, langsung masukkan angkanya ke kotak RGB
 		newBtn.MouseButton1Click:Connect(function()
 			redbox.Text   = tostring(math.floor(preset.color.R * 255))
 			greenbox.Text = tostring(math.floor(preset.color.G * 255))
@@ -927,19 +985,19 @@ local function buildDonaturButtons()
 	end
 end
 
-
-
 function loadTitleData(userId)
-	if isLoadingPlayerData then return end
-	isLoadingPlayerData = true
 	local targetPlayer = Players:GetPlayerByUserId(userId)
-	if not targetPlayer then isLoadingPlayerData = false; return end
+	if not targetPlayer then return end
 
 	titleconfirmBtn.Text = "Loading..."
 	task.spawn(function()
-		local ok, data = pcall(function() return GetPlayerDataRemote:InvokeServer(targetPlayer) end)
-		isLoadingPlayerData  = false
+		local ok, data = SafeInvoke(GetPlayerDataRemote, 3, targetPlayer)
+
+		-- 🔥 ARCHITECT FIX: Pengecekan krusial, abaikan hasil jika Admin sudah pindah player!
+		if selectedUserId ~= userId then return end
+
 		titleconfirmBtn.Text = "Confirm"
+
 		if not ok or not data then return end
 
 		entrytitlebox.Text = data.Title or ""
@@ -949,8 +1007,6 @@ function loadTitleData(userId)
 		bluebox.Text  = tostring(color.B)
 
 		updateColorPreview()
-
-		-- Gradient sudah musnah dari sini!
 		currentDonaturRank = data.DonaturRank
 		updateDonaturButtonStates()
 	end)
@@ -965,15 +1021,19 @@ local function resetTitleForm()
 
 	updateColorPreview()
 	updateDonaturButtonStates()
-	-- Gradient & EffectButtonState sudah musnah dari sini!
 end
 
 redbox:GetPropertyChangedSignal("Text"):Connect(updateColorPreview)
 greenbox:GetPropertyChangedSignal("Text"):Connect(updateColorPreview)
 bluebox:GetPropertyChangedSignal("Text"):Connect(updateColorPreview)
 
+-- 🔥 ARCHITECT FIX: Anti-Spam Tombol (Debounce)
+local isProcessingTitle = false
+
 titleconfirmBtn.MouseButton1Click:Connect(function()
 	if not selectedUserId then showNotification("Pilih player terlebih dahulu!", false); return end
+	if isProcessingTitle then return end 
+
 	local titleText = entrytitlebox.Text:match("^%s*(.-)%s*$")
 	if titleText ~= "" then
 		local len = utf8.len(titleText)
@@ -982,16 +1042,21 @@ titleconfirmBtn.MouseButton1Click:Connect(function()
 			return
 		end
 	end
+
 	local targetPlayer = Players:GetPlayerByUserId(selectedUserId)
 	if not targetPlayer then showNotification("Player tidak ditemukan!", false); return end
+
+	isProcessingTitle = true
 	UpdateTitleRemote:FireServer(targetPlayer, {
 		Title          = titleText,
 		Color          = Color3.fromRGB(validateRGB(redbox.Text), validateRGB(greenbox.Text), validateRGB(bluebox.Text)),
-		-- Kita hapus Gradient = true dan GradientEffect = ... di sini
 	})
+
 	titleconfirmBtn.Text = "Processing..."
 	task.wait(0.5)
 	titleconfirmBtn.Text = "Confirm"
+	isProcessingTitle = false
+
 	showNotification("Title berhasil diupdate!", true)
 	titlelabel.Text = "Title: "..(titleText ~= "" and titleText or "-")
 end)
@@ -1001,7 +1066,6 @@ titlecancelBtn.MouseButton1Click:Connect(function() resetTitleForm() end)
 -- ====================================
 -- TEAM SYSTEM
 -- ====================================
-
 local function updateColorTemplateBtnStates()
 	for _, btn in ipairs(colorTemplateBtns) do
 		if btn:GetAttribute("ColorName") == selectedColorName then
@@ -1013,7 +1077,6 @@ local function updateColorTemplateBtnStates()
 	end
 end
 
--- [PERBAIKAN] Mencegah warna jadi putih. Kita baca dari fallback atau nama yang dikirim.
 local function buildColorTemplates(templates)
 	for _, btn in ipairs(colorTemplateBtns) do
 		if btn and btn.Parent then btn:Destroy() end
@@ -1052,7 +1115,6 @@ local function buildColorTemplates(templates)
 		selectedColorName = templates[1].name
 		updateColorTemplateBtnStates()
 	end
-
 	debug("Color templates built:", #templates, "colors")
 end
 
@@ -1061,26 +1123,26 @@ local function loadColorTemplates()
 	if colorTemplatesLoaded then return end
 	colorTemplatesLoaded = true
 	task.spawn(function()
-		local ok, templates = pcall(function()
-			return GetColorTemplatesRemote:InvokeServer()
-		end)
+		local ok, templates = SafeInvoke(GetColorTemplatesRemote, 3)
 		if ok and type(templates) == "table" and #templates > 0 then
 			buildColorTemplates(templates)
 		else
+			colorTemplatesLoaded = false 
 			debugWarn("Failed to load color templates")
 		end
 	end)
 end
 
--- [PERBAIKAN] Langsung baca dari folder Teams di game agar warnanya PASTI akurat
 local function buildTeamList()
-	for _, btn in pairs(teamButtons) do if btn and btn.Parent then btn:Destroy() end end
-	teamButtons      = {}
-	selectedTeamName = nil
-
 	task.spawn(function()
-		local ok, teamList = pcall(function() return GetTeamListRemote:InvokeServer() end)
+		local ok, teamList = SafeInvoke(GetTeamListRemote, 3)
 		if not ok or type(teamList) ~= "table" then return end
+
+		-- 🔥 ARCHITECT FIX: Hapus tombol lama TEPAT sebelum membuat yang baru di dalam Thread!
+		for _, btn in pairs(teamButtons) do if btn and btn.Parent then btn:Destroy() end end
+		teamButtons      = {}
+		selectedTeamName = nil
+
 		local yOffset = 0
 		for _, teamData in ipairs(teamList) do
 			local newBtn    = teamtemplateBtn:Clone()
@@ -1089,7 +1151,6 @@ local function buildTeamList()
 			newBtn.Position = UDim2.new(0, 0, 0, yOffset)
 			newBtn.Visible  = true
 
-			-- Pintas cerdas: Cek langsung ke folder Teams di workspace
 			local realTeamObj = Teams:FindFirstChild(teamData.name)
 			if realTeamObj then
 				newBtn.BackgroundColor3 = realTeamObj.TeamColor.Color
@@ -1231,8 +1292,17 @@ teamBtn.MouseButton1Click:Connect(function()
 	buildTeamList()
 	loadColorTemplates()
 end)
+local searchDebounce = nil
 searchbox:GetPropertyChangedSignal("Text"):Connect(function()
-	if not isRefreshing then refreshPlayerList() end
+	if searchDebounce then
+		task.cancel(searchDebounce)
+	end
+	
+	searchDebounce = task.delay(0.3, function()
+		if not isRefreshing then 
+			refreshPlayerList() 
+		end
+	end)
 end)
 
 -- ====================================
@@ -1312,6 +1382,7 @@ task.spawn(function() while task.wait(60) do checkAccess() end end)
 
 debug("Admin Panel Client initialized")
 
+
 -- CarryHandler.lua (LocalScript)
 
 local Players = game:GetService("Players")
@@ -1336,6 +1407,12 @@ end
 local RequestRemote  = remoteFolder:WaitForChild("CarryRequest", 10)
 local ResponseRemote = remoteFolder:WaitForChild("CarryResponse", 10)
 local EndRemote      = remoteFolder:WaitForChild("CarryEnd", 10)
+
+-- 🔥 SECURITY FIX: Proteksi Crash apabila internet pemain lag (Timeout Null Reference)
+if not RequestRemote or not ResponseRemote or not EndRemote then
+	warn("[CARRY UI] Gagal memuat Remote! Sinyal terlalu lambat atau folder tidak ada.")
+	return
+end
 
 local gui = playerGui:WaitForChild("CarryGui", 10)
 if not gui then
@@ -1370,6 +1447,7 @@ local pendingCarrier    = nil
 local pendingStyle      = nil
 local styleTimeoutToken = 0
 local currentAnimTracks = {}
+local loadedAnimationsCache = {} -- Cache animasi
 local jumpBlockConn     = nil
 
 -- Store original sizes
@@ -1395,9 +1473,6 @@ local function stopAllAnimations()
 	end
 end
 
--- Tambahkan tabel cache ini di atas fungsi playAnimation
-local loadedAnimationsCache = {}
-
 local function playAnimation(style, role)
 	local hum = getHumanoid()
 	if not hum then return end
@@ -1419,7 +1494,6 @@ local function playAnimation(style, role)
 		return
 	end
 
-	-- [SISTEM CACHE ANTI-MACET]
 	local track = loadedAnimationsCache[animId]
 
 	-- Jika belum pernah di-load, buat dan load sekali saja!
@@ -1433,7 +1507,7 @@ local function playAnimation(style, role)
 
 		if success and newTrack then
 			track = newTrack
-			loadedAnimationsCache[animId] = track -- Simpan ke ingatan memori
+			loadedAnimationsCache[animId] = track 
 		else
 			warn("[CARRY UI] Failed to load animation:", animId)
 			return
@@ -1804,7 +1878,6 @@ local function setupCarryEventListener()
 		if currentState == "idle" or currentState == "selecting_style" then
 			showStyleSelection(target)
 		elseif currentState == "waiting" then
-			-- Reset stuck state and retry
 			cleanupState()
 			currentState = "idle"
 			task.wait(0.1)
@@ -1818,7 +1891,7 @@ end
 carryEventConnection = setupCarryEventListener()
 
 -- ============================================
--- DEBUG: Test button (only when debug enabled)
+-- DEBUG: Test button
 -- ============================================
 
 if CarryConfig.DEBUG_ENABLED then
@@ -1845,6 +1918,11 @@ player.CharacterAdded:Connect(function()
 	cleanupState()
 	currentState = "idle"
 
+	-- 🔥 ARCHITECT FIX 1: Cuci bersih Cache Animasi tiap kali Player Respawn!
+	-- Hal ini mencegah animasi memutar tulang (rig) dari karakter yang sudah mati/terhapus.
+	loadedAnimationsCache = {}
+	currentAnimTracks = {}
+
 	if carryEventConnection then
 		carryEventConnection:Disconnect()
 	end
@@ -1863,6 +1941,22 @@ Players.PlayerRemoving:Connect(function(leavingPlayer)
 		if jumpBlockConn then jumpBlockConn:Disconnect() end
 		stopAllAnimations()
 		cleanupState()
+	else
+		-- 🔥 ARCHITECT FIX 2: Jika target lari / kabur keluar game, batalkan secara instan!
+		if leavingPlayer == selectedTarget or leavingPlayer.UserId == pendingCarrier then
+			hideAllFrames()
+			cleanupState()
+			currentState = "idle"
+
+			-- Kirim notifikasi singkat ke UI bawaan Roblox bahwa operasi batal
+			pcall(function()
+				game.StarterGui:SetCore("SendNotification", {
+					Title = "Carry Cancelled",
+					Text  = (leavingPlayer.Name .. " has left the game."),
+					Duration = 3,
+				})
+			end)
+		end
 	end
 end)
 
@@ -1873,12 +1967,712 @@ end)
 hideAllFrames()
 CarryConfig.debugPrint("UI", "Carry UI Initialized")
 
+
+-- services
+local StarterGui = game:GetService("StarterGui")
+local ContextActionService = game:GetService("ContextActionService")
+local UserInputService = game:GetService("UserInputService")
+
+-- references
+local player = game:GetService("Players").LocalPlayer
+local backpack = player:WaitForChild("Backpack")
+local camera = workspace.CurrentCamera
+
+-- DISABLE BASIC ROBLOX HOTBAR
+StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
+
+local CustomInventoryGUI = script.Parent
+local hotBar = CustomInventoryGUI.hotBar
+local Inventory = CustomInventoryGUI.Inventory
+local toolButton = script.toolButton
+
+local inventoryHandler = require(script.SETTINGS)
+
+local function showSlots()
+	for index = 1, inventoryHandler.slotAmount do
+		local toolObject = inventoryHandler.OBJECTS.HotBar[index]
+		if not toolObject and not hotBar:FindFirstChild(index) and index <= inventoryHandler.slotAmount then
+			local frame = toolButton:Clone()
+			frame.toolName.Text = ""
+			frame.toolAmount.Text = ""
+			frame.toolNumber.Text = index
+			frame.Name = index
+			frame.Parent = hotBar
+		end
+	end
+end
+
+local function removeEmptySlots()
+	for index = 1, 9 do
+		local toolObject = inventoryHandler.OBJECTS.HotBar[index]
+		local toolFrame = hotBar:FindFirstChild(index)
+		if not toolObject and toolFrame then
+			toolFrame:Destroy()
+			if hotBar:FindFirstChild(index) then
+				removeEmptySlots()
+			end
+		end
+	end
+	-- Pastikan slot backpack selalu ada setelah pembersihan
+	if not hotBar:FindFirstChild("backpackSlot") then
+		-- akan dibuat ulang oleh createBackpackSlot
+		local frame = toolButton:Clone()
+		frame.Name = "backpackSlot"
+		frame.toolName.Text = ""
+		frame.toolAmount.Text = ""
+		frame.toolNumber.Text = ""
+		frame.toolIcon.Image = "rbxassetid://135273755533681"
+		frame.toolIcon.Visible = true
+		frame.toolName.Visible = false
+		frame.LayoutOrder = 0
+		frame.Parent = hotBar
+	end
+end
+
+-- Fungsi untuk membuat slot backpack permanen di hotbar
+local function createBackpackSlot()
+	-- Hapus jika sudah ada agar tidak duplikat
+	local existing = hotBar:FindFirstChild("backpackSlot")
+	if existing then existing:Destroy() end
+
+	local frame = toolButton:Clone()
+	frame.Name = "backpackSlot"
+	frame.toolName.Text = ""
+	frame.toolAmount.Text = ""
+	frame.toolNumber.Text = "" -- tidak tampilkan nomor slot
+	frame.toolIcon.Image = "rbxassetid://135273755533681"
+	frame.toolIcon.Visible = true
+	frame.toolName.Visible = false
+	frame.LayoutOrder = 0 -- selalu paling pertama/kiri
+	frame.Parent = hotBar
+
+	-- Klik = toggle buka/tutup inventory (sama seperti tekan `)
+	frame.MouseButton1Down:Connect(function()
+		Inventory.Visible = not Inventory.Visible
+		local currentState = Inventory.Visible
+
+		inventoryHandler:removeCurrentDescription()
+		if currentState then
+			showSlots()
+			CustomInventoryGUI.openButton.Position = UDim2.fromScale(0.5, 0.5)
+			CustomInventoryGUI.openButton.info.Text = " "
+		else
+			if not inventoryHandler.SETTINGS.SHOW_EMPTY_TOOL_FRAMES_IN_HOTBAR then
+				removeEmptySlots()
+			end
+			CustomInventoryGUI.openButton.Position = UDim2.fromScale(0.5, 0.909)
+			CustomInventoryGUI.openButton.info.Text = " "
+		end
+	end)
+end
+
+local function manageInventory (_, inputState)
+	if inputState == Enum.UserInputState.Begin then
+		Inventory.Visible = not Inventory.Visible
+		local currentState = Inventory.Visible
+
+		inventoryHandler:removeCurrentDescription()
+		if currentState then
+			showSlots()
+			CustomInventoryGUI.openButton.Position = UDim2.fromScale(0.5,0.5)
+			CustomInventoryGUI.openButton.info.Text = " "
+		else
+			if not inventoryHandler.SETTINGS.SHOW_EMPTY_TOOL_FRAMES_IN_HOTBAR then
+				removeEmptySlots()
+			end
+			CustomInventoryGUI.openButton.Position = UDim2.fromScale(0.5,0.909)
+			CustomInventoryGUI.openButton.info.Text = " "
+		end
+	elseif not inputState then
+		for index = inventoryHandler.slotAmount + 1, inventoryHandler.slotAmount do
+			local toolObject = inventoryHandler.OBJECTS.HotBar[index]
+			local toolFrame = hotBar:FindFirstChild(index)
+			if toolObject then
+				local tool = toolObject.Tool
+				toolObject:DisconnectAll()
+				tool:SetAttribute("toolAdded", nil)
+				inventoryHandler:newTool(tool)
+			elseif toolFrame then
+				toolFrame:Destroy()
+			end
+		end
+	end
+end
+
+local function searchTool()
+	inventoryHandler:searchTool()
+end
+local function newTool(tool)
+	if tool:IsA("Tool") then
+		inventoryHandler:newTool(tool)
+	end
+end
+
+local function reloadInventory(character)
+	inventoryHandler.currentlyEquipped = nil
+	backpack = player:WaitForChild("Backpack")
+
+	for _, tool in pairs(backpack:GetChildren()) do
+		if tool:IsA("Tool") then
+			newTool(tool)
+		end
+	end
+	backpack.ChildAdded:Connect(newTool)
+	character.ChildAdded:Connect(newTool)
+end
+
+local function updateHudPosition()
+	local viewPortSize = camera.ViewportSize
+	local slotSize = UDim2.fromOffset(hotBar.AbsoluteSize.Y, hotBar.AbsoluteSize.Y)
+
+	Inventory.Frame.Grid.CellSize = slotSize
+	hotBar.Grid.CellSize = slotSize
+
+	manageInventory()
+end
+
+updateHudPosition(); updateHudPosition()
+createBackpackSlot() -- buat slot backpack permanen
+reloadInventory(player.Character or player.CharacterAdded:Wait())
+camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateHudPosition)
+player.CharacterAdded:Connect(reloadInventory)
+Inventory.SearchBox:GetPropertyChangedSignal("Text"):Connect(searchTool)
+if inventoryHandler.SETTINGS.SHOW_EMPTY_TOOL_FRAMES_IN_HOTBAR then showSlots() end
+if inventoryHandler.SETTINGS.INVENTORY_KEYBIND then ContextActionService:BindAction("manageInventory", manageInventory, false, inventoryHandler.SETTINGS.INVENTORY_KEYBIND) end
+if inventoryHandler.SETTINGS.OPEN_BUTTON then
+	CustomInventoryGUI.openButton.MouseButton1Down:Connect(function()
+		Inventory.Visible = not Inventory.Visible
+		local currentState = Inventory.Visible
+
+		inventoryHandler:removeCurrentDescription()
+		if currentState then
+			showSlots()
+			CustomInventoryGUI.openButton.Position = UDim2.fromScale(0.5,0.5)
+			CustomInventoryGUI.openButton.info.Text = " "
+		else
+			if not inventoryHandler.SETTINGS.SHOW_EMPTY_TOOL_FRAMES_IN_HOTBAR then
+				removeEmptySlots()
+			end
+			CustomInventoryGUI.openButton.Position = UDim2.fromScale(0.5,0.909)
+			CustomInventoryGUI.openButton.info.Text = " "
+		end
+	end)
+else
+	CustomInventoryGUI.openButton.Visible = false
+end
+
+local function getToolEquipped()
+	local character = player.Character
+	return character and character:FindFirstChildOfClass("Tool")
+end
+
+UserInputService.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseWheel and inventoryHandler.SETTINGS.SCROLL_HOTBAR_WITH_WHEEL then
+		local direction = input.Position.Z
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+		local toolEquipped = getToolEquipped()
+		local toolPosition = inventoryHandler:getToolPosition(toolEquipped) or 0
+
+		for i=toolPosition + direction, direction < 0 and 1 or inventoryHandler.slotAmount, direction do
+			local toolObject = inventoryHandler.OBJECTS.HotBar[i]
+			if toolObject and humanoid then
+				humanoid:EquipTool(toolObject.Tool)
+				break
+			end
+		end
+	end
+end)
+
+local module = {OBJECTS = {}, SETTINGS = {}, slotAmount = 5}
+module.OBJECTS.HotBar = {}
+module.OBJECTS.Inventory = {}
+
+-- SETTINGS
+local SETTINGS = module.SETTINGS
+SETTINGS.DEFAULT_COLOR = Color3.fromRGB(0, 0, 0)
+SETTINGS.EQUIPPED_COLOR = Color3.fromRGB(128, 128, 128)
+SETTINGS.DISABLED_COLOR = Color3.fromRGB(128, 64, 65)
+SETTINGS.DEFAULT_IMAGEID = ""
+SETTINGS.EQUIPPED_IMAGEID = ""
+SETTINGS.DISABLED_IMAGEID = ""
+SETTINGS.BACKPACK_BUTTON_IMAGEID = "rbxassetid://135273755533681"
+SETTINGS.INVENTORY_KEYBIND = Enum.KeyCode.Backquote
+SETTINGS.DRAG_OUTSIDE_TO_DROP = false
+SETTINGS.SHOW_EMPTY_TOOL_FRAMES_IN_HOTBAR = false
+SETTINGS.SCROLL_HOTBAR_WITH_WHEEL = false
+SETTINGS.EQUIP_TOUCH_SENSITIVITY = 60
+SETTINGS.OPEN_BUTTON = true
+SETTINGS.ALWAYS_SHOW_TOOL_NAME = true
+
+-- services
+local ContextActionService = game:GetService("ContextActionService")
+local TextService = game:GetService("TextService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+--// PLAYER
+local player = game:GetService("Players").LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local mouse = player:GetMouse()
+
+--// INVENTORY_SYSTEM \\--
+local inventoryGui = script.Parent.Parent
+local hotbar = inventoryGui.hotBar
+local inventoryFrame = inventoryGui.Inventory
+local toolButton = script.Parent.toolButton
+
+local EnumKeys = {
+	Enum.KeyCode.One,
+	Enum.KeyCode.Two,
+	Enum.KeyCode.Three,
+	Enum.KeyCode.Four,
+	Enum.KeyCode.Five,
+	Enum.KeyCode.Six,
+	Enum.KeyCode.Seven,
+	Enum.KeyCode.Eight,
+	Enum.KeyCode.Nine,
+}
+
+-- tool object methods
+local toolObjectMetatable = {}
+toolObjectMetatable.__index = toolObjectMetatable
+
+function toolObjectMetatable:isEquipped()
+	local character = player.Character
+	if character then
+		return self.Tool.Parent == player.Character
+	else
+		return false
+	end
+end
+
+function toolObjectMetatable:DisconnectAll()
+	for _, v in pairs(self.CONNECTIONS) do
+		v:Disconnect()
+	end
+
+	self.didRemoval = true
+
+	if (inventoryFrame.Visible or module.SETTINGS.SHOW_EMPTY_TOOL_FRAMES_IN_HOTBAR) and self.Frame.Parent ~= inventoryGui and self.Frame.Parent ~= inventoryFrame.Frame then
+		local toolName   = self.Frame:FindFirstChild("toolName")
+		local toolAmount = self.Frame:FindFirstChild("toolAmount")
+		local toolIcon   = self.Frame:FindFirstChild("toolIcon")
+
+		if toolName and toolAmount and toolIcon then
+			toolName.Text   = ""
+			toolAmount.Text = ""
+			toolIcon.Image  = ""
+		end
+		self.Frame.BackgroundColor3 = SETTINGS.DEFAULT_COLOR
+		self.Frame.Image            = SETTINGS.DEFAULT_IMAGEID
+	else
+		self.Frame:Destroy()
+	end
+
+	if self.Parent == "HotBar" and self.Position then
+		ContextActionService:UnbindAction(self.Position .. "hotBar")
+		module.OBJECTS.HotBar[self.Position] = nil
+	elseif self.Parent == "Inventory" then
+		module.OBJECTS.Inventory[self.Tool.Name] = nil
+	end
+	self = nil
+end
+
+function toolObjectMetatable:updateIcon()
+	local tool      = self.Tool
+	local frame     = self.Frame
+	local textureId = tool.TextureId
+
+	if textureId == "" or textureId == nil then
+		frame.toolName.Visible  = true
+		frame.toolIcon.Visible  = false
+		frame.toolIcon.Image    = ""
+	else
+		frame.toolName.Visible  = SETTINGS.ALWAYS_SHOW_TOOL_NAME
+		frame.toolIcon.Visible  = true
+		frame.toolIcon.Image    = textureId
+	end
+end
+
+function toolObjectMetatable:getParentInstance()
+	return self.Parent == "Inventory" and inventoryFrame.Frame or hotbar
+end
+
+function toolObjectMetatable:showDescription()
+	local toolDescription = self.Tool.ToolTip
+	local frame           = self.Frame
+	if toolDescription == "" then return end
+
+	local descriptionFrame             = Instance.new("TextLabel")
+	descriptionFrame.Name              = "descriptionFrame"
+	descriptionFrame.AnchorPoint       = Vector2.new(0.5, 0)
+	descriptionFrame.Font              = Enum.Font.SourceSansSemibold
+	descriptionFrame.TextColor         = BrickColor.Black()
+	descriptionFrame.TextSize          = 14
+	descriptionFrame.BorderSizePixel   = 0
+	descriptionFrame.BackgroundColor   = BrickColor.White()
+	descriptionFrame.ZIndex            = 99
+	descriptionFrame.TextWrapped       = true
+	descriptionFrame.Parent            = inventoryGui
+
+	local corner          = Instance.new("UICorner")
+	corner.Parent         = descriptionFrame
+	corner.CornerRadius   = UDim.new(0.12, 0)
+
+	local textBounds      = TextService:GetTextSize(toolDescription, descriptionFrame.TextSize, descriptionFrame.Font, Vector2.new(400, 1000)) + Vector2.new(10, 4)
+	descriptionFrame.Size = UDim2.new(0, textBounds.X, 0, textBounds.Y)
+	descriptionFrame.Position = UDim2.new(0, frame.AbsolutePosition.X + (frame.AbsoluteSize.X / 2), 0, frame.AbsolutePosition.Y - textBounds.Y - 2 + 57)
+	descriptionFrame.Text = toolDescription
+	self.DescriptionFrame = descriptionFrame
+	game:GetService("Debris"):AddItem(descriptionFrame, 15)
+end
+
+function toolObjectMetatable:removeDescription()
+	if self.DescriptionFrame then
+		self.DescriptionFrame:Destroy()
+	end
+end
+
+function module:removeCurrentDescription()
+	local descriptionFrame = inventoryGui:FindFirstChild("descriptionFrame")
+	if descriptionFrame then
+		descriptionFrame:Destroy()
+	end
+end
+
+function module:getObjectFromTool(tool: Tool)
+	local function searchToolObject(toolParent)
+		for _, toolObject in pairs(toolParent) do
+			if toolObject.Tool == tool then
+				return toolObject
+			end
+		end
+	end
+	return searchToolObject(self.OBJECTS.HotBar) or searchToolObject(self.OBJECTS.Inventory)
+end
+
+function module:getToolPosition(tool: Tool)
+	local toolObject = self:getObjectFromTool(tool)
+	return toolObject and toolObject.Position
+end
+
+function module:searchTool()
+	local toolName: string = inventoryFrame.SearchBox.Text
+	if toolName == "" then
+		for _, toolObject in pairs(self.OBJECTS["Inventory"]) do
+			toolObject.Frame.Visible = true
+		end
+	elseif toolName then
+		for _, toolObject in pairs(self.OBJECTS["Inventory"]) do
+			toolObject.Frame.Visible = string.find(toolObject.Name:lower(), toolName:lower()) and true or false
+		end
+	end
+end
+
+function module:lockSlots(unequipCurrentTool: boolean)
+	self.slotsLocked = true
+	if unequipCurrentTool then
+		local character = player.Character
+		local humanoid  = character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid:UnequipTools()
+		end
+	end
+end
+
+function module:unlockSlots()
+	self.slotsLocked = false
+end
+
+function module:lockSlotsPosition()
+	self.slotsPositionLocked = true
+end
+
+function module:unlockSlotsPosition()
+	self.slotsPositionLocked = false
+end
+
+function module:newTool(tool: Tool)
+	if tool:GetAttribute("toolAdded") or not tool:IsA("Tool") then return end
+
+	local length = 0
+	for _, _ in pairs(module.OBJECTS.HotBar) do
+		length += 1
+	end
+
+	module:addTool(tool, length == self.slotAmount and "Inventory" or "HotBar", tool:GetAttribute("position"))
+end
+
+function module:addTool(tool: Tool, parent: string, position: number)
+	tool:SetAttribute("position", nil)
+	if position == -1 then
+		parent   = "Inventory"
+		position = nil
+	end
+
+	if not position and parent == "HotBar" then
+		for index = 1, self.slotAmount do
+			if self.OBJECTS.HotBar[index] == nil then
+				position = index
+				break
+			end
+		end
+	end
+
+	if position and hotbar:FindFirstChild(position) then
+		hotbar:FindFirstChild(position):Destroy()
+	end
+
+	local frame  = toolButton:Clone()
+	local amount = tool:GetAttribute("amount") or 1
+	if amount > 1 then
+		frame.toolAmount.Text = "x" .. amount
+	end
+	frame.toolName.Text = tool.Name
+	frame.Parent        = parent == "Inventory" and inventoryFrame.Frame or hotbar
+	frame.Name          = parent == "Inventory" and tool.Name or position
+	frame.toolNumber.Text = parent == "Inventory" and "" or position
+
+	local object = {}
+	setmetatable(object, toolObjectMetatable)
+
+	object.Tool     = tool
+	object.Frame    = frame
+	object.Parent   = parent
+	object.Position = position
+	object.Name     = tool.Name
+	self.OBJECTS[parent][position == nil and frame.Name or position] = object
+
+	local function manageTool(_, inputState, inputObject)
+		if inputObject and inputObject.UserInputType ~= Enum.UserInputType.Keyboard and inputObject.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+
+		local character = player.Character
+		local humanoid  = character and character:FindFirstChildOfClass("Humanoid")
+		if
+			not humanoid
+			or humanoid.Health <= 0
+			or not tool.Parent
+			or inputState == Enum.UserInputState.End
+			or self.slotsLocked
+		then
+			return
+		end
+
+		if object:isEquipped() then
+			humanoid:UnequipTools()
+			frame.BackgroundColor3 = SETTINGS.DEFAULT_COLOR
+			frame.Image            = SETTINGS.DEFAULT_IMAGEID
+			module.currentlyEquipped = nil
+		elseif tool.Enabled then
+			humanoid:EquipTool(tool)
+			if module.currentlyEquipped and module.currentlyEquipped.Parent then
+				module.currentlyEquipped.BackgroundColor3 = SETTINGS.DEFAULT_COLOR
+				module.currentlyEquipped.Image            = SETTINGS.DEFAULT_IMAGEID
+			end
+			module.currentlyEquipped  = frame
+			frame.BackgroundColor3    = SETTINGS.EQUIPPED_COLOR
+			frame.Image               = SETTINGS.EQUIPPED_IMAGEID
+		end
+	end
+
+	local function updateEquipped()
+		if object:isEquipped() and tool.Enabled then
+			if module.currentlyEquipped and module.currentlyEquipped.Parent then
+				module.currentlyEquipped.BackgroundColor3 = SETTINGS.DEFAULT_COLOR
+				module.currentlyEquipped.Image            = SETTINGS.DEFAULT_IMAGEID
+			end
+			module.currentlyEquipped  = frame
+			frame.BackgroundColor3    = SETTINGS.EQUIPPED_COLOR
+			frame.Image               = SETTINGS.EQUIPPED_IMAGEID
+		else
+			frame.BackgroundColor3    = SETTINGS.DEFAULT_COLOR
+			frame.Image               = SETTINGS.DEFAULT_IMAGEID
+			module.currentlyEquipped  = nil
+		end
+	end
+
+	-- UIStroke dihapus, dihandle manual di toolButton template
+	local function updateEnabled()
+		if tool.Enabled then
+			frame.Image                    = SETTINGS.DEFAULT_IMAGEID
+			frame.BackgroundColor3         = SETTINGS.DEFAULT_COLOR
+			frame.ImageTransparency        = 0
+			frame.toolIcon.ImageTransparency = 0
+			frame.toolName.TextTransparency = 0
+			frame.toolNumber.TextTransparency = 0
+			frame.toolAmount.TextTransparency = 0
+		else
+			frame.Image                    = SETTINGS.DISABLED_IMAGEID
+			frame.BackgroundColor3         = SETTINGS.DISABLED_COLOR
+			frame.ImageTransparency        = 0.35
+			frame.toolIcon.ImageTransparency = 0.5
+			frame.toolName.TextTransparency = 0.6
+			frame.toolNumber.TextTransparency = 0.6
+			frame.toolAmount.TextTransparency = 0.6
+		end
+	end
+
+	updateEnabled()
+	updateEquipped()
+	object:updateIcon()
+
+	--// CONNECTIONS
+	object.CONNECTIONS = {}
+	object.CONNECTIONS.EnabledConn    = tool:GetPropertyChangedSignal("Enabled"):Connect(updateEnabled)
+	object.CONNECTIONS.ToolRemoved    = tool.AncestryChanged:Connect(function(_, newParent)
+		if player and (newParent == nil or (newParent ~= player.Backpack and newParent ~= player.Character)) then
+			object:DisconnectAll()
+			tool:SetAttribute("toolAdded", false)
+		end
+		updateEquipped()
+	end)
+	object.CONNECTIONS.NameChanged    = tool:GetPropertyChangedSignal("Name"):Connect(function()
+		frame.toolName.Text = tool.Name
+		object.Name         = tool.Name
+	end)
+	object.CONNECTIONS.TextureIdChanged = tool:GetPropertyChangedSignal("TextureId"):Connect(function()
+		object:updateIcon()
+	end)
+	object.CONNECTIONS.AmountChanged  = tool:GetAttributeChangedSignal("amount"):Connect(function()
+		amount = tool:GetAttribute("amount") or 1
+		if amount > 1 then
+			frame.toolAmount.Text = "x" .. amount
+		else
+			frame.toolAmount.Text = ""
+		end
+	end)
+	object.CONNECTIONS.MouseEnter     = frame.MouseEnter:Connect(function()
+		if object.isGrabbed then return end
+		object:showDescription()
+	end)
+	object.CONNECTIONS.MouseLeave     = frame.MouseLeave:Connect(function()
+		object:removeDescription()
+	end)
+	object.CONNECTIONS.GrabConn       = frame.MouseButton1Down:Connect(function()
+		if self.slotsPositionLocked then return end
+
+		local mouseEnd
+		local mouseConn
+		local newFrame
+		local CellSize         = inventoryFrame.Frame.Grid.CellSize
+		local frameStartPosition = frame.AbsolutePosition
+		object:removeDescription()
+
+		local function endGrab()
+			mouseEnd:Disconnect()
+			mouseConn:Disconnect()
+			object.isGrabbed = false
+
+			local droppedGuis = playerGui:GetGuiObjectsAtPosition(mouse.X, mouse.Y)
+			local wasSwapped  = false
+			local dropTool    = true
+
+			for _, newSlot in pairs(droppedGuis) do
+				if newSlot:IsA("ImageButton") and (newSlot.Parent == hotbar or newSlot.Parent == inventoryFrame.Frame) then
+					-- Abaikan slot backpackSlot agar tidak bisa di-swap
+					if newSlot.Name == "backpackSlot" then continue end
+
+					local newSlotObject = self.OBJECTS[newSlot.Parent == hotbar and "HotBar" or "Inventory"][newSlot.Parent == hotbar and tonumber(newSlot.Name) or newSlot.Name]
+					if newSlotObject == object then
+						dropTool = false
+						if newFrame then newFrame:Destroy() end
+						continue
+					end
+
+					if newSlotObject then
+						wasSwapped = true
+						object:DisconnectAll()
+						newSlotObject:DisconnectAll()
+						self:addTool(newSlotObject.Tool, parent, position)
+						self:addTool(tool, newSlotObject.Parent, newSlotObject.Position)
+						if newFrame then newFrame:Destroy() end
+					elseif newSlot.Parent == hotbar then
+						wasSwapped = true
+						object:DisconnectAll()
+						self:addTool(tool, "HotBar", tonumber(newSlot.Name))
+						if parent == "Inventory" and newFrame then newFrame:Destroy() end
+						newSlot:Destroy()
+					end
+
+					if newSlotObject then newSlotObject:removeDescription() end
+					if object then object:removeDescription() end
+
+				elseif newSlot:IsA("ImageLabel") and newSlot == inventoryFrame and not wasSwapped and parent == "HotBar" then
+					wasSwapped = true
+					object:DisconnectAll()
+					self:addTool(tool, "Inventory")
+					self:searchTool()
+					break
+				end
+			end
+
+			if not wasSwapped then
+				if newFrame then newFrame:Destroy() end
+				frame.Parent = object:getParentInstance()
+
+				if SETTINGS.DRAG_OUTSIDE_TO_DROP and dropTool and tool.CanBeDropped then
+					local character = player.Character
+					if character then
+						tool.Parent = character
+						RunService.RenderStepped:Wait()
+						tool.Parent = workspace
+					end
+				end
+
+				if (frameStartPosition - Vector2.new(mouse.X, mouse.Y)).Magnitude <= SETTINGS.EQUIP_TOUCH_SENSITIVITY then
+					manageTool()
+				end
+			end
+		end
+
+		mouseEnd = UserInputService.InputEnded:Connect(function(inputObject)
+			if
+				inputObject.UserInputType == Enum.UserInputType.MouseButton1
+				or inputObject.UserInputType == Enum.UserInputType.Touch
+			then
+				endGrab()
+			end
+		end)
+
+		local function updateFramePos()
+			if not object.isGrabbed then
+				object.isGrabbed = true
+				newFrame              = toolButton:Clone()
+				newFrame.toolName.Text  = ""
+				newFrame.toolAmount.Text = ""
+				newFrame.toolNumber.Text = position or ""
+				newFrame.Name         = frame.Name
+				newFrame.Size         = frame.Size
+				newFrame.Parent       = object:getParentInstance()
+
+				frame.Size   = CellSize
+				frame.Parent = inventoryGui
+			end
+
+			local mousePos  = Vector2.new(mouse.X, mouse.Y)
+			frame.Position  = UDim2.new(0, mousePos.X - (CellSize.X.Offset / 2), 0, mousePos.Y - (CellSize.Y.Offset / 2) + 57)
+		end
+		mouseConn = mouse.Move:Connect(updateFramePos)
+	end)
+
+	tool:SetAttribute("toolAdded", true)
+	if parent == "HotBar" and position then
+		ContextActionService:BindAction(position .. "hotBar", manageTool, false, EnumKeys[position])
+	end
+end
+
+return module
+
 local Players            = game:GetService("Players")
 local MarketplaceService = game:GetService("MarketplaceService")
 local ReplicatedStorage  = game:GetService("ReplicatedStorage")
 
-local ClientConfig = require(script.ClientConfig)
-local ClientUI     = require(script.ClientUI)
+local ClientConfig = require(script:WaitForChild("ClientConfig"))
+local ClientUI     = require(script:WaitForChild("ClientUI"))
 
 -- TopbarPlus (pastikan tersedia di ReplicatedStorage)
 local Icon = require(ReplicatedStorage:WaitForChild("Icon"))
@@ -2035,7 +2829,7 @@ end
 
 local donationIcon = Icon.new()
 	:setLabel("")
-	:setImage("rbxassetid://11560341824")
+	:setImage("rbxassetid://83429307848166")
 	:setOrder(3)
 	:setRight()
 	:bindEvent("selected", function()
@@ -2075,7 +2869,6 @@ local function showMessageFrame(amount)
 end
 
 local function hideMessageFrame(shouldSendDefault)
-	-- Auto-kirim dengan pesan default jika donor menutup frame tanpa send
 	if shouldSendDefault and State.lastPurchasedAmount > 0 then
 		debugLog("Auto-send broadcast dengan pesan default")
 		local remote = ReplicatedStorage:WaitForChild("BroadcastDonationMessage", 5)
@@ -2111,8 +2904,8 @@ local function sendMessage()
 		return
 	end
 
-	-- Cooldown client-side (anti double send)
-	local now       = tick()
+	-- 🔥 ARCHITECT FIX 4: Menggunakan os.clock()
+	local now       = os.clock()
 	local remaining = ClientConfig.MESSAGE.COOLDOWN - (now - State.lastMessageTime)
 	if remaining > 0 then
 		ClientUI.notify("Cooldown", "Tunggu " .. math.ceil(remaining) .. " detik.", 2)
@@ -2133,7 +2926,7 @@ local function sendMessage()
 
 	if ok and result then
 		ClientUI.notify("Berhasil", ClientConfig.MESSAGES.MESSAGE_SENT, 3)
-		State.lastMessageTime     = tick()
+		State.lastMessageTime     = os.clock()
 		State.lastPurchasedAmount = 0
 		hideMessageFrame(false)
 		debugLog("Pesan berhasil dikirim")
@@ -2156,10 +2949,8 @@ local function setupBroadcastListener()
 	receiveRemote.OnClientEvent:Connect(function(displayName, amount, message)
 		debugLog("Broadcast diterima:", displayName, amount)
 
-		-- Tampilkan di chat (sudah dicek CanUserChatAsync di dalam ClientUI)
 		ClientUI.sendDonationChatMessage(displayName, amount)
 
-		-- Tampilkan notifikasi UI jika memenuhi minimum
 		if amount >= ClientConfig.NOTIFICATION.MIN_DONATION then
 			ClientUI.updateNotificationContent(displayName, amount, message)
 			ClientUI.showNotification()
@@ -2200,14 +2991,12 @@ UI.templateFrame.Visible     = false
 UI.messageFrame.Visible      = false
 UI.notificationFrame.Visible = false
 
--- Main frame close button
 UI.mainFrame:WaitForChild("Header"):WaitForChild("CloseBtn").MouseButton1Click:Connect(function()
 	UI.mainFrame.Visible = false
 	donationIcon:deselect()
 	debugLog("Main frame ditutup")
 end)
 
--- Message frame buttons
 local messageHeader = UI.messageFrame:WaitForChild("Header")
 local sendBtn       = UI.messageFrame:WaitForChild("SendBtn")
 local cancelBtn     = UI.messageFrame:WaitForChild("CancelBtn")
@@ -2234,16 +3023,16 @@ end)
 ClientUI.initNotification(UI.notificationFrame)
 setupBroadcastListener()
 
--- Cleanup icon saat player keluar
 Players.PlayerRemoving:Connect(function(leavingPlayer)
 	if leavingPlayer == player then
-		if donationIcon then donationIcon:destroy() end
+		if donationIcon then donationIcon:Destroy() end
 		debugLog("Cleanup icon selesai")
 	end
 end)
 
 debugLog("DonationClientHandler initialized")
 debugLog("MIN_DONATION notifikasi:", ClientConfig.NOTIFICATION.MIN_DONATION)
+
 
 local ClientConfig = {}
 
@@ -2295,19 +3084,18 @@ ClientConfig.NOTIFICATION = {
 -- DONATION COLORS (by tier, descending)
 -- ============================================
 ClientConfig.DONATION_COLORS = {
-	{min = 2000, color = Color3.fromRGB(230, 33,  23),  name = "Legendary"}, -- Untuk Steak Sapi (2000)
-	{min = 1000, color = Color3.fromRGB(233, 30,  99),  name = "Epic"},      -- Untuk Pizza (1000)
-	{min = 500,  color = Color3.fromRGB(156, 39,  176), name = "Rare"},      -- Untuk Ayam Goreng (500)
-	{min = 250,  color = Color3.fromRGB(63,  81,  181), name = "Super"},     -- Untuk Burger (250)
-	{min = 100,  color = Color3.fromRGB(33,  150, 243), name = "Great"},     -- Untuk Kentang Goreng (100)
-	{min = 50,   color = Color3.fromRGB(0,   188, 212), name = "Good"},      -- Untuk Donat (50)
-	{min = 30,   color = Color3.fromRGB(0,   150, 136), name = "Nice"},      -- Untuk Es Krim (30)
-	{min = 0,    color = Color3.fromRGB(76,  175, 80),  name = "Thanks"},    -- Untuk Permen (15) ke bawah
+	{min = 2000, color = Color3.fromRGB(230, 33,  23),  name = "Legendary"}, 
+	{min = 1000, color = Color3.fromRGB(233, 30,  99),  name = "Epic"},      
+	{min = 500,  color = Color3.fromRGB(156, 39,  176), name = "Rare"},      
+	{min = 250,  color = Color3.fromRGB(63,  81,  181), name = "Super"},     
+	{min = 100,  color = Color3.fromRGB(33,  150, 243), name = "Great"},     
+	{min = 50,   color = Color3.fromRGB(0,   188, 212), name = "Good"},      
+	{min = 30,   color = Color3.fromRGB(0,   150, 136), name = "Nice"},      
+	{min = 0,    color = Color3.fromRGB(76,  175, 80),  name = "Thanks"},    
 }
 
 -- ============================================
--- CHAT MESSAGES (variasi berdasarkan tier)
--- Gunakan %s untuk nama donor dan %s untuk jumlah.
+-- CHAT MESSAGES
 -- ============================================
 ClientConfig.CHAT_MESSAGES = {
 	{min = 10000, messages = {
@@ -2351,9 +3139,6 @@ ClientConfig.CHAT_MESSAGES = {
 	}},
 }
 
--- ============================================
--- MESSAGES (UI strings)
--- ============================================
 ClientConfig.MESSAGES = {
 	NO_PRODUCTS         = "Tidak ada produk donasi\n\nHubungi developer untuk bantuan.",
 	SERVER_UNAVAILABLE  = "Server tidak tersedia!\n\nSilakan coba lagi.",
@@ -2366,12 +3151,13 @@ ClientConfig.MESSAGES = {
 
 return ClientConfig
 
+
 local TweenService    = game:GetService("TweenService")
 local StarterGui      = game:GetService("StarterGui")
 local TextChatService = game:GetService("TextChatService")
 local Players         = game:GetService("Players")
 
-local ClientConfig = require(script.Parent.ClientConfig)
+local ClientConfig = require(script.Parent:WaitForChild("ClientConfig"))
 
 local ClientUI = {}
 
@@ -2413,6 +3199,18 @@ function ClientUI.formatNumber(num)
 		if k == 0 then break end
 	end
 	return formatted
+end
+
+-- 🔥 SECURITY FIX 2: Fungsi proteksi teks agar RichText tidak hilang
+local function sanitizeHtml(text)
+	if not text then return "" end
+	text = tostring(text)
+	text = text:gsub("&", "&amp;")
+	text = text:gsub("<", "&lt;")
+	text = text:gsub(">", "&gt;")
+	text = text:gsub('"', "&quot;")
+	text = text:gsub("'", "&apos;")
+	return text
 end
 
 -- ============================================
@@ -2482,8 +3280,6 @@ end
 
 -- ============================================
 -- CHAT MESSAGE SYSTEM
--- [WAJIB Roblox] Menggunakan TextChannel:DisplaySystemMessage()
--- bukan SetCore("ChatMakeSystemMessage") yang sudah deprecated.
 -- ============================================
 
 local function colorToHex(color)
@@ -2505,18 +3301,7 @@ local function getChatMessageTemplate(amount)
 	return "Thank you! %s has donated %s Robux!"
 end
 
---[[
-    Kirim pesan sistem berwarna ke chat Roblox.
-    
-    PENTING (Roblox compliance):
-    - Hanya bisa dipanggil dari LocalScript (client side).
-    - Cek CanUserChatAsync() terlebih dahulu sebelum display.
-    - Gunakan DisplaySystemMessage() — ini system message, bukan player message,
-      sehingga tidak memerlukan filtering konten (sudah built-in).
-    - RBXGeneral digunakan sebagai channel default.
---]]
 function ClientUI.sendDonationChatMessage(displayName, amount)
-	-- Cek apakah player lokal bisa melihat chat
 	local localPlayer = Players.LocalPlayer
 	local canChat = false
 	local ok, err = pcall(function()
@@ -2534,33 +3319,23 @@ function ClientUI.sendDonationChatMessage(displayName, amount)
 	end
 
 	pcall(function()
-		-- Tunggu TextChannels tersedia (seharusnya sudah ada saat game berjalan)
 		local textChannels = TextChatService:FindFirstChild("TextChannels")
-		if not textChannels then
-			debugLog("ERROR", "TextChannels tidak ditemukan")
-			return
-		end
+		if not textChannels then return end
 
 		local generalChannel = textChannels:FindFirstChild("RBXGeneral")
-		if not generalChannel then
-			debugLog("ERROR", "RBXGeneral channel tidak ditemukan")
-			return
-		end
+		if not generalChannel then return end
 
 		local color    = ClientUI.getDonationColor(amount)
 		local hexColor = colorToHex(color)
 		local template = getChatMessageTemplate(amount)
 		local message  = string.format(template, displayName, ClientUI.formatNumber(amount))
 
-		-- Rich text untuk warna (TextChatService mendukung rich text di system messages)
 		local richMessage = string.format(
 			'<font color="#%s"><b>%s</b></font>',
 			hexColor, message
 		)
 
-		-- [WAJIB] Gunakan DisplaySystemMessage, bukan cara legacy
 		generalChannel:DisplaySystemMessage(richMessage)
-		debugLog("UI", "System chat message ditampilkan:", message)
 	end)
 end
 
@@ -2591,7 +3366,6 @@ function ClientUI.initNotification(notificationFrame)
 	end
 	NotificationState.notificationTextLabel = notificationFrame:WaitForChild("NotificationText", 5)
 
-	-- Buat sound sekali saja
 	if not NotificationState.sound then
 		local sound              = Instance.new("Sound")
 		sound.SoundId            = ClientConfig.NOTIFICATION.SOUND_ID
@@ -2640,7 +3414,8 @@ function ClientUI.updateNotificationContent(displayName, amount, message)
 		NotificationState.robuxAmountLabel.Text = ClientUI.formatNumber(amount)
 	end
 	if NotificationState.notificationTextLabel then
-		NotificationState.notificationTextLabel.Text = message or ""
+		-- 🔥 SECURITY FIX 2: Terapkan sanitizeHtml agar Teks RichText tidak error
+		NotificationState.notificationTextLabel.Text = sanitizeHtml(message)
 	end
 	debugLog("UI", "Notification content updated:", displayName, amount)
 end
@@ -2661,7 +3436,6 @@ function ClientUI.showNotification()
 		NotificationState.sound:Play()
 	end
 
-	-- Mulai dari luar layar (kanan)
 	local startPos = UDim2.new(
 		1.5,
 		NotificationState.originalPos.X.Offset,
@@ -2676,7 +3450,9 @@ function ClientUI.showNotification()
 		TweenInfo.new(ClientConfig.NOTIFICATION.SLIDE_TIME, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
 		{Position = NotificationState.originalPos}
 	)
-	table.insert(NotificationState.currentTweens, slideIn)
+
+	-- 🔥 ARCHITECT FIX 3: Timpa tabel ketimbang meng-insert
+	NotificationState.currentTweens = { slideIn }
 	slideIn:Play()
 
 	slideIn.Completed:Connect(function()
@@ -2706,27 +3482,1003 @@ function ClientUI.hideNotification()
 	)
 	slideOut:Play()
 
-	slideOut.Completed:Once(function()
-		frame.Visible           = false
-		NotificationState.isShowing = false
-		debugLog("UI", "Notification hidden")
+	slideOut.Completed:Once(function(playbackState)
+		-- 🔥 ARCHITECT FIX 1: Pastikan status isShowing & Visible hanya diset False JIKA animasi tidak di-Cancel paksa!
+		if playbackState == Enum.PlaybackState.Completed then
+			frame.Visible               = false
+			NotificationState.isShowing = false
+			debugLog("UI", "Notification hidden")
+		end
 	end)
 end
 
 return ClientUI
 
+
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local remotes = ReplicatedStorage:WaitForChild("Remotes")
+
+local updateFavoritedAnimationsEventRE = remotes:WaitForChild("updateFavoritedAnimationsEvent")
+local startSyncRE = remotes:WaitForChild("startSync")
+local changeSpeedRE = remotes:WaitForChild("changeSpeed")
+local syncNotificationRE = remotes:WaitForChild("SyncNotification")
+local animationStartRE = remotes:WaitForChild("animationStart")
+
+local emotesFolder = ReplicatedStorage:WaitForChild("Emotes")
+local Modules = ReplicatedStorage:WaitForChild("Modules")
+local AnimationPreloader = require(Modules:WaitForChild("AnimationPreloader"))
+local AnimatorUtils = require(Modules:WaitForChild("AnimatorUtils"))
+AnimatorUtils.AnimationPreloader = AnimationPreloader
+
+-- ============================================
+-- GUI ELEMENTS
+-- ============================================
+local gui = script.Parent
+local mainframe = gui:WaitForChild("MainFrame")
+local preloadLabel = Instance.new("TextLabel")
+preloadLabel.Name = "PreloadStatus"
+preloadLabel.Size = UDim2.new(1, 0, 1, 0)
+preloadLabel.Position = UDim2.new(0, 0, 0, 0)
+preloadLabel.AnchorPoint = Vector2.new(0, 0)
+preloadLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+preloadLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+preloadLabel.Text = "Preloading animations..."
+preloadLabel.TextSize = 14
+preloadLabel.Font = Enum.Font.Montserrat
+preloadLabel.Visible = false
+preloadLabel.Parent = mainframe
+
+local emoteBtn = gui:WaitForChild("Emote")
+local containerframe = mainframe:WaitForChild("Container")
+local controlframe = mainframe:WaitForChild("Control")
+local unsyncframe = mainframe:WaitForChild("UnsyncFrame")
+local containerlist = containerframe:WaitForChild("ContainerList")
+local templateframe = containerlist:WaitForChild("Template")
+local danceBtn = controlframe:WaitForChild("Dance")
+local favoriteBtn = controlframe:WaitForChild("Favorite")
+local poseBtn = controlframe:WaitForChild("Pose")
+local unsyncBtn = unsyncframe:WaitForChild("UnsyncBtn")
+local dancelabel = unsyncframe:WaitForChild("DanceLabel")
+local searchBox = mainframe:WaitForChild("SearchBox")
+local notifframe = gui:WaitForChild("NotificationFrame")
+local notiflabel = notifframe:WaitForChild("NotificationText")
+
+local speedFrame = mainframe:FindFirstChild("SpeedFrame")
+local speedBar = speedFrame and speedFrame:FindFirstChild("speedBar")
+local speedSlider = speedBar and speedBar:FindFirstChild("speedPosition")
+local speedButton = speedSlider and speedSlider:FindFirstChild("Button")
+local speedtext = speedFrame and speedFrame:FindFirstChild("TextLabel")
+
+-- ============================================
+-- VARIABLES & CONSTANTS
+-- ============================================
+local SPEED_MIN = 0.5
+local SPEED_MAX = 3.0
+local SPEED_DEFAULT = 1.0
+local FADE_TIME = 0.5
+
+local notificationQueue = {}
+local isShowingNotification = false
+
+local allButtons = {}
+local emoteIdCache = {}
+local favoritedAnimations = {}
+
+local currentAnimation = nil
+local currentCategory = "Dance"
+local searchQuery = ""
+local currentSpeed = SPEED_DEFAULT
+
+local inputLock = false
+local pendingRequest = false
+local isSyncing = false
+local currentLeaderName = nil
+local localSyncTrack = nil
+local localAnimTrack = nil
+local syncUpdateConnection = nil
+
+local savedLocalEmoteData = nil
+local animationStarted -- Forward Declaration
+
+-- 🔥 ARCHITECT FIX 1: Variabel global yang hilang akhirnya dideklarasikan
+local lastEmoteClickTime = 0 
+
+-- ============================================
+-- CORE ANIMATION & STATE CONTROL
+-- ============================================
+
+local function setAnimateEnabled(character, enabled)
+	if not character then return end
+	character:SetAttribute("AnimateDisabled", not enabled)
+end
+
+local function killGhostAnimation(animator, fade)
+	local f = fade or FADE_TIME
+	pcall(function()
+		if not animator or not animator.Parent then return end
+		if animator.Parent.Parent ~= player.Character then return end 
+
+		for _, t in ipairs(animator:GetPlayingAnimationTracks()) do
+			if t.Animation and emoteIdCache[t.Animation.AnimationId] then
+				t:AdjustSpeed(1) 
+				t:Stop(f)
+			end
+		end
+	end)
+end
+
+local function suppressNativeAnimations(animator, fade)
+end
+
+local function freezeHumanoidForPose(character, freeze)
+	if not character then return end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
+
+	if freeze then
+		humanoid:ChangeState(Enum.HumanoidStateType.None)
+	else
+		if humanoid:GetState() == Enum.HumanoidStateType.None then
+			humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+		end
+	end
+end
+
+local function isCurrentAnimPose()
+	if not currentAnimation then return false end
+	for _, data in ipairs(allButtons) do
+		if data.button == currentAnimation and data.category == "Pose" then
+			return true
+		end
+	end
+	return false
+end
+
+local function restoreCharacterAnimations(character)
+	if character ~= player.Character then return end
+
+	if not character then return end
+	setAnimateEnabled(character, true)
+	freezeHumanoidForPose(character, false)
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+
+	if animator then
+		pcall(function()
+			for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+				if track.Animation and not emoteIdCache[track.Animation.AnimationId] then
+					track:AdjustSpeed(1)
+					track:AdjustWeight(1)
+				end
+			end
+		end)
+	end
+
+	if humanoid then
+		task.defer(function()
+			if character:GetAttribute("AnimateDisabled") then return end
+			pcall(function()
+				local state = humanoid:GetState()
+				if state == Enum.HumanoidStateType.None then return end
+				humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+				task.defer(function()
+					pcall(function() humanoid:ChangeState(state) end)
+				end)
+			end)
+		end)
+	end
+end
+
+-- ============================================
+-- GUI HELPER FUNCTIONS
+-- ============================================
+
+local function showNotification(message, duration, bgColor)
+	table.insert(notificationQueue, { message = message, duration = duration or 3, bgColor = bgColor or Color3.fromRGB(50, 150, 255) })
+	if not isShowingNotification then
+		task.spawn(function()
+			while #notificationQueue > 0 do
+				isShowingNotification = true
+				local notif = table.remove(notificationQueue, 1)
+				notiflabel.Text = notif.message
+				notifframe.BackgroundColor3 = notif.bgColor
+				notifframe.Position = UDim2.new(0.5, 0, -0.2, 0)
+				notifframe.Visible = true
+				TweenService:Create(notifframe, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, 0, 0.1, 0)}):Play()
+				task.wait(notif.duration + 0.5)
+				local outTween = TweenService:Create(notifframe, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Position = UDim2.new(0.5, 0, -0.2, 0)})
+				outTween:Play()
+				outTween.Completed:Wait()
+				notifframe.Visible = false
+			end
+			isShowingNotification = false
+		end)
+	end
+end
+
+syncNotificationRE.OnClientEvent:Connect(function(notifType, leaderName)
+	if notifType == "sync_success" then
+		local leaderPlayer = Players:FindFirstChild(leaderName)
+		local displayName = leaderPlayer and leaderPlayer.DisplayName or leaderName
+		showNotification("Coordinate dance are apply to " .. displayName, 2.5, Color3.fromRGB(0, 0, 0))
+	elseif notifType == "unsync_success" then
+		showNotification("Unsynced", 2, Color3.fromRGB(0, 0, 0))
+	elseif notifType == "leader_left" then
+		showNotification("LEAD " .. leaderName .. " meninggalkan server", 4, Color3.fromRGB(200, 30, 30))
+		if player.Character then
+			restoreCharacterAnimations(player.Character)
+			if localSyncTrack then 
+				localSyncTrack:Stop(0.5) 
+				localSyncTrack = nil 
+			end
+		end
+	elseif notifType == "leader_blocked" then
+		showNotification("You are a Dance Leader!\nCannot sync to followers", 3, Color3.fromRGB(0, 0, 0))
+	elseif notifType == "circular_blocked" then
+		showNotification("Cannot create circular coordinate dance", 2.5, Color3.fromRGB(0, 0, 0))
+	end
+end)
+
+local function updateButtonVisuals()
+	for _, data in ipairs(allButtons) do
+		local templateBtn = data.button:FindFirstChild("TemplateBtn")
+		if templateBtn then
+			templateBtn.TextColor3 = (currentAnimation == data.button) and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(255, 255, 255)
+		end
+	end
+end
+
+local function loadSavedFavorites()
+	local stringVal = player:WaitForChild("SavedFavoritedAnimations", 15)
+	local savedData = stringVal and stringVal.Value or nil
+
+	if savedData and typeof(savedData) == "string" then
+		local ok, decoded = pcall(HttpService.JSONDecode, HttpService, savedData)
+		favoritedAnimations = (ok and typeof(decoded) == "table") and decoded or {}
+	else
+		favoritedAnimations = {}
+	end
+end
+
+local favoritesLoaded = false
+task.spawn(function() loadSavedFavorites() favoritesLoaded = true end)
+
+local function saveFavoritedAnimations() 
+	updateFavoritedAnimationsEventRE:FireServer(HttpService:JSONEncode(favoritedAnimations)) 
+end
+
+local function findAnimById(danceId)
+	for _, anim in ipairs(emotesFolder:GetChildren()) do
+		if anim:IsA("Animation") and anim.AnimationId == danceId then return anim end
+	end
+	local poseFolder = emotesFolder:FindFirstChild("Pose")
+	if poseFolder then
+		for _, anim in ipairs(poseFolder:GetChildren()) do
+			if anim:IsA("Animation") and anim.AnimationId == danceId then return anim end
+		end
+	end
+	return nil
+end
+
+-- ============================================
+-- THE UNIVERSAL HIVE MIND (Observer Tunggal)
+-- ============================================
+local globalSyncListeners = setmetatable({}, { __mode = "k" })
+
+local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
+	if char ~= player.Character then return end 
+
+	local animator = char:FindFirstChild("Humanoid") and char.Humanoid:FindFirstChild("Animator")
+	if not animator then return end
+
+	local applyTicket = (char:GetAttribute("ApplyTicket") or 0) + 1
+	char:SetAttribute("ApplyTicket", applyTicket)
+	local actualFade = isSpam and 0 or FADE_TIME
+
+	if dancelabel then
+		if danceId and emoteIdCache[danceId] then
+			dancelabel.Text = " " .. emoteIdCache[danceId]
+		else
+			local displayName = leaderName or "Leader"
+			local lp = Players:FindFirstChild(leaderName or "")
+			if lp then displayName = lp.DisplayName end
+			dancelabel.Text = " " .. displayName .. "'s Dance"
+		end
+	end
+
+	-- LOGIKA STOP / UNSYNC
+	if not danceId then
+		if localSyncTrack then
+			localSyncTrack:Stop(actualFade)
+			localSyncTrack = nil
+		end
+
+		killGhostAnimation(animator, actualFade)
+		restoreCharacterAnimations(char)
+
+		if not isSyncing then
+			if savedLocalEmoteData then
+				local saved = savedLocalEmoteData
+				savedLocalEmoteData = nil
+				task.delay(0.1, function()
+					animationStarted(saved.animation, saved.button)
+				end)
+			end
+		end
+		return
+	end
+
+	-- LOGIKA PLAY
+	local targetAnim = findAnimById(danceId)
+	if not targetAnim then return end
+
+	if localAnimTrack then
+		localAnimTrack:Stop(actualFade)
+		localAnimTrack = nil
+	end
+
+	setAnimateEnabled(char, false)
+	killGhostAnimation(animator, actualFade)
+
+	local track = AnimatorUtils.getOrCreateTrack(animator, targetAnim)
+	if not track then setAnimateEnabled(char, true) return end
+
+	if localSyncTrack then localSyncTrack:Stop(actualFade) end
+	localSyncTrack = track
+
+	track.Priority = Enum.AnimationPriority.Action3
+	track:Play(actualFade, 1, speed)
+
+	local capturedTicket = applyTicket
+	task.spawn(function()
+		-- 🔥 ARCHITECT FIX 2: os.clock()
+		local timeout = os.clock() + 5
+		while track and track.Length == 0 and os.clock() < timeout do RunService.RenderStepped:Wait() end
+		if char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
+
+		if startTime and track.Length > 0 then
+			local finalTime = workspace:GetServerTimeNow()
+			local exactPos = ((finalTime - startTime) * speed) % track.Length
+			track.TimePosition = exactPos
+			track:AdjustSpeed(speed) 
+		end
+
+		task.delay(actualFade + 0.05, function()
+			if char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
+			suppressNativeAnimations(animator, 0)
+		end)
+	end)
+end
+
+local function monitorPlayerCharacter(targetPlayer)
+	local function onCharacterAdded(char)
+		if globalSyncListeners[char] then return end
+		globalSyncListeners[char] = true
+
+		-- 🔥 ARCHITECT FIX 3: Tambahkan batas waktu untuk cegah Infinite Yield!
+		local humanoid = char:WaitForChild("Humanoid", 10)
+		if not humanoid then return end
+
+		local animator = humanoid:WaitForChild("Animator", 10)
+		if not animator then return end
+
+		local function forceSnapCharacterDance(track)
+			if not track or track.Length == 0 then return end
+
+			local startTime = char:GetAttribute("DanceStartTime")
+			local speed = char:GetAttribute("DanceSpeed") or 1
+			local currentDanceId = char:GetAttribute("CurrentDanceID")
+			local syncingTo = char:GetAttribute("Syncing")
+
+			if syncingTo == player.Name then return end 
+
+			if currentDanceId and track.Animation and track.Animation.AnimationId ~= currentDanceId then return end
+
+			if syncingTo and syncingTo ~= "" then
+				local leader = Players:FindFirstChild(syncingTo)
+				if leader and leader.Character then
+					startTime = leader.Character:GetAttribute("DanceStartTime") or startTime
+					speed = leader.Character:GetAttribute("DanceSpeed") or speed
+				end
+			end
+
+			if startTime then
+				local elapsed = workspace:GetServerTimeNow() - startTime
+				local exactPos = (elapsed * speed) % track.Length
+				if exactPos > 0 and math.abs(track.TimePosition - exactPos) > 0.03 then
+					pcall(function() track.TimePosition = exactPos end)
+				end
+			end
+		end
+
+		animator.AnimationPlayed:Connect(function(track)
+			if char:GetAttribute("AnimateDisabled") then
+				if not (track.Animation and emoteIdCache[track.Animation.AnimationId]) then
+					local prio = track.Priority
+					if prio == Enum.AnimationPriority.Core or prio == Enum.AnimationPriority.Idle or prio == Enum.AnimationPriority.Movement or prio == Enum.AnimationPriority.Action3 then
+						track:AdjustWeight(0.001)
+					end
+				end
+			end
+
+			if char ~= player.Character and track.Animation and emoteIdCache[track.Animation.AnimationId] then
+				task.spawn(function()
+					-- 🔥 ARCHITECT FIX 2: os.clock()
+					local timeout = os.clock() + 5
+					while track and track.Length == 0 and os.clock() < timeout do RunService.RenderStepped:Wait() end
+					forceSnapCharacterDance(track)
+				end)
+			end
+		end)
+
+		local function onAttributeChanged()
+			if char == player.Character then return end
+			for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+				if track.Animation and emoteIdCache[track.Animation.AnimationId] then
+					forceSnapCharacterDance(track)
+				end
+			end
+		end
+
+		char:GetAttributeChangedSignal("DanceStartTime"):Connect(onAttributeChanged)
+		char:GetAttributeChangedSignal("CurrentDanceID"):Connect(onAttributeChanged)
+		char:GetAttributeChangedSignal("DanceSpeed"):Connect(onAttributeChanged)
+		char:GetAttributeChangedSignal("Syncing"):Connect(onAttributeChanged)
+
+		char:GetAttributeChangedSignal("AnimateDisabled"):Connect(function()
+			if char:GetAttribute("AnimateDisabled") then
+				for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+					if track.Animation and emoteIdCache[track.Animation.AnimationId] then continue end
+					local prio = track.Priority
+					if prio == Enum.AnimationPriority.Core or prio == Enum.AnimationPriority.Idle or prio == Enum.AnimationPriority.Movement or prio == Enum.AnimationPriority.Action3 then
+						if track.WeightCurrent > 0.01 then track:AdjustWeight(0.001) end
+					end
+				end
+			end
+		end)
+
+		local function syncToLeader()
+			local leaderName = char:GetAttribute("Syncing")
+			if leaderName and leaderName ~= "" then
+				local leaderPlayer = Players:FindFirstChild(leaderName)
+				local leaderChar = leaderPlayer and leaderPlayer.Character
+				if leaderChar then
+					local danceId = leaderChar:GetAttribute("CurrentDanceID")
+					local speed = leaderChar:GetAttribute("DanceSpeed") or 1
+					local startTime = leaderChar:GetAttribute("DanceStartTime")
+					applyDance(char, danceId, speed, startTime, leaderName, false)
+				else
+					applyDance(char, nil, 1, nil, leaderName, false)
+				end
+			else
+				applyDance(char, nil, 1, nil, nil, false)
+			end
+		end
+
+		local function broadcastLeaderState(isSpamTrigger)
+			local danceId = char:GetAttribute("CurrentDanceID")
+			local speed = char:GetAttribute("DanceSpeed") or 1
+			local startTime = char:GetAttribute("DanceStartTime")
+
+			if char == player.Character then return end
+			for _, p in ipairs(Players:GetPlayers()) do
+				if p.Character and p.Character:GetAttribute("Syncing") == char.Name then
+					applyDance(p.Character, danceId, speed, startTime, char.Name, isSpamTrigger)
+				end
+			end
+		end
+
+		char:GetAttributeChangedSignal("Syncing"):Connect(syncToLeader)
+		char:GetAttributeChangedSignal("CurrentDanceID"):Connect(function() broadcastLeaderState(false) end)
+		char:GetAttributeChangedSignal("DanceSpeed"):Connect(function() broadcastLeaderState(false) end)
+		char:GetAttributeChangedSignal("SpamNonce"):Connect(function() broadcastLeaderState(true) end)
+
+		task.spawn(function()
+			if char:GetAttribute("Syncing") and char:GetAttribute("Syncing") ~= "" then
+				syncToLeader()
+			elseif char:GetAttribute("CurrentDanceID") then
+				broadcastLeaderState(false)
+			end
+		end)
+	end
+	if targetPlayer.Character then onCharacterAdded(targetPlayer.Character) end
+	targetPlayer.CharacterAdded:Connect(onCharacterAdded)
+end
+
+for _, p in ipairs(Players:GetPlayers()) do monitorPlayerCharacter(p) end
+Players.PlayerAdded:Connect(monitorPlayerCharacter)
+
+-- ============================================
+-- GUI & SYNC MANAGEMENT
+-- ============================================
+local function updateUnsyncFrame()
+	if not player.Character then unsyncframe.Visible = false return end
+	local syncTarget = player.Character:GetAttribute("Syncing")
+	if syncTarget and syncTarget ~= "" then
+		isSyncing = true
+		currentLeaderName = syncTarget
+		local leaderPlayer = Players:FindFirstChild(syncTarget)
+		unsyncBtn.Text = "Synced to " .. (leaderPlayer and leaderPlayer.DisplayName or syncTarget) .. "\nTap to Unsync"
+		unsyncframe.Visible = true
+	else
+		unsyncframe.Visible = false
+		isSyncing = false
+		currentLeaderName = nil
+		if localSyncTrack then 
+			localSyncTrack:Stop(FADE_TIME) 
+			localSyncTrack = nil 
+		end
+		if player.Character then
+			restoreCharacterAnimations(player.Character)
+		end
+	end
+end
+
+unsyncBtn.MouseButton1Click:Connect(function()
+	if inputLock or pendingRequest or not isSyncing or not currentLeaderName then return end
+	inputLock = true
+	local leaderPlayer = Players:FindFirstChild(currentLeaderName)
+	if not leaderPlayer then
+		if player.Character then player.Character:SetAttribute("Syncing", nil) end
+		updateUnsyncFrame() inputLock = false return
+	end
+	if localSyncTrack then 
+		localSyncTrack:Stop(FADE_TIME) 
+		localSyncTrack = nil 
+	end
+	startSyncRE:FireServer(leaderPlayer, false)
+	local clickSound = ReplicatedStorage:FindFirstChild("Sounds") and ReplicatedStorage.Sounds:FindFirstChild("minimal-pop-click-ui")
+	if clickSound then clickSound:Play() end
+	task.wait(0.1)
+	updateUnsyncFrame()
+	task.delay(0.3, function() inputLock = false end)
+end)
+
+local function setupSyncMonitoring()
+	if syncUpdateConnection then syncUpdateConnection:Disconnect() syncUpdateConnection = nil end
+	if not player.Character then player.CharacterAdded:Wait() end
+	updateUnsyncFrame()
+
+	syncUpdateConnection = player.Character:GetAttributeChangedSignal("Syncing"):Connect(function()
+		updateUnsyncFrame()
+		if isSyncing then
+			if not savedLocalEmoteData and currentAnimation and localAnimTrack then
+				local savedAnim = nil
+				for _, data in ipairs(allButtons) do
+					if data.button == currentAnimation then
+						savedAnim = data.animation
+						break
+					end
+				end
+				if savedAnim then
+					savedLocalEmoteData = {
+						animation = savedAnim,
+						button = currentAnimation,
+						speed = currentSpeed,
+					}
+				end
+			end
+		end
+	end)
+end
+setupSyncMonitoring()
+player.CharacterAdded:Connect(function() task.wait(1) setupSyncMonitoring() end)
+
+-- ============================================
+-- ANIMATION STARTED (Leader / Solo)
+-- ============================================
+function animationStarted(animation, button)
+	if inputLock or pendingRequest then return end
+	inputLock = true
+	task.delay(0.01, function() inputLock = false end)
+
+	-- 🔥 ARCHITECT FIX 2: os.clock()
+	local currentTime = os.clock()
+	local character = player.Character
+	local animator = character and character:FindFirstChild("Humanoid") and character.Humanoid:FindFirstChild("Animator")
+
+	if currentAnimation == button then
+		local timeSinceLastClick = currentTime - lastEmoteClickTime
+		if timeSinceLastClick < 0.7 then
+			lastEmoteClickTime = os.clock()
+			if animator then
+				local isPose = isCurrentAnimPose()
+				local char = character
+				setAnimateEnabled(character, false)
+				if localAnimTrack then 
+					localAnimTrack:Stop(0) 
+				end
+				localAnimTrack = AnimatorUtils.getOrCreateTrack(animator, animation)
+				if localAnimTrack then
+					localAnimTrack.Priority = Enum.AnimationPriority.Action3
+					localAnimTrack:Play(0, 1, currentSpeed)
+					local capturedTicket = (char:GetAttribute("ApplyTicket") or 0)
+					task.spawn(function()
+						task.wait(0.05)
+						if char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
+						freezeHumanoidForPose(char, isPose)
+					end)
+				end
+			end
+			animationStartRE:FireServer(animation.AnimationId, true, currentSpeed, 0, true, workspace:GetServerTimeNow())
+		else
+			currentAnimation = nil
+			lastEmoteClickTime = 0
+			updateButtonVisuals()
+			savedLocalEmoteData = nil
+			if animator and localAnimTrack then
+				localAnimTrack:Stop(FADE_TIME)
+				localAnimTrack = nil
+			end
+			restoreCharacterAnimations(character)
+			animationStartRE:FireServer(animation.AnimationId, false, currentSpeed, 0, false, workspace:GetServerTimeNow())
+		end
+	else
+		if character then
+			restoreCharacterAnimations(character)
+		end
+		savedLocalEmoteData = nil
+		currentAnimation = button
+		lastEmoteClickTime = os.clock()
+		updateButtonVisuals()
+		if animator then
+			local isPose = isCurrentAnimPose()
+			local char = character
+			setAnimateEnabled(character, false)
+			if localAnimTrack then 
+				localAnimTrack:Stop(FADE_TIME) 
+			end
+			localAnimTrack = AnimatorUtils.getOrCreateTrack(animator, animation)
+			if localAnimTrack then
+				localAnimTrack.Priority = Enum.AnimationPriority.Action3
+				localAnimTrack:Play(FADE_TIME, 1, currentSpeed)
+				local capturedTicket = (char:GetAttribute("ApplyTicket") or 0)
+				task.spawn(function()
+					task.wait(FADE_TIME + 0.05)
+					if char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
+					freezeHumanoidForPose(char, isPose)
+				end)
+			end
+		end
+		animationStartRE:FireServer(animation.AnimationId, true, currentSpeed, FADE_TIME, false, workspace:GetServerTimeNow())
+	end
+end
+
+-- ============================================
+-- GUI & BUTTON BUILDER
+-- ============================================
+
+local updateDisplay 
+
+local function toggleFavorite(animation, button, favoriteIcon)
+	favoritedAnimations[animation.Name] = not favoritedAnimations[animation.Name]
+	favoriteIcon.TextColor3 = favoritedAnimations[animation.Name] and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(100, 100, 100)
+	saveFavoritedAnimations()
+	if currentCategory == "Favorite" then updateDisplay() end
+end
+
+local function createEmoteButton(animation, category)
+	local newButton = templateframe:Clone()
+	newButton.Name = animation.Name
+	newButton.Visible = true
+	local templateBtn = newButton:FindFirstChild("TemplateBtn")
+	local favoriteIcon = newButton:FindFirstChild("FavoriteBtn")
+	local originalColor = Color3.fromRGB(255, 255, 255)
+
+	if templateBtn then
+		originalColor = templateBtn.BackgroundColor3
+		templateBtn.Text = animation.Name
+	end
+
+	if favoriteIcon then
+		favoriteIcon.TextColor3 = favoritedAnimations[animation.Name] and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(100, 100, 100)
+		favoriteIcon.MouseButton1Click:Connect(function()
+			if inputLock then return end
+			inputLock = true
+			toggleFavorite(animation, newButton, favoriteIcon)
+			task.delay(0.2, function() inputLock = false end)
+		end)
+	end
+
+	if templateBtn then
+		templateBtn.MouseButton1Click:Connect(function()
+			animationStarted(animation, newButton)
+			local clickSound = ReplicatedStorage:FindFirstChild("Sounds") and ReplicatedStorage.Sounds:FindFirstChild("minimal-pop-click-ui")
+			if clickSound then clickSound:Play() end
+		end)
+	end
+
+	newButton.Parent = containerlist
+	table.insert(allButtons, { button = newButton, animation = animation, category = category, name = animation.Name, originalColor = originalColor })
+	return newButton
+end
+
+function updateDisplay()
+	pcall(function()
+		containerlist.CanvasPosition = Vector2.new(0, 0)
+		for _, data in ipairs(allButtons) do
+			local shouldShow = (currentCategory == "Favorite") and (favoritedAnimations[data.name] == true) or (currentCategory == data.category)
+			if shouldShow and searchQuery ~= "" then 
+				shouldShow = string.find(string.lower(data.name), string.lower(searchQuery)) ~= nil 
+			end
+			data.button.Visible = shouldShow
+		end
+		updateButtonVisuals()
+	end)
+end
+
+local function setActiveCategory(category)
+	currentCategory = category
+	danceBtn.BackgroundColor3 = (category == "Dance") and Color3.fromRGB(50, 150, 255) or Color3.fromRGB(70, 70, 70)
+	poseBtn.BackgroundColor3 = (category == "Pose") and Color3.fromRGB(50, 150, 255) or Color3.fromRGB(70, 70, 70)
+	favoriteBtn.BackgroundColor3 = (category == "Favorite") and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(70, 70, 70)
+	updateDisplay()
+end
+
+danceBtn.MouseButton1Click:Connect(function() setActiveCategory("Dance") end)
+poseBtn.MouseButton1Click:Connect(function() setActiveCategory("Pose") end)
+favoriteBtn.MouseButton1Click:Connect(function() setActiveCategory("Favorite") end)
+searchBox:GetPropertyChangedSignal("Text"):Connect(function() searchQuery = searchBox.Text updateDisplay() end)
+
+-- ============================================
+-- SPEED SLIDER
+-- ============================================
+if speedSlider and speedBar and speedtext and speedButton then
+	local isDraggingSpeed = false
+	local speedSendDebounce = false
+	local lastSentSpeed = SPEED_DEFAULT
+	speedSlider.AnchorPoint = Vector2.new(0.5, 0.5)
+
+	local function scaleToSpeed(scale) return math.floor((SPEED_MIN + scale * (SPEED_MAX - SPEED_MIN)) * 100 + 0.5) / 100 end
+	local function speedToScale(speed) return (speed - SPEED_MIN) / (SPEED_MAX - SPEED_MIN) end
+
+	local function sendSpeedToServer(speed)
+		if speed == lastSentSpeed or speedSendDebounce then return end
+		speedSendDebounce = true
+		lastSentSpeed = speed
+		changeSpeedRE:FireServer(speed)
+		task.delay(0.05, function()
+			speedSendDebounce = false
+			if currentSpeed ~= lastSentSpeed then changeSpeedRE:FireServer(currentSpeed) lastSentSpeed = currentSpeed end
+		end)
+	end
+
+	local targetScale = speedToScale(SPEED_DEFAULT)
+	local currentScale = targetScale
+
+	speedBar.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if isSyncing then showNotification("Cannot change speed while syncing", 2, Color3.fromRGB(0, 0, 0)) return end
+			isDraggingSpeed = true
+			targetScale = math.clamp((UserInputService:GetMouseLocation().X - speedBar.AbsolutePosition.X) / speedBar.AbsoluteSize.X, 0, 1)
+		end
+	end)
+
+	speedButton.MouseButton1Down:Connect(function()
+		if isSyncing then showNotification("Cannot change speed while syncing", 2, Color3.fromRGB(0, 0, 0)) return end
+		isDraggingSpeed = true
+	end)
+
+	UserInputService.InputEnded:Connect(function(input) 
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then isDraggingSpeed = false end 
+	end)
+	UserInputService.TouchEnded:Connect(function() isDraggingSpeed = false end)
+
+	RunService.RenderStepped:Connect(function(dt)
+		if isDraggingSpeed then 
+			targetScale = math.clamp((UserInputService:GetMouseLocation().X - speedBar.AbsolutePosition.X) / speedBar.AbsoluteSize.X, 0, 1) 
+		end
+		if math.abs(currentScale - targetScale) > 0.001 then
+			currentScale = currentScale + (targetScale - currentScale) * (12 * dt)
+			speedSlider.Position = UDim2.fromScale(currentScale, 0.5)
+			local newSpeed = scaleToSpeed(currentScale)
+			if newSpeed ~= currentSpeed then
+				currentSpeed = newSpeed
+				speedtext.Text = string.format("%.1fx", math.floor(currentSpeed * 10 + 0.5) / 10)
+				if not isSyncing then
+					sendSpeedToServer(currentSpeed)
+					if localAnimTrack then pcall(function() localAnimTrack:AdjustSpeed(currentSpeed) end) end
+				end
+			end
+		else
+			currentScale = targetScale
+		end
+	end)
+	speedSlider.Position = UDim2.fromScale(targetScale, 0.5)
+	speedtext.Text = string.format("%.1fx", SPEED_DEFAULT)
+end
+
+emoteBtn.MouseButton1Click:Connect(function()
+	mainframe.Visible = not mainframe.Visible
+	local popSound = ReplicatedStorage:FindFirstChild("Sounds") and ReplicatedStorage.Sounds:FindFirstChild("cartoon_pop")
+	if popSound then popSound:Play() end
+end)
+
+-- ============================================
+-- PRELOAD & LOAD ANIMATIONS
+-- ============================================
+task.spawn(function()
+	repeat task.wait() until #emotesFolder:GetChildren() > 0
+	preloadLabel.Visible = true
+	if not player.Character then player.CharacterAdded:Wait() end
+	task.wait(2)
+	local success = AnimationPreloader.preloadAnimations(emotesFolder)
+	preloadLabel.Text = success and "Animations ready!" or "Preload failed"
+	preloadLabel.BackgroundTransparency = 0
+	task.wait(success and 1.5 or 3)
+	preloadLabel.Visible = false
+end)
+
+task.spawn(function()
+	repeat task.wait() until #emotesFolder:GetChildren() > 0
+	repeat task.wait(0.1) until favoritesLoaded
+	for _, anim in ipairs(emotesFolder:GetChildren()) do
+		if anim:IsA("Animation") then createEmoteButton(anim, "Dance") emoteIdCache[anim.AnimationId] = anim.Name end
+	end
+	local poseFolder = emotesFolder:FindFirstChild("Pose")
+	if poseFolder then
+		for _, anim in ipairs(poseFolder:GetChildren()) do
+			if anim:IsA("Animation") then createEmoteButton(anim, "Pose") emoteIdCache[anim.AnimationId] = anim.Name end
+		end
+	end
+	table.sort(allButtons, function(a, b) return a.name < b.name end)
+	for i, data in ipairs(allButtons) do data.button.LayoutOrder = i end
+	setActiveCategory("Dance")
+end)
+
+-- ============================================
+-- ANTI-DRIFT BACKGROUND SYNC (OPTIMIZED + SMOOTH LERP)
+-- ============================================
+task.spawn(function()
+	while task.wait(0.2) do
+		local myChar = player.Character
+		local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+		if not myHrp then continue end
+
+		local myReferenceTrack = localSyncTrack or localAnimTrack
+
+		for _, p in ipairs(Players:GetPlayers()) do
+			local char = p.Character
+			if char and char ~= myChar then
+				local targetHrp = char:FindFirstChild("HumanoidRootPart")
+
+				if not targetHrp or (myHrp.Position - targetHrp.Position).Magnitude > 100 then 
+					continue 
+				end
+
+				local animator = char:FindFirstChild("Humanoid") and char.Humanoid:FindFirstChild("Animator")
+				if animator then
+					local syncingTo = char:GetAttribute("Syncing")
+
+					if syncingTo == player.Name then
+						if myReferenceTrack and myReferenceTrack.IsPlaying then
+							for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+								if track.Animation and track.Animation.AnimationId == myReferenceTrack.Animation.AnimationId then
+									local exactPos = myReferenceTrack.TimePosition
+									local diff = exactPos - track.TimePosition
+
+									if track.Length > 0 then
+										if diff > track.Length / 2 then diff = diff - track.Length end
+										if diff < -track.Length / 2 then diff = diff + track.Length end
+
+										if math.abs(diff) > 0.4 then
+											pcall(function() track.TimePosition = exactPos end)
+										elseif math.abs(diff) > 0.03 then
+											local catchUpSpeed = currentSpeed + (diff * 2.5)
+											pcall(function() track:AdjustSpeed(catchUpSpeed) end)
+										else
+											pcall(function() track:AdjustSpeed(currentSpeed) end)
+										end
+									end
+								end
+							end
+						end
+						continue 
+					end
+
+					local startTime = char:GetAttribute("DanceStartTime")
+					local speed = char:GetAttribute("DanceSpeed") or 1
+					local currentDanceId = char:GetAttribute("CurrentDanceID")
+
+					if syncingTo and syncingTo ~= "" then
+						local leader = Players:FindFirstChild(syncingTo)
+						if leader and leader.Character then
+							startTime = leader.Character:GetAttribute("DanceStartTime") or startTime
+							speed = leader.Character:GetAttribute("DanceSpeed") or speed
+							currentDanceId = leader.Character:GetAttribute("CurrentDanceID") or currentDanceId
+						end
+					end
+
+					if startTime and currentDanceId then
+						for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+							if track.Animation and track.Animation.AnimationId == currentDanceId then
+								local elapsed = workspace:GetServerTimeNow() - startTime
+								local exactPos = (elapsed * speed) % track.Length
+
+								if exactPos > 0 and track.Length > 0 then
+									local diff = exactPos - track.TimePosition
+
+									if diff > track.Length / 2 then diff = diff - track.Length end
+									if diff < -track.Length / 2 then diff = diff + track.Length end
+
+									if math.abs(diff) > 0.4 then
+										pcall(function() track.TimePosition = exactPos end)
+									elseif math.abs(diff) > 0.03 then
+										local catchUpSpeed = speed + (diff * 2.5)
+										pcall(function() track:AdjustSpeed(catchUpSpeed) end)
+									else
+										pcall(function() track:AdjustSpeed(speed) end)
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+end)
+
+-- ============================================
+-- THE ZOMBIE CLEANER
+-- ============================================
+player.CharacterAdded:Connect(function(newCharacter)
+	task.spawn(function()
+		local animScript = newCharacter:WaitForChild("Animate", 2)
+		if animScript and animScript:IsA("LocalScript") then
+			animScript.Disabled = false
+		end
+	end)
+
+	if localSyncTrack then
+		local oldTrack = localSyncTrack
+		pcall(function() oldTrack:Stop() oldTrack:Destroy() end)
+		localSyncTrack = nil
+	end
+
+	-- 🔥 ARCHITECT FIX 4: Pastikan localAnimTrack dibunuh saat pemain respawn
+	if localAnimTrack then
+		local oldTrack = localAnimTrack
+		pcall(function() oldTrack:Stop() oldTrack:Destroy() end)
+		localAnimTrack = nil
+	end
+
+	isSyncing = false
+	currentLeaderName = nil
+	currentSpeed = 1
+	currentAnimation = nil
+	lastEmoteClickTime = 0
+	savedLocalEmoteData = nil
+	updateButtonVisuals()
+end)
+
+script.Destroying:Connect(function()
+	if syncUpdateConnection then syncUpdateConnection:Disconnect() end
+	if localSyncTrack then localSyncTrack:Stop(0) end
+	if localAnimTrack then localAnimTrack:Stop(0) end
+	if player.Character then
+		restoreCharacterAnimations(player.Character)
+	end
+end)
+
+
 -- ====================================
 -- MAIN CLIENT SCRIPT (SIMPLIFIED)
 -- ====================================
--- Removed: Give gamepass UI and handlers
--- Kept: Shop UI for self-purchase only
--- ====================================
 
-local Config = require(script.Config)
-local Logger = require(script.Logger)
-local NotificationManager = require(script.NotificationManager)
-local UIManager = require(script.UIManager)
-local ShopHandler = require(script.ShopHandler)
+-- 🔥 FIX 4: Gunakan WaitForChild agar modul aman dimuat tanpa error
+local Config = require(script:WaitForChild("Config"))
+local Logger = require(script:WaitForChild("Logger"))
+local NotificationManager = require(script:WaitForChild("NotificationManager"))
+local UIManager = require(script:WaitForChild("UIManager"))
+local ShopHandler = require(script:WaitForChild("ShopHandler"))
 
 -- ====================================
 -- SERVICES
@@ -2850,17 +4602,19 @@ notificationframe.Visible = false
 Logger:Info("Initializing...")
 
 task.spawn(function()
-	Player.CharacterAdded:Wait()
+	-- 🔥 FIX 1: Cegah Infinite Yield dengan mengecek Player.Character lebih dulu
+	if not Player.Character then
+		Player.CharacterAdded:Wait()
+	end
+
 	task.wait(2)
 	ShopHandler:LoadShopData()
 	Logger:Success("Initialization complete - Simplified Version (Self-Purchase Only)")
 end)
 
+
 -- ====================================
 -- CLIENT CONFIGURATION (SIMPLIFIED)
--- ====================================
--- Removed: Give gamepass notifications
--- Kept: Shop notifications only
 -- ====================================
 
 local Config = {
@@ -2929,10 +4683,11 @@ local Config = {
 
 return Config
 
+
 -- ====================================
 -- CLIENT LOGGER MODULE
 -- ====================================
-local Config = require(script.Parent.Config)
+local Config = require(script.Parent:WaitForChild("Config"))
 
 local Logger = {}
 
@@ -2964,11 +4719,12 @@ end
 
 return Logger
 
+
 -- ====================================
 -- NOTIFICATION MANAGER
 -- ====================================
-local Config = require(script.Parent.Config)
-local Logger = require(script.Parent.Logger)
+local Config = require(script.Parent:WaitForChild("Config"))
+local Logger = require(script.Parent:WaitForChild("Logger"))
 
 local StarterGui = game:GetService("StarterGui")
 local TweenService = game:GetService("TweenService")
@@ -2979,10 +4735,14 @@ function NotificationManager:Init(notificationFrame, notificationText)
 	self.frame = notificationFrame
 	self.text = notificationText
 	self.frame.Visible = false
+	self.currentNotificationTicket = 0 -- 🔥 FIX 3: Sistem Ticket untuk hindari overlap
 	Logger:Debug("NotificationManager initialized")
 end
 
 function NotificationManager:ShowVisual(message, isSuccess)
+	self.currentNotificationTicket = self.currentNotificationTicket + 1
+	local myTicket = self.currentNotificationTicket
+
 	self.text.Text = message
 
 	if isSuccess then
@@ -3004,13 +4764,18 @@ function NotificationManager:ShowVisual(message, isSuccess)
 	fadeIn:Play()
 
 	task.delay(4, function()
+		-- 🔥 FIX 3: Jika ada notifikasi baru yang masuk, abaikan delay penutupan yang lama
+		if self.currentNotificationTicket ~= myTicket then return end
+
 		local fadeOut = TweenService:Create(self.frame, tweenInfo, {
 			BackgroundTransparency = 1
 		})
 
 		fadeOut:Play()
 		fadeOut.Completed:Connect(function()
-			self.frame.Visible = false
+			if self.currentNotificationTicket == myTicket then
+				self.frame.Visible = false
+			end
 		end)
 	end)
 end
@@ -3027,15 +4792,13 @@ end
 
 return NotificationManager
 
+
 -- ====================================
 -- CLIENT SHOP HANDLER (SIMPLIFIED)
 -- ====================================
--- Removed: Give gamepass handling
--- Kept: Self-purchase only
--- ====================================
 
-local Config = require(script.Parent.Config)
-local Logger = require(script.Parent.Logger)
+local Config = require(script.Parent:WaitForChild("Config"))
+local Logger = require(script.Parent:WaitForChild("Logger"))
 
 local ShopHandler = {}
 ShopHandler.GamepassData = {}
@@ -3175,13 +4938,17 @@ end
 
 return ShopHandler
 
+
 -- ====================================
 -- UI MANAGER
 -- ====================================
-local Config = require(script.Parent.Config)
-local Logger = require(script.Parent.Logger)
+local Config = require(script.Parent:WaitForChild("Config"))
+local Logger = require(script.Parent:WaitForChild("Logger"))
 
 local UIManager = {}
+
+-- 🔥 FIX 2: Mencegah Memory Leak dengan melacak koneksi Dialog
+UIManager.activeConfirmConnections = nil 
 
 function UIManager:SetButtonState(button, state)
 	local stateConfig = Config.ButtonStates[state]
@@ -3209,7 +4976,6 @@ function UIManager:ShowConfirmDialog(confirmDialog, confirmText, text, onYes, on
 	confirmText.Text = text
 	confirmDialog.Visible = true
 
-	-- Return empty connections table that will be populated
 	return {
 		yesConnection = nil,
 		noConnection = nil,
@@ -3218,6 +4984,11 @@ function UIManager:ShowConfirmDialog(confirmDialog, confirmText, text, onYes, on
 end
 
 function UIManager:SetupConfirmButtons(confirmYesBtn, confirmNoBtn, onYes, onNo)
+	-- 🔥 FIX 2: Hapus koneksi dari Jendela Dialog sebelumnya jika belum diklik
+	if self.activeConfirmConnections and self.activeConfirmConnections.cleanup then
+		self.activeConfirmConnections.cleanup()
+	end
+
 	local connections = {
 		yesConnection = nil,
 		noConnection = nil,
@@ -3234,15 +5005,17 @@ function UIManager:SetupConfirmButtons(confirmYesBtn, confirmNoBtn, onYes, onNo)
 			connections.noConnection:Disconnect()
 			connections.noConnection = nil
 		end
+
+		if self.activeConfirmConnections == connections then
+			self.activeConfirmConnections = nil
+		end
 	end
+
+	connections.cleanup = cleanup
 
 	connections.yesConnection = confirmYesBtn.MouseButton1Click:Connect(function()
 		Logger:Debug("Confirm Yes clicked")
-
-		-- Cleanup first
 		cleanup()
-
-		-- Execute callback
 		if onYes then 
 			pcall(onYes)
 		end
@@ -3250,20 +5023,19 @@ function UIManager:SetupConfirmButtons(confirmYesBtn, confirmNoBtn, onYes, onNo)
 
 	connections.noConnection = confirmNoBtn.MouseButton1Click:Connect(function()
 		Logger:Debug("Confirm No clicked")
-
-		-- Cleanup first
 		cleanup()
-
-		-- Execute callback
 		if onNo then 
 			pcall(onNo)
 		end
 	end)
 
+	self.activeConfirmConnections = connections
+
 	return connections
 end
 
 return UIManager
+
 
 -- ====================================
 -- HELP GUI CONTROLLER
@@ -3284,18 +5056,20 @@ local mainframe = gui:WaitForChild("MainFrame")
 local header = mainframe:WaitForChild("Header")
 local closeBtn = header:WaitForChild("CloseBtn")
 local container = mainframe:WaitForChild("Content")
-local textbox2 = container:WaitForChild("TextBox2")
-local textbox3 = container:FindFirstChild("TextBox3")
-local copy2 = container:WaitForChild("TextBox2"):WaitForChild("copytext2")
-local copy3 = container:WaitForChild("TextBox3"):WaitForChild("copytext3")
 
+local textbox2 = container:WaitForChild("TextBox2")
+-- 🔥 FIX 1: Diganti menjadi WaitForChild agar tidak meledak jika UI lambat dimuat
+local textbox3 = container:WaitForChild("TextBox3") 
+
+local copy2 = textbox2:WaitForChild("copytext2")
+local copy3 = textbox3:WaitForChild("copytext3")
 
 -- ====================================
 -- CONFIGURATION
 -- ====================================
 local Config = {
 	IconOrder = 2,
-	IconName = "Support",
+	IconName = "Saweria",
 	-- Teks yang akan disalin (edit sesuai kebutuhan)
 	CopyText2 = "https://www.roblox.com/id/communities/192828493",
 	CopyText3 = "https://saweria.co/JeksAl",
@@ -3349,9 +5123,9 @@ end
 -- ====================================
 -- FUNCTIONS
 -- ====================================
-local function toggleGUI()
-	isGUIVisible = not isGUIVisible
-	mainframe.Visible = isGUIVisible
+local function openGUI()
+	isGUIVisible = true
+	mainframe.Visible = true
 end
 
 local function closeGUI()
@@ -3364,12 +5138,19 @@ local function setupCopyButton(button, textBox)
 	local originalText = button.Text
 	local originalColor = button.BackgroundColor3
 
+	-- 🔥 FIX 2: Tambahkan pengunci/debounce agar tidak tumpang tindih jika dispam klik
+	local isCopying = false 
+
 	-- Set ukuran, warna, dan font tombol dari Config
 	button.TextSize = Config.BtnTextSize
 	button.TextColor3 = Config.BtnTextColor
 	button.Font = Config.BtnFont
 
 	button.MouseButton1Click:Connect(function()
+		-- Mencegah proses ganda jika tombol masih dalam keadaan diproses (cooldown 3 detik)
+		if isCopying then return end
+		isCopying = true
+
 		-- 1. Fokus dan blok teks otomatis
 		textBox:CaptureFocus()
 
@@ -3393,11 +5174,12 @@ local function setupCopyButton(button, textBox)
 		-- Kembalikan ke semula
 		button.Text = originalText
 		button.BackgroundColor3 = originalColor
+		isCopying = false -- Buka kembali kunciannya
 	end)
 
 	-- Hover effect
 	button.MouseEnter:Connect(function()
-		if button.Text == originalText then
+		if not isCopying then
 			local r, g, b = originalColor.R, originalColor.G, originalColor.B
 			button.BackgroundColor3 = Color3.new(
 				math.min(r * 1.2, 1), 
@@ -3408,7 +5190,7 @@ local function setupCopyButton(button, textBox)
 	end)
 
 	button.MouseLeave:Connect(function()
-		if button.Text == originalText then
+		if not isCopying then
 			button.BackgroundColor3 = originalColor
 		end
 	end)
@@ -3422,7 +5204,7 @@ local helpIcon = Icon.new()
 	:setOrder(Config.IconOrder)
 	:setRight()
 	:bindEvent("selected", function()
-		toggleGUI()
+		openGUI()
 	end)
 	:bindEvent("deselected", function()
 		closeGUI()
@@ -3444,8 +5226,16 @@ setupTextBoxForCopy(textbox3, Config.CopyText3)
 setupCopyButton(copy2, textbox2)
 setupCopyButton(copy3, textbox3)
 
+-- 🔥 FIX 3: Tambahkan pembersihan Topbar saat pemain keluar untuk menghindari memory leak (Minor)
+Players.PlayerRemoving:Connect(function(leavingPlayer)
+	if leavingPlayer == Player then
+		if helpIcon then helpIcon:Destroy() end
+	end
+end)
+
+
 -- LocalScript: CinematicHandler
--- Lokasi: StarterPlayerScripts
+-- Lokasi: Di dalam ScreenGui (StarterGui)
 
 local Players      = game:GetService("Players")
 local RunService   = game:GetService("RunService")
@@ -3460,7 +5250,7 @@ local CinematicRemote      = RS:WaitForChild("CinematicRemote")
 local RequestDonationState = RS:WaitForChild("RequestDonationState")
 
 -- ============================================================
--- REFERENSI GUI — semua dari 1 ScreenGui
+-- REFERENSI GUI (Pastikan script ini ada di dalam ScreenGui-nya)
 -- ============================================================
 local donationGUI = script.Parent
 
@@ -3566,6 +5356,13 @@ end
 -- ============================================================
 -- SKIP BUTTON LOGIC
 -- ============================================================
+local isHolding      = false
+local isHidingSkip   = false -- 🔥 FIX 3: Pelindung Animasi Hiding
+local holdElapsed    = 0
+local holdRequired   = 1.2
+local holdConn       = nil
+local onSkipCallback = nil
+
 local function resetSkip()
 	skipFrame.Visible    = false
 	skipFrame.Position   = UDim2.new(1, 20, 0.5, 0)
@@ -3573,17 +5370,9 @@ local function resetSkip()
 	progressBar.BackgroundColor3 = Color3.fromRGB(255, 215, 0)
 end
 
--- ============================================================
--- SKIP BUTTON LOGIC
--- ============================================================
-local isHolding      = false
-local holdElapsed    = 0
-local holdRequired   = 1.2
-local holdConn       = nil
-local onSkipCallback = nil
-
 local function showSkip(onSkip)
 	onSkipCallback = onSkip
+	isHidingSkip = false
 	resetSkip()
 	skipFrame.Visible = true
 	TweenService:Create(skipFrame,
@@ -3593,8 +5382,12 @@ local function showSkip(onSkip)
 end
 
 local function hideSkip()
+	if isHidingSkip then return end
+	isHidingSkip = true
+
 	if holdConn then holdConn:Disconnect() holdConn = nil end
 	isHolding = false
+
 	local t = TweenService:Create(skipFrame,
 		TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
 		{ Position = UDim2.new(1, 20, 0.5, 0) }
@@ -3602,6 +5395,8 @@ local function hideSkip()
 	t:Play()
 	t.Completed:Wait()
 	resetSkip()
+
+	isHidingSkip = false
 end
 
 skipButton.MouseButton1Down:Connect(function()
@@ -3614,12 +5409,14 @@ skipButton.MouseButton1Down:Connect(function()
 			progressBar.BackgroundColor3 = Color3.fromRGB(255, 215, 0)
 			return
 		end
+
 		holdElapsed += dt
 		local progress = math.min(holdElapsed / holdRequired, 1)
 		progressBar.Size = UDim2.new(progress, 0, 1, 0)
 		progressBar.BackgroundColor3 = progress > 0.7
 			and Color3.fromRGB(255, 100, 50)
 			or  Color3.fromRGB(255, 215, 0)
+
 		if progress >= 1 then
 			holdConn:Disconnect()
 			holdConn  = nil
@@ -3645,8 +5442,8 @@ end)
 local function stopOrbit()
 	if orbitConnection then orbitConnection:Disconnect() orbitConnection = nil end
 	if originalCamType then camera.CameraType = originalCamType originalCamType = nil end
-	isOrbiting    = false
-	skipRequested = false
+	isOrbiting = false
+	-- Perhatian: skipRequested tidak di-reset di sini agar showCinematic mendeteksinya.
 end
 
 local function startOrbitCamera(targetCharacter, duration, onDone)
@@ -3708,7 +5505,7 @@ local function showCinematic(donationData)
 	shadow1.Text       = titleLabel.Text
 	shadow2.Text       = titleLabel.Text
 	subtitleLabel.Text = "Terima kasih atas supportmu yang luar biasa!"
-	
+
 	-- Update warna
 	glowCircle.BackgroundColor3 = color
 	leftLine.BackgroundColor3   = color
@@ -3754,13 +5551,25 @@ local function showCinematic(donationData)
 		local ip = UDim2.new(0.5, -200 + (i * 80), 0.5, -150)
 		local ep = UDim2.new(0.5, -200 + (i * 80), 0.5,  150)
 		task.spawn(function()
-			while ray and ray.Parent do
+			-- Batas waktu 10 detik agar thread mati jika frame error
+			local startTime = tick()
+			while ray and ray.Parent and (tick() - startTime < 10) do
 				local mt = TweenService:Create(ray, TweenInfo.new(2, Enum.EasingStyle.Linear), {Position = ep})
-				mt:Play() mt.Completed:Wait()
-				if ray and ray.Parent then ray.Position = ip end
+				mt:Play() 
+				mt.Completed:Wait()
+
+				if ray and ray.Parent then 
+					ray.Position = ip 
+				end
 				task.wait(0.05)
 			end
+
+			-- Garbage Collection Paksa jika animasi selesai / stuck
+			if ray and ray.Parent then
+				ray:Destroy()
+			end
 		end)
+
 	end
 
 	-- Title zoom in
@@ -3891,7 +5700,11 @@ local function showCinematic(donationData)
 		end)
 	end
 
-	task.wait(duration)
+	-- 🔥 FIX 1: Jeda menunggu durasi Cinematic ATAU di-skip
+	local elapsedCinematic = 0
+	while elapsedCinematic < duration and not skipRequested do
+		elapsedCinematic += task.wait(0.1)
+	end
 
 	-- Fade out
 	local fadeOut = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
@@ -3920,12 +5733,13 @@ local function showCinematic(donationData)
 end
 
 -- ============================================================
--- TERIMA EVENT DARI SERVER
+-- QUEUE SYSTEM (SISTEM ANTREAN DONASI)
 -- ============================================================
 local isPlayingCinematic = false
 local cinematicQueue = {}
 
 local function processCinematicQueue()
+	-- Jika masih ada cinematic yang main, atau antrean kosong, batalkan
 	if isPlayingCinematic or #cinematicQueue == 0 then return end
 	isPlayingCinematic = true
 
@@ -3951,7 +5765,7 @@ local function processCinematicQueue()
 	-- Tunggu durasi cinematic selesai sebelum lanjut ke antrean berikutnya
 	task.delay(donationData.cinematicDuration or 8, function()
 		isPlayingCinematic = false
-		processCinematicQueue()
+		processCinematicQueue() -- Lanjut panggil antrean berikutnya
 	end)
 end
 
@@ -3967,6 +5781,7 @@ end)
 
 task.wait(2)
 RequestDonationState:FireServer()
+
 
 ------------------------------------------------------------------------
 -- Freecam
@@ -4465,7 +6280,7 @@ local enabled = false
 local PlayerModule = require(game.Players.LocalPlayer.PlayerScripts:WaitForChild("PlayerModule"))
 local Controls = PlayerModule:GetControls()
 
--- 💡 PERBAIKAN DETEKSI DEVICE: HP vs PC
+-- ðŸ’¡ PERBAIKAN DETEKSI DEVICE: HP vs PC
 local isMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
 
 -- 1. TOMBOL CLOSE BAWAAN GUI KAMU (CloseFreecamBtn)
@@ -4499,7 +6314,7 @@ _G.__Freecam_Enable = function()
 		-- MUNCULKAN TOMBOL CLOSE BAWAAN GUI-MU!
 		closeBtn.Visible = true 
 
-		-- 💡 HANYA MUNCULKAN MOBILE CONTROLS JIKA PLAYER PAKAI HP!
+		-- ðŸ’¡ HANYA MUNCULKAN MOBILE CONTROLS JIKA PLAYER PAKAI HP!
 		if isMobile and script.Parent:FindFirstChild("MobileControls") then
 			script.Parent.MobileControls.Visible = true
 		end
@@ -4516,6 +6331,9 @@ closeBtn.MouseButton1Click:Connect(function()
 	TurnOffFreecam()
 end)
 
+
+
+
 -- ====================================
 -- ACCESSORY GUI CONTROLLER
 -- Place in StarterPlayer > StarterPlayerScripts
@@ -4530,20 +6348,44 @@ local AccessoryEvent = AccessoryRemotes:WaitForChild("ToggleAccessory")
 
 -- Wait for GUI
 local PlayerGui = Player:WaitForChild("PlayerGui")
-local gui = script.Parent -- Gui name MyHat
+
+-- 🔥 FIX 1: Menyesuaikan referensi. Karena skrip ditaruh di StarterPlayerScripts,
+-- kita memanggil GUI melalui PlayerGui, bukan menggunakan script.Parent.
+-- Pastikan nama GUI-mu benar-benar "MyHat"
+local gui = PlayerGui:WaitForChild("MyHat") 
 local mainframe = gui:WaitForChild("Mainframe")
 local equipBtn = mainframe:WaitForChild("EquipBtn")
 local unequipBtn = mainframe:WaitForChild("UnequipBtn")
+
+-- 🔥 FIX 2: Sistem Pelindung Anti-Spam (Debounce / Cooldown)
+local isProcessing = false
+local COOLDOWN_TIME = 0.5 -- Beri jeda 0.5 detik antar klik agar server tidak lag
 
 -- ====================================
 -- FUNCTIONS
 -- ====================================
 local function equipAccessory()
+	-- Cegah proses berlanjut jika sedang masa cooldown (anti-spam klik)
+	if isProcessing then return end
+	isProcessing = true
+
 	AccessoryEvent:FireServer("equip")
+
+	-- Tunggu masa cooldown selesai lalu buka gemboknya lagi
+	task.wait(COOLDOWN_TIME)
+	isProcessing = false
 end
 
 local function unequipAccessory()
+	-- Cegah proses berlanjut jika sedang masa cooldown
+	if isProcessing then return end
+	isProcessing = true
+
 	AccessoryEvent:FireServer("unequip")
+
+	-- Tunggu masa cooldown selesai lalu buka gemboknya lagi
+	task.wait(COOLDOWN_TIME)
+	isProcessing = false
 end
 
 -- ====================================
@@ -4562,6 +6404,7 @@ end)
 -- ====================================
 mainframe.Visible = false
 
+
 -- ============================================
 -- PlayerMenuClient
 -- Letakkan di: StarterGui > [ScreenGui] > LocalScript
@@ -4571,7 +6414,7 @@ local Players              = game:GetService("Players")
 local ReplicatedStorage    = game:GetService("ReplicatedStorage")
 local GuiService           = game:GetService("GuiService")
 local TextChatService      = game:GetService("TextChatService")
-local ContextActionService = game:GetService("ContextActionService")
+local UserInputService     = game:GetService("UserInputService")
 local TweenService         = game:GetService("TweenService")
 
 local localPlayer = Players.LocalPlayer
@@ -4581,7 +6424,6 @@ local camera      = workspace.CurrentCamera
 -- CONSTANTS
 -- ============================================
 local RAYCAST_DISTANCE         = 500
-local CLICK_ACTION_NAME        = "PlayerMenuClick"
 local MAX_INTERACTION_DISTANCE = 500
 local CLICK_COOLDOWN           = 0.3
 local ANIMATION_TIME           = 0.4
@@ -4790,11 +6632,28 @@ function PlayerHideSystem:TogglePlayer(targetPlayer)
 	local shouldHide            = not hiddenPlayers[targetPlayer]
 	hiddenPlayers[targetPlayer] = shouldHide
 	self:ApplyHideState(targetPlayer, targetPlayer.Character, shouldHide)
+
+	-- ✨ OPTIMASI: Hanya pantau Player yang sedang di-hide!
+	if shouldHide then
+		self:SetupPlayerMonitoring(targetPlayer)
+	else
+		self:StopPlayerMonitoring(targetPlayer)
+	end
+
 	return shouldHide
 end
 
 function PlayerHideSystem:IsPlayerHidden(targetPlayer)
 	return hiddenPlayers[targetPlayer] == true
+end
+
+function PlayerHideSystem:StopPlayerMonitoring(targetPlayer)
+	if monitoringConnections[targetPlayer] then
+		for _, conn in ipairs(monitoringConnections[targetPlayer]) do
+			conn:Disconnect()
+		end
+		monitoringConnections[targetPlayer] = nil
+	end
 end
 
 function PlayerHideSystem:SetupPlayerMonitoring(targetPlayer)
@@ -4883,7 +6742,10 @@ local function hideMenuWithAnimation(callback)
 	local tweenInfo = TweenInfo.new(ANIMATION_TIME * 0.7, Enum.EasingStyle.Back, Enum.EasingDirection.In)
 	currentTween    = TweenService:Create(mainframe, tweenInfo, { Position = MENU_START_POSITION })
 	currentTween:Play()
-	currentTween.Completed:Once(function()
+
+	currentTween.Completed:Once(function(playbackState)
+		if playbackState == Enum.PlaybackState.Cancelled then return end
+
 		mainframe.Visible = false
 		currentTween      = nil
 		if callback then callback() end
@@ -4937,11 +6799,6 @@ local function updatePaginationButtons()
 	fowardBtn.TextColor3 = fowardBtn.Active and activeColor or inactiveColor
 end
 
---[[
-	Render halaman outfit saat ini.
-	Pakai rbxthumb://type=Asset — tidak butuh HttpService,
-	langsung dari CDN Roblox, aman sesuai ToS Roblox.
-]]
 local function renderOutfitPage()
 	clearOutfitTiles()
 
@@ -4961,6 +6818,11 @@ local function renderOutfitPage()
 	updatePaginationButtons()
 end
 
+-- ====================================
+-- OUTFIT CACHE
+-- ====================================
+local OutfitCache = {}
+
 --[[
 	Ambil daftar aksesoris player via GetCharacterAppearanceInfoAsync,
 	lalu render halaman pertama. Berjalan async di background.
@@ -4969,6 +6831,13 @@ local function loadAccessoriesForPlayer(targetPlayer)
 	clearOutfitTiles()
 	outfitItemIds = {}
 	outfitPage    = 1
+
+	-- Mengecek apakah outfit pemain ini sudah pernah dimuat
+	if OutfitCache[targetPlayer.UserId] then
+		outfitItemIds = OutfitCache[targetPlayer.UserId]
+		renderOutfitPage()
+		return
+	end
 
 	task.spawn(function()
 		local ok, info = pcall(function()
@@ -4983,9 +6852,12 @@ local function loadAccessoriesForPlayer(targetPlayer)
 		end
 
 		outfitItemIds = (#ids > 0) and ids or DEFAULT_BACON_ITEMS
+		-- Simpan data di cache untuk mencegah API throttling
+		OutfitCache[targetPlayer.UserId] = outfitItemIds
 		renderOutfitPage()
 	end)
 end
+
 
 -- Tombol Back & Forward
 backBtn.Visible   = true
@@ -5008,32 +6880,37 @@ end)
 -- ============================================
 -- MENU CONFIGURATION
 -- ============================================
-local lastSyncTime = 0  -- ← TAMBAH DI SINI, sebelum MENU_CONFIG
+local lastSyncTime = 0
 
 local MENU_CONFIG = {
-	-- ... tombol lain ...
 	{
 		name = "SyncBtn",
 		text = "Coordinate Dance",
 		callback = function(targetPlayer)
-			local now = tick()
-			if now - lastSyncTime < 0.5 then return end  -- ← TAMBAH INI
-			lastSyncTime = now                            -- ← TAMBAH INI
+			local now = os.clock()
+			if now - lastSyncTime < 0.5 then return end 
+			lastSyncTime = now
 
-			if isSyncing or inputLock or not targetPlayer then 
-				warn("[DEBUG-CLIENT] DIBLOKIR: isSyncing/inputLock aktif, atau target kosong!")
+			if inputLock or not targetPlayer then 
+				warn("[DEBUG-CLIENT] DIBLOKIR: inputLock aktif, atau target kosong!")
 				return 
 			end
 
-			-- Validasi ekstra: Pastikan target belum left game
 			if not targetPlayer.Parent then 
 				warn("[DEBUG-CLIENT] DIBLOKIR: Target sudah keluar dari game (Parent nil).")
 				return 
 			end 
 
-			print("[DEBUG-CLIENT] Lolos validasi lokal! Menembak RemoteEvent ke Server...")
 			inputLock = true
-			startSyncRE:FireServer(targetPlayer, true)
+
+			local syncTarget = localPlayer.Character and localPlayer.Character:GetAttribute("Syncing")
+
+			if isSyncing and syncTarget == targetPlayer.Name then
+				startSyncRE:FireServer(targetPlayer, false)
+			else
+				startSyncRE:FireServer(targetPlayer, true)
+			end
+
 			playClickSound()
 			task.wait(0.2)
 			updateSyncButtonState()
@@ -5043,13 +6920,23 @@ local MENU_CONFIG = {
 		updateState = function(button)
 			if not localPlayer.Character then return end
 			local syncTarget = localPlayer.Character:GetAttribute("Syncing")
+
 			if syncTarget and syncTarget ~= "" then
-				isSyncing              = true
-				button.Text            = "Already Syncing"
-				button.AutoButtonColor = false
-				button.Active          = false
-				local stroke = button:FindFirstChild("UIStroke")
-				if stroke then stroke.Color = Color3.fromRGB(85, 85, 127) end
+				isSyncing = true
+
+				if currentTargetPlayer and currentTargetPlayer.Name == syncTarget then
+					button.Text            = "Unsync Dance"
+					button.AutoButtonColor = true  
+					button.Active          = true  
+					local stroke = button:FindFirstChild("UIStroke")
+					if stroke then stroke.Color = Color3.fromRGB(255, 100, 100) end 
+				else
+					button.Text            = "Switch Dance"
+					button.AutoButtonColor = true
+					button.Active          = true  
+					local stroke = button:FindFirstChild("UIStroke")
+					if stroke then stroke.Color = Color3.fromRGB(255, 255, 255) end
+				end
 			else
 				isSyncing              = false
 				button.Text            = "Coordinate Dance"
@@ -5060,6 +6947,7 @@ local MENU_CONFIG = {
 			end
 		end,
 	},
+
 	{
 		name = "HidePlayer",
 		text = "Hide Player",
@@ -5128,7 +7016,6 @@ local MENU_CONFIG = {
 		end,
 		updateState = function(button)
 			if not currentTargetPlayer then return end
-			-- Cek apakah target sudah punya role VIP ke atas
 			local role = currentTargetPlayer:FindFirstChild("Role")
 			local hasRole = role and (role.Value == "VIP" or role.Value == "VVIP" or role.Value == "Admin" or role.Value == "Owner")
 
@@ -5267,48 +7154,23 @@ end)
 -- ============================================
 -- UPDATE PLAYER INFO
 -- ============================================
---[[
-	Alur "load dulu, baru tampil":
-
-	1. Set nama, username, dan avatar LANGSUNG — ketiganya tidak perlu fetch.
-	   Avatar pakai rbxthumb://type=Avatar yang dihandle Roblox secara internal,
-	   tidak butuh HttpService, tidak butuh cache manual, sesuai ToS Roblox.
-
-	2. Set label bio & social ke "Loading..." sebagai placeholder.
-
-	3. Fetch bio + social counts via RemoteFunction ke server.
-	   Server yang menjalankan HttpService ke roproxy + cache + TextService filter.
-
-	4. Setelah server balas → update semua label sekaligus, panggil onReady().
-
-	5. onReady() membuka animasi menu — menu baru tampil setelah data siap.
-
-	6. loadAccessoriesForPlayer berjalan paralel di background —
-	   outfit muncul setelah menu terbuka, tidak menghambat.
-]]
 local function updatePlayerInfo(targetPlayer, onReady)
-	-- Nama & username tersedia langsung dari object Player
 	namelabel.Text     = targetPlayer.DisplayName
 	usernamelabel.Text = "@" .. targetPlayer.Name
 
-	-- Avatar: rbxthumb:// tidak butuh pcall, tidak butuh cache
 	playerAvatar.Image                  = "rbxthumb://type=Avatar&id=" .. targetPlayer.UserId .. "&w=352&h=352"
 	playerAvatar.BackgroundColor3       = Color3.fromRGB(0, 0, 0)
 	playerAvatar.BackgroundTransparency = 1
 
-	-- Placeholder sementara server diquery
 	Playerbio.Text       = "Loading..."
 	Connectionlabel.Text = "Connections ..."
 	FollowersLabel.Text  = "Followers ..."
 	FollowingLabel.Text  = "Following ..."
 
-	-- Outfit load di background
 	loadAccessoriesForPlayer(targetPlayer)
 
-	-- [PERBAIKAN UTAMA]: Buka menu SEKARANG JUGA! Jangan tunggu server membalas.
 	if onReady then onReady() end
 
-	-- Fetch bio + social dari server di background
 	task.spawn(function()
 		local getPlayerInfoRF = remotes:FindFirstChild("GetPlayerInfo")
 		local profileData     = nil
@@ -5326,10 +7188,8 @@ local function updatePlayerInfo(targetPlayer, onReady)
 			warn("[CLIENT] RemoteFunction 'GetPlayerInfo' tidak ditemukan di Remotes")
 		end
 
-		-- [CEK KEAMANAN]: Pastikan pemain belum menutup menu atau mengklik orang lain
 		if currentTargetPlayer ~= targetPlayer then return end
 
-		-- Update label jika data tiba
 		if profileData then
 			Playerbio.Text       = (profileData.description ~= "" and profileData.description) or DEFAULT_BIO
 			Connectionlabel.Text = "Connections " .. tostring(profileData.friendsCount   or 0)
@@ -5381,10 +7241,6 @@ end
 -- ============================================
 -- SET TARGET PLAYER
 -- ============================================
---[[
-	Fetch profil dulu → menu terbuka hanya setelah data siap via onReady.
-	isLoadingMenu mencegah klik berulang saat fetch masih berlangsung.
-]]
 local function setTargetPlayer(player)
 	if player == localPlayer then return end
 	if isLoadingMenu then return end
@@ -5407,60 +7263,46 @@ end
 -- ============================================
 -- INPUT HANDLER
 -- ============================================
-local function handlePlayerClick(actionName, inputState, inputObject)
-	if inputState ~= Enum.UserInputState.Begin then
-		return Enum.ContextActionResult.Pass
+UserInputService.InputBegan:Connect(function(inputObject, gameProcessedEvent)
+	if inputObject.UserInputType ~= Enum.UserInputType.MouseButton1 and inputObject.UserInputType ~= Enum.UserInputType.Touch then
+		return
 	end
 
-	local currentTime = tick()
-	if currentTime - lastClickTime < CLICK_COOLDOWN then
-		return Enum.ContextActionResult.Pass
-	end
+	if gameProcessedEvent then return end
+
+	local currentTime = os.clock()
+	if currentTime - lastClickTime < CLICK_COOLDOWN then return end
 
 	local inputPosition = inputObject.Position
 
 	if mainframe.Visible and isPointInsideFrame(mainframe, inputPosition) then
-		return Enum.ContextActionResult.Pass
+		return 
 	end
 
 	if mainframe.Visible then
 		closeMenu()
-		return Enum.ContextActionResult.Sink
+		return 
 	end
 
-	if isLoadingMenu then
-		return Enum.ContextActionResult.Pass
-	end
+	if isLoadingMenu then return end
 
 	local targetPlayer = raycastFromScreen(inputPosition)
 	if targetPlayer then
 		local inRange, distance = isPlayerInRange(targetPlayer, MAX_INTERACTION_DISTANCE)
 		if not inRange then
 			warn("[PLAYER MENU] Player terlalu jauh:", math.floor(distance), "studs")
-			return Enum.ContextActionResult.Pass
+			return
 		end
 		lastClickTime = currentTime
 		setTargetPlayer(targetPlayer)
-		return Enum.ContextActionResult.Sink
 	end
-
-	return Enum.ContextActionResult.Pass
-end
+end)
 
 -- ============================================
 -- INITIALIZE
 -- ============================================
-for _, player in ipairs(Players:GetPlayers()) do
-	if player ~= localPlayer then
-		PlayerHideSystem:SetupPlayerMonitoring(player)
-	end
-end
-
-Players.PlayerAdded:Connect(function(player)
-	if player ~= localPlayer then
-		PlayerHideSystem:SetupPlayerMonitoring(player)
-	end
-end)
+-- ✨ OPTIMASI: SetupPlayerMonitoring dihapus dari proses inisialisasi awal.
+-- Karena player hanya dipantau SAAT mereka sedang di-hide.
 
 Players.PlayerRemoving:Connect(function(player)
 	hiddenPlayers[player] = nil
@@ -5475,22 +7317,12 @@ end)
 createMenuButtons()
 updatePaginationButtons()
 
-ContextActionService:BindAction(
-	CLICK_ACTION_NAME,
-	handlePlayerClick,
-	false,
-	Enum.UserInputType.MouseButton1,
-	Enum.UserInputType.Touch
-)
-
 -- ============================================
 -- CLEANUP
 -- ============================================
 script.Destroying:Connect(function()
 	if syncConnection then syncConnection:Disconnect() end
 	if currentTween   then currentTween:Cancel() end
-
-	ContextActionService:UnbindAction(CLICK_ACTION_NAME)
 
 	for _, connections in pairs(monitoringConnections) do
 		for _, conn in ipairs(connections) do conn:Disconnect() end
@@ -5503,6 +7335,1760 @@ script.Destroying:Connect(function()
 	createdButtons = {}
 	clearOutfitTiles()
 end)
+
+
+local l__ReplicatedStorage__1 = game:GetService("ReplicatedStorage");
+local l__Players__2 = game:GetService("Players");
+local l__Debris__3 = game:GetService("Debris");
+local l__RunService__4 = game:GetService("RunService");
+local l__TweenService__1 = game:GetService("TweenService");
+local l__Lighting__4 = game:GetService("Lighting");
+local UserInputService = game:GetService("UserInputService")
+local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+local u4 = Vector3.new(-136, 2.438, -443);
+local doit = false
+local ticking = false
+
+-- ==========================================
+-- 🔥 CONFIG: SAWERIA / ROBUX TOGGLE
+-- ==========================================
+local USE_RUPIAH = true -- Ubah ke 'false' jika ingin mode Robux!
+
+function comma(p1)
+	local v2 = p1;
+	while true do
+		local v3, v4 = string.gsub(v2, "^(-?%d+)(%d%d%d)", "%1,%2");
+		local k = v4;
+		v2 = v3;
+		if k ~= 0 then
+
+		else
+			break;
+		end;	
+	end;
+	return v2;
+end;
+
+local function event(donator, reciever, amount)	
+
+	local function tweening(p3, p4, p5)
+		l__TweenService__1:Create(p3, TweenInfo.new(p4, Enum.EasingStyle.Quint), p5):Play();
+	end;
+
+	local function u2(p1, p2)
+		p1.Speed = NumberRange.new(p1.Speed.Min * p2, p1.Speed.Max * p2);
+		p1.Acceleration = p1.Acceleration * p2;
+		local l__Keypoints__5 = p1.Size.Keypoints;
+		local v6 = {};
+		for v7 = 1, #l__Keypoints__5 do
+			table.insert(v6, NumberSequenceKeypoint.new(l__Keypoints__5[v7].Time, l__Keypoints__5[v7].Value * p2, l__Keypoints__5[v7].Envelope * p2));
+		end;
+		p1.Size = NumberSequence.new(v6);
+	end;
+	local v22 = Instance.new("ColorCorrectionEffect");
+	v22.Enabled = true;
+	v22.Name = "EventColorCorrection";
+	v22.Parent = game.Lighting;
+	local v23 = Instance.new("BloomEffect");
+	v23.Enabled = true;
+	v23.Name = "SmiteBloom";
+	v23.Size = 20;
+	v23.Threshold = 0.1;
+	v23.Intensity = -1;
+	v23.Parent = game.Lighting;
+	local u6 = math.random(-180, 180);
+	local v11 = game.ReplicatedStorage.VFX.Templates.Live:Clone()
+
+	-- 🔥 OPTIMASI HP KENTANG
+	if isMobile then
+		for _, obj in pairs(v11:GetDescendants()) do
+			if obj:IsA("ParticleEmitter") then
+				obj.Rate = obj.Rate * 0.25 -- Kurangi partikel sisa 25%
+			elseif obj:IsA("PointLight") or obj:IsA("SurfaceLight") then
+				obj.Shadows = false -- Matikan bayangan
+			end
+		end
+	end
+
+	local v5 = v11.Objects.NPC:Clone()
+	local v16 = v11.Objects.FloorAmbiance:Clone();
+	local v17 = v11.Objects.Ambiance:Clone();
+	local impact = v11.Objects.ImpactVisuals
+	local u18 = v11.Objects.Heavenball:Clone()
+	local v67 = v11.Objects.Whitehole:Clone()
+	local v68 = v11.Objects.Whitehole2:Clone()
+	local v69 = v11.Objects.Whitehole3:Clone()
+	local v70 = v11.Objects.Whitehole4:Clone()
+	local v38 = v16:Clone();
+	v38.Position = u4 + Vector3.new(0, -0.5, 0);
+	v38.Parent = workspace;
+	local v39 = v17:Clone();
+	v39.Position = u4 + Vector3.new(0, 0, 0);
+	v39.Size = Vector3.new(1000, 1000, 1000);
+	v39.CFrame = v39.CFrame:ToWorldSpace(CFrame.Angles(0, math.rad(u6), 0.5235987755982988));
+	v39.Position = v39.Position + v39.CFrame.UpVector * 600;
+	v39.Parent = workspace;
+	l__TweenService__1:Create(v38, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+		Size = Vector3.new(2048, 1, 2048)
+	}):Play();
+	local v19 = v11.Objects.Orb:Clone();
+	local v15 = v11.Objects.Meteor:Clone();
+	local u3 = require(script.CameraShaker);
+	local l__Sounds__20 = v11.Sounds:Clone()
+	l__Sounds__20.Parent = game.Workspace
+	local v24 = u3.new(Enum.RenderPriority.Camera.Value, function(p9)
+		workspace.CurrentCamera.CFrame = workspace.CurrentCamera.CFrame * p9;
+	end);
+
+	l__TweenService__1:Create(v22, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+		TintColor = Color3.fromRGB(255, 128, 255), 
+		Brightness = 0.25, 
+		Saturation = 0.1, 
+		Contrast = 0.25
+	}):Play();
+
+	local v25 = v19:Clone();
+	v25.Parent = workspace;
+	v25.Position = Vector3.new(-232, 126.381, -443)
+
+	v24:Start();
+	v24:ShakeSustain(u3.Presets.Earthquake);
+
+	local ambiance = l__Sounds__20.Ambiance:Clone()
+	ambiance.Parent = workspace
+	ambiance:Play()
+
+	for v1, v2 in pairs(v25.Attachment:GetChildren()) do
+		if v2:IsA("ParticleEmitter") then
+			u2(v2, 1.75);
+			v2.Enabled = true;
+		end;
+	end;
+
+	for v40, v41 in pairs(v38:GetChildren()) do
+		if v41:IsA("ParticleEmitter") then
+			u2(v41, 1.75);
+			v41.Enabled = true;
+		end;
+	end;
+	for v42, v43 in pairs(v39:GetChildren()) do
+		if v43:IsA("ParticleEmitter") then
+			u2(v43, 2.5);
+			v43.Enabled = true;
+		end;
+	end;
+
+	local u8 = true;
+	local u9 = 0.5;
+	spawn(function()
+		while u8 == true do
+			wait(u9);
+			spawn(function()
+				local v30 = math.random(100, 400) / 100;
+				local v31 = math.random(250, 400) / 100;
+				local v32 = math.random(500, 750);
+				local v33 = v15:Clone();
+				v33.Parent = workspace;
+				v33.Transparency = 1;
+				v33.Position = u4 + Vector3.new(math.random(-750, 750), 0, math.random(-750, 750));
+				v33.Size = v33.Size * v30;
+				v33.CFrame = v33.CFrame:ToWorldSpace(CFrame.Angles(math.rad(math.random(-10, 10)), math.rad(u6), 0.5235987755982988));
+				v33.Position = v33.Position + v33.CFrame.UpVector * v32;
+				for v34, v35 in pairs(v33:GetDescendants()) do
+					if v35:IsA("ParticleEmitter") then
+						u2(v35, v30);
+						if string.find(v35.Name, "Meteor_") ~= nil then
+							v35.Enabled = true;
+						end;
+					end;
+				end;
+				v33.Glow.Range = v33.Glow.Range * v30;
+				v33.Glow.Enabled = true;
+				v33.Trail0.Position = v33.Trail0.Position * (v30 / 2);
+				v33.Trail1.Position = v33.Trail1.Position * (v30 / 2);
+				v33.Trail.Enabled = true;
+				v33.Whoosh.Volume = 0;
+				v33.Whoosh.TimePosition = math.random(0, v33.Whoosh.TimeLength);
+				v33.Whoosh.PlaybackSpeed = 1.5 - v30 * 0.15;
+				v33.Impact.PlaybackSpeed = 1.5 - v30 * 0.15;
+				v33.Whoosh.Playing = true;
+				l__TweenService__1:Create(v33, TweenInfo.new(v31, Enum.EasingStyle.Sine, Enum.EasingDirection.In, 0, false, 0), {
+					Position = v33.Position + v33.CFrame.UpVector * -v32, 
+					Orientation = Vector3.new(math.random(-180, 180) * 3, math.random(-180, 180) * 3, math.random(-180, 180) * 3)
+				}):Play();
+				l__TweenService__1:Create(v33, TweenInfo.new(v31 * 0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+					Transparency = 0
+				}):Play();
+				l__TweenService__1:Create(v33.Whoosh, TweenInfo.new(v31 * 0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+					Volume = 1
+				}):Play();
+				wait(v31);
+				v33.Transparency = 1;
+				v33.Orientation = Vector3.new(0, 0, 0);
+				v33.Glow.Range = v33.Glow.Range * 1.5;
+				v33.Glow.Brightness = v33.Glow.Brightness * 3;
+				l__TweenService__1:Create(v33.Glow, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
+					Brightness = 0, 
+					Range = v33.Glow.Range / 2
+				}):Play();
+				for v36, v37 in pairs(v33:GetDescendants()) do
+					if v37:IsA("ParticleEmitter") then
+						if string.find(v37.Name, "Meteor_") ~= nil then
+							v37.Enabled = false;
+						end;
+						if string.find(v37.Name, "Explosion_") ~= nil then
+							v37:Emit(v37:GetAttribute("EmitCount"));
+						end;
+					end;
+				end;
+				v33.Trail.Enabled = false;
+				v33.Whoosh.Playing = false;
+				v33.Impact:Play();
+				wait(3);
+				v33:Destroy();
+			end);		
+		end;
+	end);
+
+	spawn(function()
+		l__Sounds__20.Summon:Play();
+		l__Sounds__20.Earthquake:Play();
+		v25.PortalAmbiance.Playing = true;
+		v25.PortalOpen1:Play();
+		v25.PortalOpen2:Play();
+		l__TweenService__1:Create(v25.PortalAmbiance, TweenInfo.new(3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, 0, false, 0), {
+			Volume = 1.5, 
+			PlaybackSpeed = 1.25
+		}):Play();
+		l__TweenService__1:Create(v25, TweenInfo.new(7, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, 0, false, 0), {
+			Size = Vector3.new(50,50,50)
+		}):Play();
+		l__Sounds__20.CrumbleLoop.Playing = true;
+		l__TweenService__1:Create(l__Sounds__20.CrumbleLoop, TweenInfo.new(3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			Volume = 0.5
+		}):Play();
+		l__Sounds__20.FireLoop.Playing = true;
+		l__TweenService__1:Create(l__Sounds__20.FireLoop, TweenInfo.new(5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			Volume = 0.5, 
+			PlaybackSpeed = 1
+		}):Play();
+		v24:ShakeSustain(u3.Presets.Earthquake);
+		wait(7);
+		l__TweenService__1:Create(l__Sounds__20.CrumbleLoop, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			Volume = 0
+		}):Play();
+		v24:StopSustained(6);
+		l__TweenService__1:Create(v25.PortalAmbiance, TweenInfo.new(5, Enum.EasingStyle.Sine, Enum.EasingDirection.In, 0, false, 0), {
+			Volume = 0, 
+			PlaybackSpeed = 0
+		}):Play();
+	end)
+
+	wait(math.random(14, 19))
+	v67.Parent = workspace
+	v68.Parent = workspace
+	v69.Parent = workspace
+	v70.Parent = workspace
+	local heavenball = u18:Clone()
+	local charge = l__Sounds__20.Charge_2:Clone()
+	charge.Parent = heavenball
+	heavenball.Parent = workspace
+	charge:Play()
+	wait(1.25)
+	doit = true
+	if doit then
+		tweening(heavenball, 6, {
+			Transparency = 0
+		});
+		local ending = l__Sounds__20.ChargeEndSound:Clone()
+		ending.Parent = heavenball
+		ending:Play()
+		wait(1.5)
+		v67:Destroy()
+		v68:Destroy()
+		v69:Destroy()
+		v70:Destroy()
+		charge:Destroy()
+		ending:Destroy()
+		l__Sounds__20.Twinkle:Play()
+		l__TweenService__1:Create(heavenball, TweenInfo.new(3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, 0, false, 0), {
+			Position = Vector3.new(-232, 126.381, -443) 
+		}):Play();
+		wait(1.25)
+
+		doit = false
+	end
+
+	if not doit then
+		l__TweenService__1:Create(heavenball, TweenInfo.new(3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, 0, false, 0), {
+			Size = Vector3.new(50,50,50)
+		}):Play();
+		l__Sounds__20.CrumbleLoop.Playing = true;
+		l__TweenService__1:Create(l__Sounds__20.CrumbleLoop, TweenInfo.new(3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			Volume = 0.5
+		}):Play();
+		l__Sounds__20.Sparkle:Play()
+		v24:ShakeSustain(u3.Presets.Earthquake);
+		wait(3)
+		ticking = true
+	end
+
+	if ticking then
+		local ticksound = l__Sounds__20.Tick:Clone()
+		ticksound.Parent = workspace
+		ticksound.Playing = true
+		l__Lighting__4.ClockTime = 10
+		l__Lighting__4.FogColor = Color3.fromRGB(144, 228, 248)
+		wait(1)
+		l__Lighting__4.ClockTime = 0
+		l__Lighting__4.FogColor = Color3.fromRGB(0,0,0)
+		wait(1)
+		l__Lighting__4.ClockTime = 10
+		l__Lighting__4.FogColor = Color3.fromRGB(144, 228, 248)
+		wait(1)
+		l__Lighting__4.ClockTime = 0
+		l__Lighting__4.FogColor = Color3.fromRGB(0,0,0)
+		wait(1)
+		l__Lighting__4.ClockTime = 10
+		l__Lighting__4.FogColor = Color3.fromRGB(144, 228, 248)
+		wait(1)
+		l__Lighting__4.ClockTime = 0
+		l__Lighting__4.FogColor = Color3.fromRGB(0,0,0)
+		wait(1)
+		l__Lighting__4.ClockTime = 10
+		l__Lighting__4.FogColor = Color3.fromRGB(144, 228, 248)
+		wait(1)
+		l__Lighting__4.ClockTime = 0
+		l__Lighting__4.FogColor = Color3.fromRGB(0,0,0)
+		wait(1)
+		l__Lighting__4.ClockTime = 10
+		l__Lighting__4.FogColor = Color3.fromRGB(144, 228, 248)
+		wait(1)
+		l__Lighting__4.ClockTime = 0
+		l__Lighting__4.FogColor = Color3.fromRGB(0,0,0)
+		wait(1)
+		l__Lighting__4.ClockTime = 10
+		l__Lighting__4.FogColor = Color3.fromRGB(144, 228, 248)
+		wait(1)
+		l__Lighting__4.ClockTime = 0
+		l__Lighting__4.FogColor = Color3.fromRGB(0,0,0)
+		wait(1)
+		l__Lighting__4.ClockTime = 10
+		l__Lighting__4.FogColor = Color3.fromRGB(144, 228, 248)
+		wait(1)
+		l__Lighting__4.ClockTime = 0
+		l__Lighting__4.FogColor = Color3.fromRGB(0,0,0)
+		wait(1)
+		l__Lighting__4.ClockTime = 10
+		l__Lighting__4.FogColor = Color3.fromRGB(144, 228, 248)
+		wait(1)
+		l__Lighting__4.ClockTime = 0
+		l__Lighting__4.FogColor = Color3.fromRGB(0,0,0)
+		wait(1)
+		ticksound:Stop()
+		ticksound:Destroy()
+		wait(5)
+		ticking = false
+	end
+
+	if not ticking then
+		v24:StopSustained(6);
+
+		l__TweenService__1:Create(l__Sounds__20.CrumbleLoop, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			Volume = 0
+		}):Play();
+		wait(1)
+		l__TweenService__1:Create(v25, TweenInfo.new(10, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, 0, false, 0), {
+			Size = Vector3.new(75,75,75)
+		}):Play();
+		l__TweenService__1:Create(heavenball, TweenInfo.new(10, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, 0, false, 0), {
+			Size = Vector3.new(74,74,74)
+		}):Play();
+		for l1, l2 in pairs(v25.Attachment:GetChildren()) do
+			if l2:IsA("ParticleEmitter") then
+				u2(l2, 2);
+			end;
+		end;
+		wait(10)
+		for l1, l2 in pairs(v25.Attachment:GetChildren()) do
+			if l2:IsA("ParticleEmitter") then
+				l2.Rate = 0
+			end;
+		end;
+		v24:ShakeOnce(8, 20, 1, 6);
+		l__TweenService__1:Create(v25.Beams.FlameEffect1, TweenInfo.new(1.7, Enum.EasingStyle.Linear), {
+			Brightness = 1.57
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect2, TweenInfo.new(1.7, Enum.EasingStyle.Linear), {
+			Brightness = 1.57
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect3, TweenInfo.new(1.7, Enum.EasingStyle.Linear), {
+			Brightness = 1.57
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect4, TweenInfo.new(1.7, Enum.EasingStyle.Linear), {
+			Brightness = 1.57
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect5, TweenInfo.new(1.7, Enum.EasingStyle.Linear), {
+			Brightness = 1.57
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect6, TweenInfo.new(1.7, Enum.EasingStyle.Linear), {
+			Brightness = 1.57
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect7, TweenInfo.new(1.7, Enum.EasingStyle.Linear), {
+			Brightness = 1.57
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect8, TweenInfo.new(1.7, Enum.EasingStyle.Linear), {
+			Brightness = 1.57
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect9, TweenInfo.new(1.7, Enum.EasingStyle.Linear), {
+			Brightness = 1.57
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect10, TweenInfo.new(1.7, Enum.EasingStyle.Linear), {
+			Brightness = 1.57
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect11, TweenInfo.new(1.7, Enum.EasingStyle.Linear), {
+			Brightness = 1.57
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect12, TweenInfo.new(1.7, Enum.EasingStyle.Linear), {
+			Brightness = 1.57
+		}):Play();
+		l__TweenService__1:Create(game.Lighting, TweenInfo.new(1.7), {
+			Brightness = 5
+		}):Play();
+		l__TweenService__1:Create(v25, TweenInfo.new(1.7, Enum.EasingStyle.Cubic, Enum.EasingDirection.In), {Position = Vector3.new(-136, 2.438, -443)}):Play() 
+		l__TweenService__1:Create(heavenball, TweenInfo.new(1.7, Enum.EasingStyle.Cubic, Enum.EasingDirection.In), {Position = Vector3.new(-136, 2.438, -443)}):Play()
+		v25.FlameEffect1_0.BrightFlare.Enabled = true;
+		v25.Flames.Enabled = true;
+		v25.FlameEffect1_0.FlameRing.Enabled = true;
+		v25.FlameEffect1_0.Flames1.Enabled = true;
+		v25.FlameEffect1_0.Flames2.Enabled = true;
+		v25.FlameEffect1_0.Flames3.Enabled = true;
+		l__Sounds__20.Drop1:Play()
+		l__Sounds__20.Drop2:Play()
+		v25.LaunchSound:Play();
+		wait(1.7)
+		l__Sounds__20.ExplosionSound:Play()
+		l__Sounds__20.Sparkle:Stop()
+		ambiance:Destroy()
+		v23.Intensity = 0.75
+		v23.Threshold = 0.05
+		v22.Contrast = 0
+		l__TweenService__1:Create(v23, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			Intensity = -0.9, 
+			Threshold = 0.1
+		}):Play()
+		l__TweenService__1:Create(v22, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			Contrast = 0.25
+		}):Play()
+		v24:ShakeOnce(12, 4, 1, 6);
+		v25.SelectionSphere:Destroy()
+		v25.FlameEffect1_0.BrightFlare.Enabled = false;
+		v25.Flames.Enabled = false;
+		v25.FlameEffect1_0.FlameRing.Enabled = false;
+		v25.FlameEffect1_0.Flames1.Enabled = false;
+		v25.FlameEffect1_0.Flames2.Enabled = false;
+		v25.FlameEffect1_0.Flames3.Enabled = false;
+		l__TweenService__1:Create(v25.Beams.FlameEffect1, TweenInfo.new(0.01, Enum.EasingStyle.Linear), {
+			Brightness = 0
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect2, TweenInfo.new(0.01, Enum.EasingStyle.Linear), {
+			Brightness = 0
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect3, TweenInfo.new(0.01, Enum.EasingStyle.Linear), {
+			Brightness = 0
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect4, TweenInfo.new(0.01, Enum.EasingStyle.Linear), {
+			Brightness = 0
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect5, TweenInfo.new(0.01, Enum.EasingStyle.Linear), {
+			Brightness = 0
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect6, TweenInfo.new(0.01, Enum.EasingStyle.Linear), {
+			Brightness = 0
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect7, TweenInfo.new(0.01, Enum.EasingStyle.Linear), {
+			Brightness = 0
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect8, TweenInfo.new(0.01, Enum.EasingStyle.Linear), {
+			Brightness = 0
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect9, TweenInfo.new(0.01, Enum.EasingStyle.Linear), {
+			Brightness = 0
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect10, TweenInfo.new(0.01, Enum.EasingStyle.Linear), {
+			Brightness = 0
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect11, TweenInfo.new(0.01, Enum.EasingStyle.Linear), {
+			Brightness = 0
+		}):Play();
+		l__TweenService__1:Create(v25.Beams.FlameEffect12, TweenInfo.new(0.01, Enum.EasingStyle.Linear), {
+			Brightness = 0
+		}):Play();
+		l__TweenService__1:Create(game.Lighting, TweenInfo.new(0.2), {
+			Brightness = 150
+		}):Play();
+		l__TweenService__1:Create(game.Lighting.ColorCorrection, TweenInfo.new(0.05), {
+			Brightness = 1.2
+		}):Play();
+		wait(0.05);
+		l__TweenService__1:Create(game.Lighting.ColorCorrection, TweenInfo.new(3), {
+			Brightness = 0.05
+		}):Play();
+		l__TweenService__1:Create(game.Lighting, TweenInfo.new(7), {
+			Brightness = 2.66
+		}):Play();
+		impact.Parent = game.Workspace
+		impact.Position = Vector3.new(-136, 2.438, -443)
+		l__TweenService__1:Create(impact, TweenInfo.new(30), {Position = Vector3.new(u4.X, 500, u4.Z)}):Play()
+		impact.ApplauseLoop:Play()
+		impact.CoinsLoop:Play()
+		impact.ChimeLoop:Play()
+		impact.EmitPoint.Impact_Spark1:Emit(45)
+		impact.EmitPoint.Impact_Spark2:Emit(75)
+		impact.EmitPoint.Impact_Spark3:Emit(35)
+		impact.EmitPoint.Explosion_Glow:Emit(25)
+		impact.EmitPoint.Explosion_Rays:Emit(45)
+		impact.EmitPoint.Explosion_Ring:Emit(5)
+		impact.EmitPoint.Explosion_Flare:Emit(50)
+		impact.EmitPoint.Explosion_ThinRays:Emit(35)
+		impact.EmitPoint.Explosion_Shockwave:Emit(15)
+
+		local v18 = impact.BillboardGuiAnimation.Frame
+
+		local function preserveExactCase(username)
+			return username
+		end
+
+		-- 🔥 SAWERIA TOGGLE INJECTION
+		local formattedAmount = tostring(amount):reverse():gsub("%d%d%d", "%1."):reverse():gsub("^%.", "")
+		v18.TopText.Text = "@" .. preserveExactCase(donator) .. " DONATED"
+		v18.BottomText.Text = "TO @" .. preserveExactCase(reciever)
+
+		if USE_RUPIAH then
+			-- Gunakan Non-Breaking Space
+			v18.MiddleText.Text = "Rp\u{00A0}" .. formattedAmount
+			v18.RobuxLogo.Visible = false
+		else
+			v18.MiddleText.Text = formattedAmount
+			v18.RobuxLogo.Visible = true
+			v18.RobuxLogo.Size = UDim2.fromScale(0,0)
+			v18.RobuxLogo.Rotation = -180
+		end
+
+		v18.Star.Size = UDim2.fromScale(0,0)
+		v18.BottomText.Size = UDim2.fromScale(0,0)
+		v18.MiddleText.Size = UDim2.fromScale(0,0)
+		v18.TopText.Size = UDim2.fromScale(0,0)
+		v18.Star.Rotation = 0
+		v18.Star.ImageTransparency = 0.9
+
+		-- 🔥 Cegah animasi error jika Logo dimatikan
+		if not USE_RUPIAH then
+			l__TweenService__1:Create(v18.RobuxLogo, TweenInfo.new(15, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out, 0, false, 0), {Size = UDim2.fromScale(1,1)}):Play()
+			l__TweenService__1:Create(v18.RobuxLogo, TweenInfo.new(10, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out, 0, false, 0), {Rotation = 0}):Play()
+		end
+
+		l__TweenService__1:Create(v18.Star, TweenInfo.new(10), {Rotation = 360}):Play()
+		l__TweenService__1:Create(v18.Star, TweenInfo.new(10), {ImageTransparency = 1}):Play()
+
+		wait(.25)
+		l__TweenService__1:Create(v18.TopText, TweenInfo.new(5, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out, 0, false, 0), {Size = UDim2.fromScale(1.5, 0.1)}):Play()
+		wait(.25)
+		l__TweenService__1:Create(v18.MiddleText, TweenInfo.new(5, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out, 0, false, 0), {Size = UDim2.fromScale(1, 1)}):Play()
+		wait(.25)
+		l__TweenService__1:Create(v18.BottomText, TweenInfo.new(5, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out, 0, false, 0), {Size = UDim2.fromScale(1.5, 0.1)}):Play()
+		l__TweenService__1:Create(v25, TweenInfo.new(0.4, Enum.EasingStyle.Cubic, Enum.EasingDirection.In), {
+			Transparency = 1
+		}):Play();
+		l__TweenService__1:Create(heavenball, TweenInfo.new(0.4, Enum.EasingStyle.Cubic, Enum.EasingDirection.In), {
+			Transparency = 1
+		}):Play();
+		impact.EmitPoint.Sparks.Enabled = true
+		impact.EmitPoint.SparkleExplosion.Enabled = true
+		wait(15)
+		l__TweenService__1:Create(impact.ChimeLoop, TweenInfo.new(60),{Volume = 0}):Play()
+		l__TweenService__1:Create(impact.ApplauseLoop, TweenInfo.new(60),{Volume = 0}):Play()
+		l__TweenService__1:Create(impact.CoinsLoop, TweenInfo.new(30),{Volume = 0}):Play()
+		heavenball:Remove();
+		wait(15)
+		v25:Destroy();
+		l__TweenService__1:Create(v18, TweenInfo.new(14, Enum.EasingStyle.Quint, Enum.EasingDirection.In, 0, false, 0),{Size = UDim2.fromScale(0,0)}):Play()
+		for i,v in pairs(impact.EmitPoint:GetChildren()) do
+			if v:IsA("ParticleEmitter") then
+				l__TweenService__1:Create(v, TweenInfo.new(14), {Rate = 0}):Play()
+			end
+		end
+		wait(15)
+		v18:Destroy()
+		wait(45)
+		impact.CoinsLoop:Stop()
+		impact.ApplauseLoop:Stop()
+		impact.ChimeLoop:Stop()
+		u8 = false;
+
+		l__TweenService__1:Create(l__Sounds__20.FireLoop, TweenInfo.new(7, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			Volume = 0, 
+			PlaybackSpeed = 0.5
+		}):Play()
+
+		for l44, l45 in pairs(v38:GetChildren()) do
+			if l45:IsA("ParticleEmitter") then
+				l__TweenService__1:Create(l45, TweenInfo.new(7, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+					Rate = 0
+				}):Play()
+			end
+		end
+		for l46, l47 in pairs(v39:GetChildren()) do
+			if l47:IsA("ParticleEmitter") then
+				l__TweenService__1:Create(l47, TweenInfo.new(7, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+					Rate = 0
+				}):Play()
+			end
+		end
+
+		l__TweenService__1:Create(l__Lighting__4, TweenInfo.new(7, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			ClockTime = 14,
+			Brightness = 2
+		}):Play()
+
+		local baseCC = l__Lighting__4:FindFirstChild("ColorCorrection")
+		if baseCC then
+			l__TweenService__1:Create(baseCC, TweenInfo.new(7), {Brightness = 0}):Play()
+		end
+
+		l__TweenService__1:Create(v22, TweenInfo.new(7, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			TintColor = Color3.fromRGB(255, 255, 255), 
+			Brightness = 0, 
+			Saturation = 0, 
+			Contrast = 0
+		}):Play()
+		l__TweenService__1:Create(v23, TweenInfo.new(7, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			Intensity = -1
+		}):Play()
+
+		wait(7)
+
+		if v22 then v22:Destroy() end
+		if v23 then v23:Destroy() end
+		if l__Sounds__20 then l__Sounds__20:Destroy() end
+		if v38 then v38:Destroy() end
+		if v39 then v39:Destroy() end
+		if impact then impact:Destroy() end
+
+		l__Lighting__4.FogColor = Color3.fromRGB(192, 192, 192)
+		ticking = false
+		doit = false
+	end
+end
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local FireBlackHoleEvent = ReplicatedStorage:WaitForChild("FireBlackHole", 10)
+
+if FireBlackHoleEvent then
+	FireBlackHoleEvent.OnClientEvent:Connect(function(donator, reciever, amount)
+		event(donator, reciever, amount)
+	end)
+end
+
+local l__ReplicatedStorage__1 = game:GetService("ReplicatedStorage")
+local l__LocalPlayer__2 = game.Players.LocalPlayer
+local l__Debris__3 = game:GetService("Debris")
+local l__TweenService__1 = game:GetService("TweenService")
+local l__PhysicsService__2 = game:GetService("PhysicsService")
+local u3 = require(script.CameraShaker)
+local u4 = Vector3.new(-106, 2.938, -442.5) 
+local UserInputService = game:GetService("UserInputService")
+local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+
+-- ==========================================
+-- 🔥 CONFIG: SAWERIA / ROBUX TOGGLE
+-- ==========================================
+local USE_RUPIAH = true -- Ubah ke 'false' jika ingin mode Robux!
+
+local function u5(p1, p2)
+	p1.Speed = NumberRange.new(p1.Speed.Min * p2, p1.Speed.Max * p2)
+	p1.Acceleration = p1.Acceleration * p2
+	local l__Keypoints__4 = p1.Size.Keypoints
+	local v5 = {}
+	for v6 = 1, #l__Keypoints__4 do
+		table.insert(v5, NumberSequenceKeypoint.new(l__Keypoints__4[v6].Time, l__Keypoints__4[v6].Value * p2, l__Keypoints__4[v6].Envelope * p2))
+	end
+	p1.Size = NumberSequence.new(v5)
+end
+local l__RunService__6 = game:GetService("RunService")
+local function u7(p3, p4, p5, p6)
+	local v7 = p3:Clone()
+
+	-- 🔥 OPTIMASI HP KENTANG
+	if isMobile then
+		for _, obj in pairs(v7:GetDescendants()) do
+			if obj:IsA("ParticleEmitter") then
+				obj.Rate = obj.Rate * 0.25
+			elseif obj:IsA("PointLight") or obj:IsA("SurfaceLight") then
+				obj.Shadows = false
+			end
+		end
+	end
+
+	local l__NukeCFrame__8 = v7.NukeValues.NukeCFrame
+	local l__Frame__9 = v7.BillboardGuiAnimation.Frame
+	l__Frame__9.TextLabels.TopText.Visible = true
+	l__Frame__9.TextLabels.BottomText.Visible = true
+	local l__CenterEmitPoint__10 = v7.CenterEmitPoint
+	local l__ThrustEmitPoint__11 = v7.ThrustEmitPoint
+	local v12 = Instance.new("BloomEffect")
+	v12.Enabled = true
+	v12.Name = "NukeBloom"
+	v12.Size = 15
+	v12.Threshold = 0.25
+	v12.Intensity = -1
+	v12.Parent = game.Lighting
+	local l__Objects__13 = v7.Objects
+	local v14 = l__Objects__13.ConfettiBox:Clone()
+	l__Objects__13.ConfettiBox:Destroy()
+	l__Objects__13:Destroy()
+	local v15 = u3.new(Enum.RenderPriority.Camera.Value, function(p7)
+		workspace.CurrentCamera.CFrame = workspace.CurrentCamera.CFrame * p7
+	end)
+	v15:Start()
+	v7.Position = u4
+	u5(l__ThrustEmitPoint__11.Flame, 5)
+	u5(l__ThrustEmitPoint__11.Shockwave, 15)
+	u5(l__ThrustEmitPoint__11.BigShockwave, 50)
+	u5(l__ThrustEmitPoint__11.Flame2, 5)
+	u5(l__ThrustEmitPoint__11.Flame3, 5)
+	u5(l__ThrustEmitPoint__11.Flame4, 5)
+	u5(l__ThrustEmitPoint__11.Flame5, 10)
+	u5(l__ThrustEmitPoint__11.Smoke, 1.5)
+	u5(l__ThrustEmitPoint__11.SmokePreLaunch, 3)
+	u5(l__ThrustEmitPoint__11.SmokeLaunch, 4)
+	u5(l__ThrustEmitPoint__11.SmokeRing, 4)
+	u5(v7.Sparkles, 2.5)
+	u5(v7.Sparks, 3)
+	u5(l__CenterEmitPoint__10.Rays1, 25)
+	u5(l__CenterEmitPoint__10.Rays2, 25)
+	u5(l__CenterEmitPoint__10.Rays3, 25)
+	u5(l__CenterEmitPoint__10.SmoothRaysBig, 7.5)
+	u5(l__CenterEmitPoint__10.RaysBig, 8)
+	u5(l__CenterEmitPoint__10.SparkleExplosion, 4)
+	u5(l__CenterEmitPoint__10.Spark3, 25)
+	-- 🔥 ARCHITECT FIX: Proteksi StreamingEnabled NukeModel
+	local nukeModel = game.Workspace:WaitForChild("NukeModel", 5)
+	if not nukeModel then 
+		warn("[Nuke] NukeModel belum dirender! Membatalkan efek agar HP tidak crash.")
+		v7:Destroy()
+		if v12 then v12:Destroy() end
+		if v15 then v15:Stop() end
+		return 
+	end
+	v7.CFrame = nukeModel.CFrame.Value
+	v7.AlignPosition.Position = v7.Position
+	v7.AlignOrientation.CFrame = v7.CFrame
+	l__NukeCFrame__8.Value = v7.CFrame
+	v7.Anchored = false
+	v7.Parent = workspace
+	local v16 = l__RunService__6.Heartbeat:Connect(function(p8)
+		v7.AlignPosition.Position = l__NukeCFrame__8.Value.Position
+		v7.AlignOrientation.CFrame = l__NukeCFrame__8.Value
+	end)
+	wait(1)
+	script.Alarm:Play()
+	v7.Sparkles.Enabled = false
+	v7.ThrustEmitPoint.SmokePreLaunch.Enabled = true
+	v7.ThrustEmitPoint.SmokePreLaunch.Rate = 0
+	v7.PreThruster:Play()
+	v7.PreThruster.Volume = 0
+	v7.PreThruster.PlaybackSpeed = 0.1
+	l__TweenService__1:Create(v7.PreThruster, TweenInfo.new(5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+		Volume = 1, 
+		PlaybackSpeed = 0.5
+	}):Play()
+	l__TweenService__1:Create(v7.ThrustEmitPoint.SmokePreLaunch, TweenInfo.new(2.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+		Rate = 100
+	}):Play()
+	wait(5)
+	v15:ShakeSustain(u3.Presets.Earthquake)
+	v7.Sparkles.Enabled = true
+	v7.ThrustEmitPoint.SmokePreLaunch.Enabled = false
+	l__ThrustEmitPoint__11.SmokeLaunch:Emit(50)
+	v7.AlignPosition.Responsiveness = 25
+	v7.AlignOrientation.Responsiveness = 25
+	v7.PreLaunch:Play()
+	v7.Thruster2:Play()
+	l__TweenService__1:Create(v7.Thruster2, TweenInfo.new(4, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, 0, false, 0), {
+		PlaybackSpeed = 1.5, 
+		Volume = 3
+	}):Play()
+	l__TweenService__1:Create(v7.PreThruster, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+		Volume = 1, 
+		PlaybackSpeed = 1
+	}):Play()
+	for v17, v18 in pairs(l__ThrustEmitPoint__11:GetChildren()) do
+		if string.find(v18.Name, "Flame") == nil then
+			v18.Enabled = true
+		end
+	end
+	l__ThrustEmitPoint__11.SmokeRing.Enabled = false
+	l__ThrustEmitPoint__11.SmokeLaunch.Enabled = false
+	l__ThrustEmitPoint__11.Shockwave.Enabled = false
+	l__ThrustEmitPoint__11.BigShockwave.Enabled = false
+	l__ThrustEmitPoint__11.Flare.Enabled = false
+	l__CenterEmitPoint__10.Rays1.Enabled = true
+	l__CenterEmitPoint__10.Rays2.Enabled = true
+	l__CenterEmitPoint__10.Rays3.Enabled = true
+	for v19 = 1, 10 do
+		l__NukeCFrame__8.Value = l__NukeCFrame__8.Value:ToWorldSpace(CFrame.Angles(0, 0, 0.17453292519943295))
+		l__NukeCFrame__8.Value = l__NukeCFrame__8.Value:ToWorldSpace(CFrame.new(0, 25, 0))
+		wait(v19 * 0.2)
+	end
+	v7.AlignPosition.Responsiveness = 10
+	v7.AlignOrientation.Responsiveness = 10
+	l__NukeCFrame__8.Value = CFrame.new(l__NukeCFrame__8.Value.Position, u4):ToWorldSpace(CFrame.Angles(-1.5707963267948966, 0, 0))
+	wait(0.5)
+	v12.Intensity = 1
+	v12.Size = 20
+	l__TweenService__1:Create(v12, TweenInfo.new(1, Enum.EasingStyle.Circular, Enum.EasingDirection.Out, 0, false, 0), {
+		Intensity = -1, 
+		Size = 10
+	}):Play()
+	v7.AlignPosition.Responsiveness = 50
+	v7.AlignOrientation.Responsiveness = 50
+	l__ThrustEmitPoint__11.SmokeRing:Emit(50)
+	l__ThrustEmitPoint__11.Flame:Emit(25)
+	l__ThrustEmitPoint__11.Flame2:Emit(25)
+	l__ThrustEmitPoint__11.Flame3:Emit(25)
+	l__ThrustEmitPoint__11.Flame4:Emit(25)
+	l__ThrustEmitPoint__11.Flame5:Emit(25)
+	l__ThrustEmitPoint__11.Shockwave.Enabled = true
+	l__ThrustEmitPoint__11.BigShockwave:Emit(1)
+	v7.Launch:Play()
+	v7.Thruster:Play()
+	for v20, v21 in pairs(l__ThrustEmitPoint__11:GetChildren()) do
+		v21.Enabled = true
+	end
+	l__ThrustEmitPoint__11.SmokeRing.Enabled = false
+	l__ThrustEmitPoint__11.SmokeLaunch.Enabled = false
+	l__ThrustEmitPoint__11.BigShockwave.Enabled = false
+	l__ThrustEmitPoint__11.Flare:Emit(10)
+	l__TweenService__1:Create(l__NukeCFrame__8, TweenInfo.new(2.5, Enum.EasingStyle.Back, Enum.EasingDirection.In, 0, false, 0), {
+		Value = CFrame.new(u4 + Vector3.new(0, -1, 0), u4):ToWorldSpace(CFrame.Angles(1.5707963267948966, 0, 0))
+	}):Play()
+	wait(3)
+	v15:StopSustained(0)
+	v15:ShakeOnce(4, 6, 0.25, 4)
+	script.Alarm:Stop()
+	v12.Intensity = 1
+	v12.Size = 30
+	l__TweenService__1:Create(v12, TweenInfo.new(5, Enum.EasingStyle.Circular, Enum.EasingDirection.Out, 0, false, 0), {
+		Intensity = -1, 
+		Size = 10
+	}):Play()
+	v7.Anchored = true
+	v7.Transparency = 1
+	v7.Size = Vector3.new(0, 0, 0)
+	v7.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+	v7.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+	v7.CFrame = l__NukeCFrame__8.Value
+	v7.PreThruster:Stop()
+	v7.Thruster:Stop()
+	v7.Thruster2:Stop()
+	v7.Explosion.TimePosition = 0.75
+	v7.Explosion:Play()
+	v7.ChimeLoop:Play()
+	v7.ApplauseLoop:Play()
+	v7.CoinsLoop:Play()
+
+	local function preserveExactCase(username)
+		return username
+	end
+
+	-- 🔥 SAWERIA TOGGLE INJECTION
+	local formattedAmount = tostring(p6):reverse():gsub("%d%d%d", "%1."):reverse():gsub("^%.", "")
+	l__Frame__9.TextLabels.TopText.Text = "@" .. preserveExactCase(p4) .. " DONATED"
+	l__Frame__9.TextLabels.BottomText.Text = "TO @" .. preserveExactCase(p5)
+
+	if USE_RUPIAH then
+		-- Gunakan Non-Breaking Space
+		l__Frame__9.TextLabels.MiddleText.Text = "Rp\u{00A0}" .. formattedAmount
+		l__Frame__9.RobuxLogo.Visible = false
+	else
+		l__Frame__9.TextLabels.MiddleText.Text = formattedAmount
+		l__Frame__9.RobuxLogo.Visible = true
+		l__Frame__9.RobuxLogo.Size = UDim2.fromScale(0, 0)
+		l__Frame__9.RobuxLogo.Rotation = -180
+	end
+
+	l__Frame__9.Star.Size = UDim2.fromScale(0, 0)
+	l__Frame__9.TextLabels.BottomText.Size = UDim2.fromScale(0, 0)
+	l__Frame__9.TextLabels.BottomText.Position = UDim2.fromScale(0.5, 0.5)
+	l__Frame__9.TextLabels.MiddleText.Size = UDim2.fromScale(0, 0)
+	l__Frame__9.TextLabels.TopText.Position = UDim2.fromScale(0.5, 0.5)
+	l__Frame__9.TextLabels.TopText.Size = UDim2.fromScale(0, 0)
+	l__Frame__9.Parent.Enabled = true
+
+	l__TweenService__1:Create(v7, TweenInfo.new(20, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+		Position = u4 + Vector3.new(0, 250, 0)
+	}):Play()
+
+	if not USE_RUPIAH then
+		l__TweenService__1:Create(l__Frame__9.RobuxLogo, TweenInfo.new(10, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out, 0, false, 0), {
+			Size = UDim2.fromScale(1, 1)
+		}):Play()
+		l__TweenService__1:Create(l__Frame__9.RobuxLogo, TweenInfo.new(15, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out, 0, false, 0), {
+			Rotation = 0
+		}):Play()
+	end
+
+	l__TweenService__1:Create(l__Frame__9.Star, TweenInfo.new(5, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out, 0, false, 0), {
+		Size = UDim2.fromScale(1.5, 1.5)
+	}):Play()
+	l__TweenService__1:Create(l__Frame__9.Star, TweenInfo.new(15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+		Rotation = 360
+	}):Play()
+	l__TweenService__1:Create(l__Frame__9.Star, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 5), {
+		ImageTransparency = 1, 
+		ImageColor3 = Color3.fromRGB(255, 255, 0)
+	}):Play()
+	for v22, v23 in pairs(l__ThrustEmitPoint__11:GetChildren()) do
+		v23.Enabled = false
+	end
+	v7.Sparkles.Enabled = false
+	for v24, v25 in pairs(l__CenterEmitPoint__10:GetChildren()) do
+		v25.Enabled = false
+	end
+	l__CenterEmitPoint__10.SparkleExplosion:Emit(100)
+	l__CenterEmitPoint__10.Shockwave:Emit(15)
+	l__CenterEmitPoint__10.FractalBurst:Emit(3)
+	l__CenterEmitPoint__10.RaysBig:Emit(20)
+	l__CenterEmitPoint__10.Spark1:Emit(100)
+	l__CenterEmitPoint__10.Spark2:Emit(100)
+	l__CenterEmitPoint__10.Spark3:Emit(50)
+	local v26 = v14:Clone()
+	v26.Position = u4 + Vector3.new(0, 250, 0)
+	v26.Parent = workspace
+	l__TweenService__1:Create(v26, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+		Size = Vector3.new(1000, 100, 1000)
+	}):Play()
+	spawn(function()
+		local v27 = v26:GetChildren()
+		for v28, v29 in pairs(v27) do
+			if v29:IsA("ParticleEmitter") then
+				v29.Enabled = true
+			end
+		end
+		wait(60)
+		for v30, v31 in pairs(v27) do
+			if v31:IsA("ParticleEmitter") then
+				l__TweenService__1:Create(v31, TweenInfo.new(60, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+					Rate = 0
+				}):Play()
+			end
+		end
+		wait(90)
+		v26.Size = Vector3.new(0, 0, 0)
+		wait(30)
+		v26:Destroy()
+	end)
+
+	v7.Sparks.Enabled = true
+	l__CenterEmitPoint__10.SparkleExplosion.Enabled = true
+	l__TweenService__1:Create(v7.Sparks, TweenInfo.new(45, Enum.EasingStyle.Quint, Enum.EasingDirection.In, 0, false, 0), {
+		Rate = 0
+	}):Play()
+	l__TweenService__1:Create(l__CenterEmitPoint__10.SparkleExplosion, TweenInfo.new(45, Enum.EasingStyle.Quint, Enum.EasingDirection.In, 0, false, 0), {
+		Rate = 0
+	}):Play()
+	l__TweenService__1:Create(v7.ChimeLoop, TweenInfo.new(55, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
+		Volume = 0, 
+		PlaybackSpeed = 0.75
+	}):Play()
+	l__TweenService__1:Create(v7.ApplauseLoop, TweenInfo.new(60, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
+		Volume = 0
+	}):Play()
+	l__TweenService__1:Create(v7.CoinsLoop, TweenInfo.new(50, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
+		Volume = 0, 
+		PlaybackSpeed = 1
+	}):Play()
+	wait(30) 
+	l__TweenService__1:Create(l__Frame__9.UIScale, TweenInfo.new(3, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
+		Scale = 0
+	}):Play()
+	wait(15) 
+	l__Frame__9.Parent.Enabled = false
+
+	wait(30) 
+	if v15 then v15:Stop() end
+	if v12 then v12:Destroy() end
+	if v16 then v16:Disconnect() end
+	if v7 then v7:Destroy() end
+end 
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local FireNukeEvent = ReplicatedStorage:WaitForChild("FireNuke", 10)
+
+if FireNukeEvent then
+	FireNukeEvent.OnClientEvent:Connect(function(p9, p10, p11)
+		if l__LocalPlayer__2:GetAttribute('GlobalEffects') ~= false then
+			local nukeAsset = ReplicatedStorage:FindFirstChild("VFX") 
+			if nukeAsset and nukeAsset:FindFirstChild("MoonVFXAssets") then
+				u7(nukeAsset.MoonVFXAssets.Nuke, p9, p10, p11)
+			else
+				warn("[Nuke] Gagal memutar efek: Folder VFX/MoonVFXAssets/Nuke tidak ditemukan!")
+			end
+		end
+	end)
+end
+
+local wait = task.wait;
+local l__ReplicatedStorage__1 = game:GetService("ReplicatedStorage");
+local l__Players__2 = game:GetService("Players");
+local l__Debris__3 = game:GetService("Debris");
+local l__RunService__4 = game:GetService("RunService");
+local l__TweenService__1 = game:GetService("TweenService");
+local UserInputService = game:GetService("UserInputService")
+local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+-- ==========================================
+-- 🔥 CONFIG: SAWERIA / ROBUX TOGGLE & DEBUG
+-- ==========================================
+local USE_RUPIAH = true -- Ubah ke 'false' jika ingin mode Robux!
+local DEBUG_ENABLED = false -- Ubah ke 'true' jika ingin memunculkan log di console/F9
+
+local function debugPrint(...)
+	if DEBUG_ENABLED then
+		print(...)
+	end
+end
+
+local function u2(p1, p2)
+	p1.Speed = NumberRange.new(p1.Speed.Min * p2, p1.Speed.Max * p2);
+	p1.Acceleration = p1.Acceleration * p2;
+	local l__Keypoints__5 = p1.Size.Keypoints;
+	local v6 = {};
+	for v7 = 1, #l__Keypoints__5 do
+		table.insert(v6, NumberSequenceKeypoint.new(l__Keypoints__5[v7].Time, l__Keypoints__5[v7].Value * p2, l__Keypoints__5[v7].Envelope * p2));
+	end;
+	p1.Size = NumberSequence.new(v6);
+end;
+local u3 = require(script.CameraShaker);
+local u4 = Vector3.new(-106, 2.938, -442.5);
+local function u5(p3, p4)
+	local l__Humanoid__H = p4:FindFirstChildOfClass("Humanoid")
+	if not l__Humanoid__H then return end
+
+	local success, v8 = pcall(function()
+		return game.Players:GetHumanoidDescriptionFromUserId(p3)
+	end)
+
+	if success and v8 then
+		v8.DepthScale = 53
+		v8.HeadScale = 53 
+		v8.HeightScale = 53
+		v8.WidthScale = 53
+
+		l__Humanoid__H.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+		l__Humanoid__H.AutomaticScalingEnabled = true
+
+		local applySuccess = pcall(function()
+			l__Humanoid__H:ApplyDescription(v8)
+		end)
+
+		if not applySuccess then
+			warn("[Studio] Gagal menerapkan HumanoidDescription")
+		end
+
+		task.wait(0.5)
+
+		-- 🔥 FIX RAKSASA TELANJANG (Hapus Baju 3D yang Buggy & Kasih Baju 2D)
+		local hasShirt = p4:FindFirstChildOfClass("Shirt")
+		local hasPants = p4:FindFirstChildOfClass("Pants")
+
+		for _, obj in ipairs(p4:GetDescendants()) do
+			if obj:IsA("WrapLayer") then
+				-- Hapus aksesoris Baju 3D karena pasti hilang/error saat di-scale 53x
+				local accessory = obj:FindFirstAncestorOfClass("Accessory")
+				if accessory then
+					accessory:Destroy()
+				end
+			end
+		end
+
+		-- Jika pemain hanya pakai baju 3D (tidak punya baju 2D), pakaikan baju default agar tidak telanjang
+		if not hasShirt then
+			local defaultShirt = Instance.new("Shirt")
+			defaultShirt.ShirtTemplate = "rbxassetid://144075659" -- Baju Classic Hitam
+			defaultShirt.Parent = p4
+		end
+		if not hasPants then
+			local defaultPants = Instance.new("Pants")
+			defaultPants.PantsTemplate = "rbxassetid://144076529" -- Celana Classic Hitam
+			defaultPants.Parent = p4
+		end
+
+	else
+
+		warn("[Studio] Gagal mengambil deskripsi avatar untuk ID:", p3)
+	end
+
+	for _, v10 in ipairs(p4:GetDescendants()) do
+		if (v10:IsA("BasePart") or v10:IsA("Decal")) and v10.Name ~= "HumanoidRootPart" then
+			v10.Transparency = 0.99 
+		end
+	end
+end
+
+local u6 = math.random(-180, 180);
+local function u7(modelTemplate, p5, p6, p7, p8)
+	local v11 = modelTemplate:Clone();
+
+	-- 🔥 OPTIMASI HP KENTANG
+	if isMobile then
+		for _, obj in pairs(v11:GetDescendants()) do
+			if obj:IsA("ParticleEmitter") then
+				obj.Rate = obj.Rate * 0.25
+			elseif obj:IsA("PointLight") or obj:IsA("SurfaceLight") then
+				obj.Shadows = false
+			end
+		end
+	end
+
+	local l__DiamondHammer__12 = v11.DiamondHammer;
+	for v13, v14 in pairs(v11:GetDescendants()) do
+		if (v14:IsA("BasePart") or v14:IsA("Decal")) and v14.Name ~= "HumanoidRootPart" and (v14:IsDescendantOf(l__DiamondHammer__12) == false or v14:IsDescendantOf(v11.Objects) == false) then
+			v14.Transparency = 1;
+		end;
+	end;
+	u2(l__DiamondHammer__12.Handle.MainDiamondCenter.Shockwave, 60);
+	u2(l__DiamondHammer__12.Handle.MainDiamondCenter.ChargeGlow, 50);
+	u2(l__DiamondHammer__12.Handle.MainDiamondCenter.ChargeRays, 50);
+	l__DiamondHammer__12.Handle.Transparency = 1;
+	l__DiamondHammer__12.Handle.Diamonds.Transparency = 1;
+	l__DiamondHammer__12.Handle.CanCollide = false;
+	v11.Parent = workspace;
+	u2(l__DiamondHammer__12.Handle.BaseFrontOffset.Shockwave, 10);
+	local v15 = v11.Objects.Meteor:Clone();
+	local v16 = v11.Objects.FloorAmbiance:Clone();
+	local v17 = v11.Objects.Ambiance:Clone();
+	local v18 = v11.Objects.ImpactVisuals:Clone();
+	local v19 = v11.Objects.Portal:Clone();
+	v11.Objects:Destroy();
+	local l__Sounds__20 = v11.Sounds;
+	l__Sounds__20.Parent = workspace;
+	l__Sounds__20.Name = "1MDonationEffect_Sounds";
+	local v21 = v11.Humanoid:LoadAnimation(v11.Animations.Giant_MainAnimation);
+	local v22 = Instance.new("ColorCorrectionEffect");
+	v22.Enabled = true;
+	v22.Name = "SmiteColorCorrection";
+	v22.Parent = game.Lighting;
+	local v23 = Instance.new("BloomEffect");
+	v23.Enabled = true;
+	v23.Name = "SmiteBloom";
+	v23.Size = 20;
+	v23.Threshold = 0.1;
+	v23.Intensity = -1;
+	v23.Parent = game.Lighting;
+	local v24 = u3.new(Enum.RenderPriority.Camera.Value, function(p9)
+		workspace.CurrentCamera.CFrame = workspace.CurrentCamera.CFrame * p9;
+	end);
+	v24:Start();
+	v11.PrimaryPart = v11.FloorLevel;
+	v11:SetPrimaryPartCFrame(CFrame.new(u4.X, u4.Y, u4.Z));
+	v11:SetPrimaryPartCFrame(v11.FloorLevel.CFrame:ToWorldSpace(CFrame.Angles(0, math.rad(math.random(-180, 180)), 0)));
+	v11:SetPrimaryPartCFrame(v11.FloorLevel.CFrame:ToWorldSpace(CFrame.new(25, 0, 365)));
+	v11.PrimaryPart = v11.HumanoidRootPart;
+	local v25 = v19:Clone();
+	v19.PortalAmbiance.Volume = 0;
+	v19.PortalAmbiance.PlaybackSpeed = 0;
+	v25.CFrame = v11.FloorLevel.CFrame;
+	v25.Parent = workspace;
+	v11.FloorLevel:Destroy();
+	-- 🔥 ARCHITECT FIX: Proteksi Aksesoris Mata
+	local l__LeftEyeAttachment__26 = v11.Head:FindFirstChild("LeftEyeAttachment")
+	local l__RightEyeAttachment__27 = v11.Head:FindFirstChild("RightEyeAttachment")
+	if l__LeftEyeAttachment__26 then l__LeftEyeAttachment__26.Parent = nil end
+	if l__RightEyeAttachment__27 then l__RightEyeAttachment__27.Parent = nil end
+	l__DiamondHammer__12.Parent = nil;
+	local v28, v29 = pcall(function()
+		u5(p8, v11) 
+	end)
+	if v28 == false then
+		warn("Unable to set giant's apperance to donator (" .. p5 .. ")  (" .. v29 .. ")");
+	end;
+	l__DiamondHammer__12.Parent = v11;
+	l__DiamondHammer__12.Weld.Attachment0 = v11.RightHand.RightGripAttachment;
+	-- 🔥 ARCHITECT FIX: Return Aksesoris Mata
+	if l__LeftEyeAttachment__26 then 
+		l__LeftEyeAttachment__26.Parent = v11.Head
+		l__LeftEyeAttachment__26.Position = Vector3.new(-6, 11, -32)
+	end
+	if l__RightEyeAttachment__27 then 
+		l__RightEyeAttachment__27.Parent = v11.Head
+		l__RightEyeAttachment__27.Position = Vector3.new(6, 11, -32)
+	end
+	l__Sounds__20.Summon:Play();
+	v25.Transparency = 0;
+	v25.Sparks.Enabled = true;
+	v25.Appearance.Enabled = true;
+	l__TweenService__1:Create(v25.Sparks, TweenInfo.new(3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, 0, false, 0), {
+		Rate = 40
+	}):Play();
+	l__TweenService__1:Create(v25.Appearance, TweenInfo.new(3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, 0, false, 0), {
+		Rate = 40
+	}):Play();
+	l__TweenService__1:Create(v25, TweenInfo.new(3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, 0, false, 0), {
+		Size = Vector3.new(400, 1, 400)
+	}):Play();
+	l__TweenService__1:Create(v25.OuterLightBeam, TweenInfo.new(3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, 0, false, 0), {
+		Width0 = 400, 
+		Width1 = 600
+	}):Play();
+	l__TweenService__1:Create(v25.InnerLightBeam, TweenInfo.new(3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, 0, false, 0), {
+		Width0 = 200, 
+		Width1 = 300
+	}):Play();
+	v25.PortalAmbiance.Playing = true;
+	v25.PortalOpen1:Play();
+	v25.PortalOpen2:Play();
+	l__TweenService__1:Create(v25.PortalAmbiance, TweenInfo.new(3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, 0, false, 0), {
+		Volume = 0.5, 
+		PlaybackSpeed = 1.25
+	}):Play();
+	local u8 = true;
+	local u9 = 0.5;
+	task.spawn(function()
+		while u8 == true do
+			wait(u9);
+			task.spawn(function()
+				local v30 = math.random(100, 400) / 100;
+				local v31 = math.random(250, 400) / 100;
+				local v32 = math.random(500, 750);
+				local v33 = v15:Clone();
+				v33.Parent = workspace;
+				v33.Transparency = 1;
+				v33.Position = u4 + Vector3.new(math.random(-750, 750), 0, math.random(-750, 750));
+				v33.Size = v33.Size * v30;
+				v33.CFrame = v33.CFrame:ToWorldSpace(CFrame.Angles(math.rad(math.random(-10, 10)), math.rad(u6), 0.5235987755982988));
+				v33.Position = v33.Position + v33.CFrame.UpVector * v32;
+				for v34, v35 in pairs(v33:GetDescendants()) do
+					if v35:IsA("ParticleEmitter") then
+						u2(v35, v30);
+						if string.find(v35.Name, "Meteor_") ~= nil then
+							v35.Enabled = true;
+						end;
+					end;
+				end;
+				v33.Glow.Range = v33.Glow.Range * v30;
+				v33.Glow.Enabled = true;
+				v33.Trail0.Position = v33.Trail0.Position * (v30 / 2);
+				v33.Trail1.Position = v33.Trail1.Position * (v30 / 2);
+				v33.Trail.Enabled = true;
+				v33.Whoosh.Volume = 0;
+				v33.Whoosh.TimePosition = math.random(0, v33.Whoosh.TimeLength);
+				v33.Whoosh.PlaybackSpeed = 1.5 - v30 * 0.15;
+				v33.Impact.PlaybackSpeed = 1.5 - v30 * 0.15;
+				v33.Whoosh.Playing = true;
+				l__TweenService__1:Create(v33, TweenInfo.new(v31, Enum.EasingStyle.Sine, Enum.EasingDirection.In, 0, false, 0), {
+					Position = v33.Position + v33.CFrame.UpVector * -v32, 
+					Orientation = Vector3.new(math.random(-180, 180) * 3, math.random(-180, 180) * 3, math.random(-180, 180) * 3)
+				}):Play();
+				l__TweenService__1:Create(v33, TweenInfo.new(v31 * 0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+					Transparency = 0
+				}):Play();
+				l__TweenService__1:Create(v33.Whoosh, TweenInfo.new(v31 * 0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+					Volume = 0.1
+				}):Play();
+				wait(v31);
+				v33.Transparency = 1;
+				v33.Orientation = Vector3.new(0, 0, 0);
+				v33.Glow.Range = v33.Glow.Range * 1.5;
+				v33.Glow.Brightness = v33.Glow.Brightness * 3;
+				l__TweenService__1:Create(v33.Glow, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
+					Brightness = 0, 
+					Range = v33.Glow.Range / 2
+				}):Play();
+				for v36, v37 in pairs(v33:GetDescendants()) do
+					if v37:IsA("ParticleEmitter") then
+						if string.find(v37.Name, "Meteor_") ~= nil then
+							v37.Enabled = false;
+						end;
+						if string.find(v37.Name, "Explosion_") ~= nil then
+							v37:Emit(v37:GetAttribute("EmitCount"));
+						end;
+					end;
+				end;
+				v33.Trail.Enabled = false;
+				v33.Whoosh.Playing = false;
+				v33.Impact:Play();
+				wait(3);
+				v33:Destroy();
+			end);		
+		end;
+	end);
+	local v38 = v16:Clone();
+	v38.Position = u4 + Vector3.new(0, -0.5, 0);
+	v38.Parent = workspace;
+	l__TweenService__1:Create(v38, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+		Size = Vector3.new(2048, 1, 2048)
+	}):Play();
+	local v39 = v17:Clone();
+	v39.Position = u4 + Vector3.new(0, 0, 0);
+	v39.Size = Vector3.new(1000, 1000, 1000);
+	v39.CFrame = v39.CFrame:ToWorldSpace(CFrame.Angles(0, math.rad(u6), 0.5235987755982988));
+	v39.Position = v39.Position + v39.CFrame.UpVector * 600;
+	v39.Parent = workspace;
+	task.spawn(function()
+		for v40, v41 in pairs(v38:GetChildren()) do
+			if v41:IsA("ParticleEmitter") then
+				u2(v41, 1.25);
+				v41.Enabled = true;
+			end;
+		end;
+		for v42, v43 in pairs(v39:GetChildren()) do
+			if v43:IsA("ParticleEmitter") then
+				u2(v43, 1.75);
+				v43.Enabled = true;
+			end;
+		end;
+		wait(90);
+		l__TweenService__1:Create(l__Sounds__20.FireLoop, TweenInfo.new(30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			Volume = 0, 
+			PlaybackSpeed = 0.5
+		}):Play();
+		u8 = false;
+		for v44, v45 in pairs(v38:GetChildren()) do
+			if v45:IsA("ParticleEmitter") then
+				l__TweenService__1:Create(v45, TweenInfo.new(60, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+					Rate = 0
+				}):Play();
+			end;
+		end;
+		for v46, v47 in pairs(v39:GetChildren()) do
+			if v47:IsA("ParticleEmitter") then
+				l__TweenService__1:Create(v47, TweenInfo.new(30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+					Rate = 0
+				}):Play();
+			end;
+		end;
+		wait(60);
+		v38.Size = Vector3.new(0, 0, 0);
+		v39.Size = Vector3.new(0, 0, 0);
+		wait(30);
+		v38:Destroy();
+		v39:Destroy();
+	end);
+	l__TweenService__1:Create(v22, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+		TintColor = Color3.fromRGB(255, 130, 108), 
+		Brightness = 0.1, 
+		Saturation = 0.1, 
+		Contrast = 0.15
+	}):Play();
+	l__TweenService__1:Create(v23, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+		Intensity = -0.95
+	}):Play();
+	local function v48(p10)
+		local v49 = NumberSequence.new({ NumberSequenceKeypoint.new(0, p10), NumberSequenceKeypoint.new(1, 1) });
+		for v50, v51 in pairs(l__DiamondHammer__12.Effects.Beams:GetChildren()) do
+			if v51:IsA("Beam") and string.find(v51.Name, "FlameEffect") ~= nil then
+				v51.Enabled = true;
+				v51.Transparency = v49;
+			end;
+		end;
+	end;
+	local v52 = v11.Values.Hammer_FlameEffectTransparency.Changed:Connect(v48);
+	v48(1);
+	v21:GetMarkerReachedSignal("Eye lense flare"):Connect(function(p11)
+		debugPrint("Animation event: Eye lense flare");
+		l__Sounds__20.LenseFlareEyes:Play();
+		v11.Head.LeftEyeAttachment.Flare.Enabled = true;
+		v11.Head.LeftEyeAttachment.FlareFlash:Emit(1);
+		v11.Head.RightEyeAttachment.Flare.Enabled = true;
+		v11.Head.RightEyeAttachment.FlareFlash:Emit(1);
+	end);
+	v21:GetMarkerReachedSignal("HammerAppear"):Connect(function(p12)
+		debugPrint("Animation event: HammerAppear " .. p12);
+		l__DiamondHammer__12.Handle.AppearSound.Playing = true;
+		l__DiamondHammer__12.Handle.AppearSound.Volume = 0;
+		l__DiamondHammer__12.Handle.AppearSound.PlaybackSpeed = 0.75;
+		l__TweenService__1:Create(l__DiamondHammer__12.Handle.AppearSound, TweenInfo.new(1.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true, 0), {
+			Volume = 0.1
+		}):Play();
+		l__TweenService__1:Create(l__DiamondHammer__12.Handle.AppearSound, TweenInfo.new(3, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut, 0, false, 0), {
+			PlaybackSpeed = 1.5
+		}):Play();
+		l__DiamondHammer__12.Handle.HammerBaseOutline.Sparkles.Enabled = true;
+		l__DiamondHammer__12.Handle.HammerBaseOutline.Appearance.Enabled = true;
+		l__DiamondHammer__12.Handle.HammerHandleBase.Appearance.Enabled = true;
+		l__TweenService__1:Create(l__DiamondHammer__12.Handle.HammerBaseOutline.Sparkles, TweenInfo.new(3, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut, 0, false, 0), {
+			Rate = 15
+		}):Play();
+		l__TweenService__1:Create(l__DiamondHammer__12.Handle.HammerBaseOutline.Appearance, TweenInfo.new(1.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true, 0), {
+			Rate = 30
+		}):Play();
+		l__TweenService__1:Create(l__DiamondHammer__12.Handle.HammerHandleBase.Appearance, TweenInfo.new(1.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true, 0), {
+			Rate = 25
+		}):Play();
+		l__TweenService__1:Create(l__DiamondHammer__12.Handle, TweenInfo.new(3, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut, 0, false, 0), {
+			Transparency = 0
+		}):Play();
+		l__TweenService__1:Create(l__DiamondHammer__12.Handle.Diamonds, TweenInfo.new(3, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut, 0, false, 0), {
+			Transparency = 0.1
+		}):Play();
+	end);
+	v21:GetMarkerReachedSignal("ChargeSwing"):Connect(function(p13)
+		debugPrint("Animation event: ChargeSwing");
+		l__DiamondHammer__12.Handle.ChargeSound1:Play();
+		l__DiamondHammer__12.Handle.ChargeSound2:Play();
+		l__DiamondHammer__12.Handle.ChargeSound3:Play();
+		l__DiamondHammer__12.Handle.MainChargeSound:Play();
+		for v53, v54 in pairs(l__DiamondHammer__12.Handle:GetChildren()) do
+			if v54:IsA("Attachment") and string.find(v54.Name, "DiamondCenter") ~= nil then
+				v54.Flare.Enabled = true;
+			end;
+		end;
+		l__DiamondHammer__12.Handle.MainDiamondCenter.Shockwave:Emit(1);
+		l__DiamondHammer__12.Handle.MainDiamondCenter.ChargeGlow.Enabled = true;
+		l__DiamondHammer__12.Handle.MainDiamondCenter.ChargeRays.Enabled = true;
+		l__TweenService__1:Create(l__DiamondHammer__12.Handle.MainDiamondCenter.ChargeRays, TweenInfo.new(4, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
+			TimeScale = 1
+		}):Play();
+		l__TweenService__1:Create(l__DiamondHammer__12.Handle.MainDiamondCenter.ChargeGlow, TweenInfo.new(4, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
+			TimeScale = 1
+		}):Play();
+	end);
+	v21:GetMarkerReachedSignal("SwingStart"):Connect(function(p14)
+		debugPrint("Animation event: SwingStart");
+		l__DiamondHammer__12.Handle.ChargeEndSound:Play();
+		l__DiamondHammer__12.Handle.MainDiamondCenter.Shockwave:Emit(3);
+		l__DiamondHammer__12.Handle.MainDiamondCenter.ChargeGlow.Enabled = false;
+		l__DiamondHammer__12.Handle.MainDiamondCenter.ChargeRays.Enabled = false;
+		l__TweenService__1:Create(l__DiamondHammer__12.Handle.MainChargeSound, TweenInfo.new(4, Enum.EasingStyle.Quart, Enum.EasingDirection.In, 0, false, 0), {
+			Volume = 0.25
+		}):Play();
+		l__DiamondHammer__12.Handle.BaseCenter.Wind.Volume = 0;
+		l__DiamondHammer__12.Handle.BaseCenter.Wind.PlaybackSpeed = 0.5;
+		l__DiamondHammer__12.Handle.BaseCenter.Wind.Playing = true;
+		l__TweenService__1:Create(l__DiamondHammer__12.Handle.BaseCenter.Wind, TweenInfo.new(3.5, Enum.EasingStyle.Quart, Enum.EasingDirection.In, 0, false, 0), {
+			Volume = 0.25, 
+			PlaybackSpeed = 2.5
+		}):Play();
+		l__TweenService__1:Create(v11.Values.Hammer_FlameEffectTransparency, TweenInfo.new(4, Enum.EasingStyle.Quart, Enum.EasingDirection.In, 0, false, 0), {
+			Value = 0
+		}):Play();
+		l__DiamondHammer__12.Handle.HammerBase.Flames.Enabled = true;
+		l__DiamondHammer__12.Handle.BaseFrontOffset.Shockwave.Enabled = true;
+		l__TweenService__1:Create(l__DiamondHammer__12.Handle.HammerBase.Flames, TweenInfo.new(2.5, Enum.EasingStyle.Sine, Enum.EasingDirection.In, 0, false, 0), {
+			Rate = 20
+		}):Play();
+		l__TweenService__1:Create(l__DiamondHammer__12.Handle.BaseFrontOffset.Shockwave, TweenInfo.new(3, Enum.EasingStyle.Sine, Enum.EasingDirection.In, 0, false, 0), {
+			Rate = 10
+		}):Play();
+		for v55, v56 in pairs(l__DiamondHammer__12.Effects.Trails:GetChildren()) do
+			v56.Enabled = true;
+		end;
+	end);
+	v21:GetMarkerReachedSignal("SwingEnd"):Connect(function(p15)
+		debugPrint("Animation event: SwingEnd");
+		u9 = 0.25;
+		l__DiamondHammer__12.Handle.MainChargeSound:Stop();
+		l__Sounds__20.Rumble:Play();
+		v23.Intensity = 0.75;
+		v23.Threshold = 0.05;
+		v22.Contrast = 0;
+		l__TweenService__1:Create(v23, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			Intensity = -0.9, 
+			Threshold = 0.1
+		}):Play();
+		l__TweenService__1:Create(v22, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			Contrast = 0.25
+		}):Play();
+		l__TweenService__1:Create(v11.Values.Hammer_FlameEffectTransparency, TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			Value = 1
+		}):Play();
+		l__DiamondHammer__12.Handle.BaseFrontOffset.Shockwave.Enabled = false;
+		l__TweenService__1:Create(l__DiamondHammer__12.Handle.HammerBase.Flames, TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			Rate = 0
+		}):Play();
+		for v57, v58 in pairs(l__DiamondHammer__12.Effects.Trails:GetChildren()) do
+			v58.Enabled = false;
+		end;
+		l__DiamondHammer__12.Handle.BaseCenter.Wind.Playing = false;
+		for v59, v60 in pairs(l__DiamondHammer__12.Handle.BaseCenter:GetChildren()) do
+			if v60:IsA("Sound") and string.find(v60.Name, "Impact_") ~= nil then
+				v60:Play();
+			end;
+		end;
+		for v61, v62 in pairs(l__DiamondHammer__12.Handle:GetChildren()) do
+			if v62:IsA("Attachment") and string.find(v62.Name, "DiamondCenter") ~= nil then
+				v62.Flare.Enabled = false;
+			end;
+		end;
+		v24:ShakeOnce(6, 6, 0.25, 5);
+		local v63 = v18:Clone();
+		v63.Position = u4;
+		v63.Parent = workspace;
+		u2(v63.EmitPoint.Impact_FractalBurst, 10);
+		u2(v63.EmitPoint.Impact_RaysBurst, 25);
+		u2(v63.EmitPoint.Impact_Shockwave, 30);
+		u2(v63.EmitPoint.Impact_Spark1, 10);
+		u2(v63.EmitPoint.Impact_Spark2, 10);
+		u2(v63.EmitPoint.Impact_Spark3, 10);
+		u2(v63.EmitPoint.Impact_SparkleExplosion, 10);
+		u2(v63.EmitPoint.SparkleExplosion, 7.5);
+		u2(v63.EmitPoint.Sparks, 5);
+		for v64, v65 in pairs(v63.EmitPoint:GetChildren()) do
+			if v65:IsA("ParticleEmitter") and string.find(v65.Name, "Impact_") ~= nil then
+				v65:Emit(v65:GetAttribute("EmitCount"));
+			end;
+		end;
+
+		local function preserveExactCase(username)
+			return username
+		end
+
+		v63.ApplauseLoop.Playing = true;
+		v63.ChimeLoop.Playing = true;
+		v63.CoinsLoop.Playing = true;
+		local l__Frame__66 = v63.BillboardGuiAnimation.Frame;
+		l__Frame__66.TopText.Visible = true;
+		l__Frame__66.BottomText.Visible = true;
+
+		-- 🔥 SAWERIA TOGGLE INJECTION
+		local formattedAmount = tostring(p7):reverse():gsub("%d%d%d", "%1."):reverse():gsub("^%.", "")
+		l__Frame__66.TopText.Text = "@" .. preserveExactCase(p5) .. " DONATED";
+		l__Frame__66.BottomText.Text = "TO @" .. preserveExactCase(p6);
+
+		if USE_RUPIAH then
+			-- Gunakan Non-Breaking Space
+			l__Frame__66.MiddleText.Text = "Rp\u{00A0}" .. formattedAmount
+			l__Frame__66.RobuxLogo.Visible = false
+		else
+			l__Frame__66.MiddleText.Text = formattedAmount
+			l__Frame__66.RobuxLogo.Visible = true
+			l__Frame__66.RobuxLogo.Size = UDim2.fromScale(0, 0);
+			l__Frame__66.RobuxLogo.Rotation = -180;
+		end
+
+		l__Frame__66.Star.Size = UDim2.fromScale(0, 0);
+		l__Frame__66.BottomText.Size = UDim2.fromScale(0, 0);
+		l__Frame__66.BottomText.Position = UDim2.fromScale(0.5, 0.5);
+		l__Frame__66.MiddleText.Size = UDim2.fromScale(0, 0);
+		l__Frame__66.TopText.Position = UDim2.fromScale(0.5, 0.5);
+		l__Frame__66.TopText.Size = UDim2.fromScale(0, 0);
+		l__Frame__66.Parent.Enabled = true;
+
+		l__TweenService__1:Create(v63, TweenInfo.new(20, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			Position = u4 + Vector3.new(0, 400, 0)
+		}):Play();
+
+		if not USE_RUPIAH then
+			l__TweenService__1:Create(l__Frame__66.RobuxLogo, TweenInfo.new(10, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out, 0, false, 0), {
+				Size = UDim2.fromScale(1, 1)
+			}):Play();
+			l__TweenService__1:Create(l__Frame__66.RobuxLogo, TweenInfo.new(15, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out, 0, false, 0), {
+				Rotation = 0
+			}):Play();
+		end
+
+		l__TweenService__1:Create(l__Frame__66.Star, TweenInfo.new(5, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out, 0, false, 0), {
+			Size = UDim2.fromScale(1.5, 1.5)
+		}):Play();
+		l__TweenService__1:Create(l__Frame__66.Star, TweenInfo.new(15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			Rotation = 360
+		}):Play();
+		l__TweenService__1:Create(l__Frame__66.BottomText, TweenInfo.new(5, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out, 0, false, 0.6), {
+			Size = UDim2.fromScale(1.5, 0.1), 
+			Position = UDim2.fromScale(0.5, 0.59)
+		}):Play();
+		l__TweenService__1:Create(l__Frame__66.MiddleText, TweenInfo.new(5, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out, 0, false, 0.4), {
+			Size = UDim2.fromScale(1, 1)
+		}):Play();
+		l__TweenService__1:Create(l__Frame__66.TopText, TweenInfo.new(5, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out, 0, false, 0.2), {
+			Size = UDim2.fromScale(1.5, 0.1), 
+			Position = UDim2.fromScale(0.5, 0.41)
+		}):Play();
+		l__TweenService__1:Create(l__Frame__66.Star, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 5), {
+			ImageTransparency = 1, 
+			ImageColor3 = Color3.fromRGB(0, 255, 255)
+		}):Play();
+
+		v63.EmitPoint.Sparks.Enabled = true;
+		v63.EmitPoint.SparkleExplosion.Enabled = true;
+		l__TweenService__1:Create(v63.EmitPoint.Sparks, TweenInfo.new(45, Enum.EasingStyle.Quint, Enum.EasingDirection.In, 0, false, 0), {
+			Rate = 0
+		}):Play();
+		l__TweenService__1:Create(v63.EmitPoint.SparkleExplosion, TweenInfo.new(45, Enum.EasingStyle.Quint, Enum.EasingDirection.In, 0, false, 0), {
+			Rate = 0
+		}):Play();
+		l__TweenService__1:Create(v63.ChimeLoop, TweenInfo.new(55, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
+			Volume = 0, 
+			PlaybackSpeed = 0.75
+		}):Play();
+		l__TweenService__1:Create(v63.ApplauseLoop, TweenInfo.new(60, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
+			Volume = 0
+		}):Play();
+		l__TweenService__1:Create(v63.CoinsLoop, TweenInfo.new(50, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
+			Volume = 0, 
+			PlaybackSpeed = 1
+		}):Play();
+		wait(30);
+		l__TweenService__1:Create(l__Frame__66.UIScale, TweenInfo.new(15, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
+			Scale = 0
+		}):Play();
+		wait(30);
+		v63:Destroy();
+	end);
+	v21:GetMarkerReachedSignal("Release"):Connect(function(p16)
+		debugPrint("Animation event: Release");
+		v11.Head.LeftEyeAttachment.Flare.Enabled = false;
+		v11.Head.RightEyeAttachment.Flare.Enabled = false;
+	end);
+	local l__Appearance__10 = v11.Particles.Appearance;
+	v21:GetMarkerReachedSignal("Fade"):Connect(function(p17)
+		debugPrint("Animation event: Fade " .. p17);
+		local v67 = l__Sounds__20.GiantFade:Clone();
+		v67.Volume = 0;
+		v67.PlaybackSpeed = 1.5;
+		v67.Parent = v11.UpperTorso;
+		v67.Playing = true;
+		l__TweenService__1:Create(v67, TweenInfo.new(4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true, 0), {
+			Volume = 0.7
+		}):Play();
+		l__TweenService__1:Create(v67, TweenInfo.new(8, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut, 0, false, 0), {
+			PlaybackSpeed = 0.5
+		}):Play();
+		for v68, v69 in pairs(v11:GetDescendants()) do
+			if (v69:IsA("BasePart") or v69:IsA("Decal")) and v69.Name ~= "HumanoidRootPart" then
+				if v69:IsA("Decal") == false then
+					local v70 = l__Appearance__10:Clone();
+					v70.Parent = v69;
+					v70.Enabled = true;
+					l__TweenService__1:Create(v70, TweenInfo.new(5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true, 0), {
+						Rate = 30
+					}):Play();
+				end;
+				l__TweenService__1:Create(v69, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
+					Transparency = 1
+				}):Play();
+			end;
+		end;
+		l__TweenService__1:Create(l__DiamondHammer__12.Handle.HammerBaseOutline.Sparkles, TweenInfo.new(8, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
+			Rate = 0
+		}):Play();
+		l__TweenService__1:Create(l__DiamondHammer__12.Handle.HammerBaseOutline.Appearance, TweenInfo.new(4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true, 0), {
+			Rate = 70
+		}):Play();
+		l__TweenService__1:Create(l__DiamondHammer__12.Handle.HammerHandleBase.Appearance, TweenInfo.new(4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true, 0), {
+			Rate = 40
+		}):Play();
+		l__TweenService__1:Create(l__DiamondHammer__12.Handle, TweenInfo.new(8, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
+			Transparency = 1
+		}):Play();
+		l__TweenService__1:Create(l__DiamondHammer__12.Handle.Diamonds, TweenInfo.new(8, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
+			Transparency = 1
+		}):Play();
+	end);
+	v21:GetMarkerReachedSignal("FadeEnd"):Connect(function(p18)
+		debugPrint("Animation event: FadeEnd");
+		v52:Disconnect();
+		wait(5);
+		v11:Destroy();
+	end);
+	wait(1);
+	v21:Play();
+	task.spawn(function()
+		l__Sounds__20.Earthquake:Play();
+		l__Sounds__20.CrumbleLoop.Volume = 0;
+		l__Sounds__20.CrumbleLoop.Playing = true;
+		l__TweenService__1:Create(l__Sounds__20.CrumbleLoop, TweenInfo.new(3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			Volume = 0.1
+		}):Play();
+		l__Sounds__20.FireLoop.Volume = 0;
+		l__Sounds__20.FireLoop.PlaybackSpeed = 0.5;
+		l__Sounds__20.FireLoop.Playing = true;
+		l__TweenService__1:Create(l__Sounds__20.FireLoop, TweenInfo.new(5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			Volume = 0.1, 
+			PlaybackSpeed = 1
+		}):Play();
+		v24:ShakeSustain(u3.Presets.Earthquake);
+		for v71, v72 in pairs(v11:GetDescendants()) do
+			if (v72:IsA("BasePart") or v72:IsA("Decal")) and v72.Name ~= "HumanoidRootPart" and v72:IsDescendantOf(l__DiamondHammer__12) == false then
+				l__TweenService__1:Create(v72, TweenInfo.new(5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+					Transparency = 0
+				}):Play();
+			end;
+		end;
+		wait(7);
+		l__TweenService__1:Create(l__Sounds__20.CrumbleLoop, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+			Volume = 0
+		}):Play();
+		v24:StopSustained(6);
+		l__TweenService__1:Create(v25.Sparks, TweenInfo.new(5, Enum.EasingStyle.Sine, Enum.EasingDirection.In, 0, false, 0), {
+			Rate = 0
+		}):Play();
+		l__TweenService__1:Create(v25.Appearance, TweenInfo.new(5, Enum.EasingStyle.Sine, Enum.EasingDirection.In, 0, false, 0), {
+			Rate = 0
+		}):Play();
+		l__TweenService__1:Create(v25, TweenInfo.new(5, Enum.EasingStyle.Sine, Enum.EasingDirection.In, 0, false, 0), {
+			Size = Vector3.new(0, 1, 0)
+		}):Play();
+		l__TweenService__1:Create(v25.OuterLightBeam, TweenInfo.new(5, Enum.EasingStyle.Sine, Enum.EasingDirection.In, 0, false, 0), {
+			Width0 = 0, 
+			Width1 = 0
+		}):Play();
+		l__TweenService__1:Create(v25.InnerLightBeam, TweenInfo.new(5, Enum.EasingStyle.Sine, Enum.EasingDirection.In, 0, false, 0), {
+			Width0 = 0, 
+			Width1 = 0
+		}):Play();
+		l__TweenService__1:Create(v25.PortalAmbiance, TweenInfo.new(5, Enum.EasingStyle.Sine, Enum.EasingDirection.In, 0, false, 0), {
+			Volume = 0, 
+			PlaybackSpeed = 0
+		}):Play();
+		v25.PortalClose1.PlayOnRemove = true;
+		wait(5);
+		v25:Destroy();
+	end);
+	wait(90);
+	u3:Stop();
+	l__TweenService__1:Create(v22, TweenInfo.new(30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+		TintColor = Color3.fromRGB(255, 255, 255), 
+		Brightness = 0, 
+		Saturation = 0, 
+		Contrast = 0
+	}):Play()
+	l__TweenService__1:Create(v23, TweenInfo.new(30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+		Intensity = -1
+	}):Play()
+
+	wait(15) 
+	if v22 then v22:Destroy() end
+	if v23 then v23:Destroy() end
+	if l__Sounds__20 then l__Sounds__20:Destroy() end
+	if v52 then v52:Disconnect() end
+end 
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local FireSmiteEvent = ReplicatedStorage:WaitForChild("FireSmite", 10)
+
+if FireSmiteEvent then
+	FireSmiteEvent.OnClientEvent:Connect(function(donator, recipient, amount, userId)
+		local safeDonator = donator or "Anonymous"
+		local safeRecipient = recipient or "SAWERIA"
+		local safeAmount = tonumber(amount) or 0
+		local safeUserId = tonumber(userId) or 156 
+
+		local smiteModel = ReplicatedStorage:WaitForChild("VFX"):WaitForChild("Templates"):WaitForChild("UltraHammerGiant")
+
+		debugPrint("[Layar Ultra] Memulai Animasi untuk:", safeDonator, "| UserId:", safeUserId)
+
+		if type(u7) == "function" then
+			u7(smiteModel, safeDonator, safeRecipient, safeAmount, safeUserId)
+		else
+			warn("?? Fungsi u7 tidak ditemukan dalam script ini!")
+		end
+	end)
+end
+
 
 -- ============================================
 -- CONFIGURATION
@@ -5538,7 +9124,7 @@ local replicatedstorage = game:GetService("ReplicatedStorage")
 local tweenservice = game:GetService("TweenService")
 local lighting = game:GetService("Lighting")
 local textChatService = game:GetService("TextChatService")
-local collectionService = game:GetService("CollectionService") -- [BARU] Untuk melacak tag
+local collectionService = game:GetService("CollectionService")
 
 local localPlayer = player.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
@@ -5609,9 +9195,9 @@ function Utils:HideLight(light, shouldHide)
 	return false
 end
 
-function Utils:HideGui(gui, shouldHide)
-	if gui:IsA("BillboardGui") or gui:IsA("SurfaceGui") then
-		gui.Enabled = not shouldHide
+function Utils:HideGui(guiObj, shouldHide)
+	if guiObj:IsA("BillboardGui") or guiObj:IsA("SurfaceGui") then
+		guiObj.Enabled = not shouldHide
 		return true
 	end
 	return false
@@ -5625,7 +9211,12 @@ local BubbleChatSystem = {}
 local ShadowSystem = {}
 local PlayerHideSystem = {}
 local EffectsSystem = {}
-local HideUISystem = { hiddenGuis = {} }
+local HideUISystem = { hiddenGuis = {}, childAddedConn = nil }
+
+local FeatureManager = {
+	features = {},
+	featureStates = {}
+}
 
 -- ============================================
 -- FEATURES CONFIGURATION
@@ -5636,7 +9227,7 @@ local FEATURES = {
 		name = "Hide Player Name",
 		defaultState = false,
 		onToggle = function(self, isActive) OverheadSystem:SetVisible(not isActive) end,
-		onCharacterAdded = function(self, character, player) OverheadSystem:OnCharacterAdded(character) end
+		onCharacterAdded = function(self, character, player) OverheadSystem:OnCharacterAdded(character, player) end
 	},
 	{
 		id = "bubblechat",
@@ -5647,7 +9238,7 @@ local FEATURES = {
 	{
 		id = "shadow",
 		name = "Hide All Shadow",
-		defaultState = false,
+		defaultState = true,
 		onToggle = function(self, isActive) ShadowSystem:SetVisible(not isActive) end
 	},
 	{
@@ -5675,11 +9266,6 @@ local FEATURES = {
 -- ============================================
 -- FEATURE MANAGER
 -- ============================================
-local FeatureManager = {
-	features = {},
-	featureStates = {}
-}
-
 function FeatureManager:RegisterFeature(featureConfig)
 	if not featureConfig.id or not featureConfig.name then return false end
 
@@ -5710,9 +9296,15 @@ function FeatureManager:RegisterFeature(featureConfig)
 	if self.featureStates[featureConfig.id] then
 		button.Position = CONFIG.BUTTON_POS_ON
 		bg.BackgroundColor3 = CONFIG.BG_COLOR_ON
+		if featureConfig.onToggle then
+			task.spawn(function() featureConfig.onToggle(featureConfig, true) end)
+		end
 	else
 		button.Position = CONFIG.BUTTON_POS_OFF
 		bg.BackgroundColor3 = CONFIG.BG_COLOR_OFF
+		if featureConfig.onToggle then
+			task.spawn(function() featureConfig.onToggle(featureConfig, false) end)
+		end
 	end
 
 	featureFrame.Parent = containerframe
@@ -5759,12 +9351,30 @@ function HideUISystem:SetVisible(isHiding)
 		end
 		mainframe.Visible = false
 		unhideBtn.Visible = true
+
+		-- 🔥 FIX 2: Cegah UI baru muncul saat mode Hide UI sedang menyala (Penjaga Pintu)
+		if not self.childAddedConn then
+			self.childAddedConn = playerGui.ChildAdded:Connect(function(childGui)
+				if childGui:IsA("ScreenGui") and childGui ~= gui then
+					task.wait() -- Tunggu properti terisi penuh oleh Roblox
+					if childGui.Enabled then
+						self.hiddenGuis[childGui] = true
+						childGui.Enabled = false
+					end
+				end
+			end)
+		end
 	else
 		for hiddenGui, _ in pairs(self.hiddenGuis) do
 			if hiddenGui and hiddenGui.Parent then hiddenGui.Enabled = true end
 		end
 		self.hiddenGuis = {} 
 		unhideBtn.Visible = false
+
+		if self.childAddedConn then
+			self.childAddedConn:Disconnect()
+			self.childAddedConn = nil
+		end
 	end
 end
 
@@ -5800,31 +9410,61 @@ function OverheadSystem:HideOverheadGui(head, shouldHide)
 end
 
 function OverheadSystem:SetVisible(visible)
+	local isHidingNames = FeatureManager:GetFeatureState("overhead")
+	local isHidingPlayers = FeatureManager:GetFeatureState("players")
+
 	for _, otherPlayer in pairs(player:GetPlayers()) do
 		if otherPlayer.Character then
+			-- 🔥 FIX 1: Cross-check dengan status Hide Players
+			local shouldHide = isHidingNames
+			if otherPlayer ~= localPlayer and isHidingPlayers then
+				shouldHide = true
+			end
+
 			local head = otherPlayer.Character:FindFirstChild("Head")
-			if head then self:HideOverheadGui(head, not visible) end
+			if head then self:HideOverheadGui(head, shouldHide) end
 		end
 	end
 end
 
-function OverheadSystem:OnCharacterAdded(character)
-	task.wait(CONFIG.WAIT_FOR_OVERHEAD)
-	if FeatureManager:GetFeatureState("overhead") then
-		local head = character:FindFirstChild("Head")
-		if head then self:HideOverheadGui(head, true) end
-	end
-
+function OverheadSystem:OnCharacterAdded(character, otherPlayer)
 	character.ChildAdded:Connect(function(child)
 		if child.Name == "Head" then
 			child.ChildAdded:Connect(function(grandChild)
-				if grandChild.Name == "OverheadGui" and FeatureManager:GetFeatureState("overhead") then
+				if grandChild.Name == "OverheadGui" then
+					-- 🔥 FIX 3: task.wait() SEBELUM IF, bukan SESUDAH IF
 					task.wait(0.1)
-					grandChild.Enabled = false
+
+					local isHidingNames = FeatureManager:GetFeatureState("overhead")
+					local isHidingPlayers = FeatureManager:GetFeatureState("players")
+
+					local shouldHide = isHidingNames
+					if otherPlayer ~= localPlayer and isHidingPlayers then
+						shouldHide = true
+					end
+
+					if shouldHide then
+						grandChild.Enabled = false
+					end
 				end
 			end)
 		end
 	end)
+
+	task.wait(CONFIG.WAIT_FOR_OVERHEAD)
+
+	local isHidingNames = FeatureManager:GetFeatureState("overhead")
+	local isHidingPlayers = FeatureManager:GetFeatureState("players")
+
+	local shouldHide = isHidingNames
+	if otherPlayer ~= localPlayer and isHidingPlayers then
+		shouldHide = true
+	end
+
+	if shouldHide then
+		local head = character:FindFirstChild("Head")
+		if head then self:HideOverheadGui(head, true) end
+	end
 end
 
 function ShadowSystem:SetVisible(visible)
@@ -5832,7 +9472,7 @@ function ShadowSystem:SetVisible(visible)
 end
 
 -- ============================================
--- EFFECTS HIDE SYSTEM (DISEMPURNAKAN DGN TAG)
+-- EFFECTS HIDE SYSTEM
 -- ============================================
 function EffectsSystem:HideCharacterEffects(character, shouldHide)
 	for _, descendant in pairs(character:GetDescendants()) do
@@ -5860,24 +9500,31 @@ function EffectsSystem:HideAuraEffects(character, shouldHide)
 end
 
 function EffectsSystem:SetEffectsVisible(visible)
+	local isHidingEffects = FeatureManager:GetFeatureState("effects")
+	local isHidingPlayers = FeatureManager:GetFeatureState("players")
+
 	-- Sembunyikan efek di semua karakter
 	for _, otherPlayer in pairs(player:GetPlayers()) do
 		if otherPlayer ~= localPlayer and otherPlayer.Character then
 			local character = otherPlayer.Character
-			self:HideCharacterEffects(character, not visible)
-			self:HideLights(character, not visible)
-			self:HideAuraEffects(character, not visible)
+
+			-- 🔥 FIX 1: Jika Hide Players menyala, Efek HARUS disembunyikan
+			local shouldHide = isHidingEffects or isHidingPlayers
+
+			self:HideCharacterEffects(character, shouldHide)
+			self:HideLights(character, shouldHide)
+			self:HideAuraEffects(character, shouldHide)
 		end
 	end
 
-	-- [SANGAT PENTING] Sembunyikan objek donasi di Workspace berdasarkan TAG!
-	local shouldHide = not visible
+	-- Sembunyikan objek donasi di Workspace berdasarkan TAG
+	local shouldHideWorkspace = isHidingEffects
 	for _, effect in ipairs(collectionService:GetTagged("DonationEffect")) do
-		Utils:HideBasePart(effect, shouldHide)
+		Utils:HideBasePart(effect, shouldHideWorkspace)
 		for _, desc in ipairs(effect:GetDescendants()) do
-			Utils:HideEffect(desc, shouldHide)
-			Utils:HideLight(desc, shouldHide)
-			Utils:HideBasePart(desc, shouldHide)
+			Utils:HideEffect(desc, shouldHideWorkspace)
+			Utils:HideLight(desc, shouldHideWorkspace)
+			Utils:HideBasePart(desc, shouldHideWorkspace)
 		end
 	end
 end
@@ -5885,23 +9532,29 @@ end
 function EffectsSystem:OnCharacterAdded(character, otherPlayer)
 	if otherPlayer ~= localPlayer then
 		task.wait(CONFIG.WAIT_FOR_EFFECTS)
-		if FeatureManager:GetFeatureState("effects") then
+
+		local isHidingEffects = FeatureManager:GetFeatureState("effects")
+		local isHidingPlayers = FeatureManager:GetFeatureState("players")
+		local shouldHide = isHidingEffects or isHidingPlayers
+
+		if shouldHide then
 			self:HideCharacterEffects(character, true)
 			self:HideLights(character, true)
 			self:HideAuraEffects(character, true)
 		end
 
 		character.DescendantAdded:Connect(function(descendant)
-			if FeatureManager:GetFeatureState("effects") then
-				task.wait(0.1)
+			-- 🔥 FIX 3: task.wait() ditaruh di atas
+			task.wait(0.1)
+			if FeatureManager:GetFeatureState("effects") or FeatureManager:GetFeatureState("players") then
 				Utils:HideEffect(descendant, true)
 				Utils:HideLight(descendant, true)
 			end
 		end)
 
 		character.ChildAdded:Connect(function(child)
-			if Utils:IsAura(child) and FeatureManager:GetFeatureState("effects") then
-				task.wait(CONFIG.WAIT_FOR_EFFECTS)
+			task.wait(CONFIG.WAIT_FOR_EFFECTS)
+			if Utils:IsAura(child) and (FeatureManager:GetFeatureState("effects") or FeatureManager:GetFeatureState("players")) then
 				Utils:HideBasePart(child, true)
 				for _, descendant in pairs(child:GetDescendants()) do
 					Utils:HideEffect(descendant, true)
@@ -5917,9 +9570,8 @@ end
 -- EVENT: DETEKSI DONASI BARU DI WORKSPACE
 -- ============================================
 collectionService:GetInstanceAddedSignal("DonationEffect"):Connect(function(effect)
-	-- Jika tombol Hide Effects sedang aktif, langsung lenyapkan!
+	task.wait(0.1) 
 	if FeatureManager:GetFeatureState("effects") then
-		task.wait(0.1) -- Tunggu partikelnya menetas
 		Utils:HideBasePart(effect, true)
 		for _, desc in ipairs(effect:GetDescendants()) do
 			Utils:HideEffect(desc, true)
@@ -5933,10 +9585,15 @@ end)
 -- PLAYER HIDE SYSTEM
 -- ============================================
 function PlayerHideSystem:HideObject(object, shouldHide)
+	local isHidingEffects = FeatureManager:GetFeatureState("effects")
+
+	-- Efek tidak boleh muncul ulang jika salah satu tombol (Hide Players atau Hide Effects) menyala
+	local hideEffect = shouldHide or isHidingEffects
+
 	for _, descendant in pairs(object:GetDescendants()) do
 		Utils:HideBasePart(descendant, shouldHide)
-		Utils:HideEffect(descendant, shouldHide)
-		Utils:HideLight(descendant, shouldHide)
+		Utils:HideEffect(descendant, hideEffect)
+		Utils:HideLight(descendant, hideEffect)
 		Utils:HideGui(descendant, shouldHide)
 	end
 end
@@ -5953,13 +9610,22 @@ function PlayerHideSystem:HideTools(otherPlayer, character, shouldHide)
 end
 
 function PlayerHideSystem:SetPlayersVisible(visible)
+	local isHidingPlayers = FeatureManager:GetFeatureState("players")
+	local isHidingNames = FeatureManager:GetFeatureState("overhead")
+
 	for _, otherPlayer in pairs(player:GetPlayers()) do
 		if otherPlayer ~= localPlayer and otherPlayer.Character then
 			local character = otherPlayer.Character
-			self:HideObject(character, not visible)
-			self:HideTools(otherPlayer, character, not visible)
+
+			self:HideObject(character, isHidingPlayers)
+			self:HideTools(otherPlayer, character, isHidingPlayers)
+
 			local head = character:FindFirstChild("Head")
-			if head then OverheadSystem:HideOverheadGui(head, not visible) end
+			if head then 
+				-- 🔥 FIX 1: Cross-check dengan Hide Player Name
+				local hideOverhead = isHidingPlayers or isHidingNames
+				OverheadSystem:HideOverheadGui(head, hideOverhead) 
+			end
 		end
 	end
 end
@@ -5967,24 +9633,28 @@ end
 function PlayerHideSystem:OnCharacterAdded(character, otherPlayer)
 	if otherPlayer ~= localPlayer then
 		task.wait(CONFIG.WAIT_FOR_ACCESSORIES)
+
 		if FeatureManager:GetFeatureState("players") then
 			self:HideObject(character, true)
 			self:HideTools(otherPlayer, character, true)
+
 			local head = character:FindFirstChild("Head")
 			if head then OverheadSystem:HideOverheadGui(head, true) end
 		end
 
 		character.ChildAdded:Connect(function(child)
+			task.wait(CONFIG.WAIT_FOR_TOOLS)
 			if FeatureManager:GetFeatureState("players") then
-				task.wait(CONFIG.WAIT_FOR_TOOLS)
-				if child:IsA("Tool") or Utils:IsAura(child) then self:HideObject(child, true) end
+				if child:IsA("Tool") or Utils:IsAura(child) then 
+					self:HideObject(child, true) 
+				end
 			end
 		end)
 
 		if otherPlayer.Backpack then
 			otherPlayer.Backpack.ChildAdded:Connect(function(child)
+				task.wait(CONFIG.WAIT_FOR_TOOLS)
 				if child:IsA("Tool") and FeatureManager:GetFeatureState("players") then
-					task.wait(CONFIG.WAIT_FOR_TOOLS)
 					self:HideObject(child, true)
 				end
 			end)
@@ -6001,9 +9671,6 @@ end
 
 for _, otherPlayer in pairs(player:GetPlayers()) do
 	if otherPlayer.Character then FeatureManager:OnCharacterAdded(otherPlayer.Character, otherPlayer) end
-	otherPlayer.CharacterAdded:Connect(function(character)
-		FeatureManager:OnCharacterAdded(character, otherPlayer)
-	end)
 end
 
 player.PlayerAdded:Connect(function(otherPlayer)
@@ -6012,119 +9679,5 @@ player.PlayerAdded:Connect(function(otherPlayer)
 	end)
 end)
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
-local Players = game:GetService("Players")
 
--- ====================================
--- ⚙️ PENGATURAN DEBUG (ANTI-SPAM LOG)
--- ====================================
-local DEBUG_ENABLED = false -- 🟢 UBAH KE 'true' JIKA INGIN MELIHAT LOG DI CONSOLE
 
-local function debugLog(...)
-	if DEBUG_ENABLED then
-		print("[DEBUG UI CLIENT]", ...)
-	end
-end
-
--- ====================================
--- INISIALISASI UI
--- ====================================
-local frame = script.Parent
-local avatarImg = frame:WaitForChild("Avatar")
-local nameLbl = frame:WaitForChild("NameLabel")
-local descLbl = frame:WaitForChild("DescLabel")
-local stroke = frame:FindFirstChildOfClass("UIStroke")
-
--- 1. SIMPAN TRANSPARANSI ASLI DARI STUDIO
-local targets = {
-	Frame = frame.BackgroundTransparency,
-	Avatar = avatarImg.ImageTransparency,
-	Name = nameLbl.TextTransparency,
-	Desc = descLbl.TextTransparency,
-	Stroke = stroke and stroke.Transparency or 0
-}
-
--- 2. SEMBUNYIKAN GUI SAAT AWAL GAME DIMULAI
-frame.BackgroundTransparency = 1
-avatarImg.ImageTransparency = 1
-nameLbl.TextTransparency = 1
-descLbl.TextTransparency = 1
-if stroke then stroke.Transparency = 1 end
-frame.Visible = false
-
-local NotifEvent = ReplicatedStorage:WaitForChild("SultanJoinNotifEvent")
-local isPlaying = false
-local queue = {}
-
-local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-
--- FUNGSI UNTUK FADE IN / FADE OUT SEMUA ELEMEN
-local function fade(isIn)
-	local tweens = {}
-	table.insert(tweens, TweenService:Create(frame, tweenInfo, {BackgroundTransparency = isIn and targets.Frame or 1}))
-	table.insert(tweens, TweenService:Create(avatarImg, tweenInfo, {ImageTransparency = isIn and targets.Avatar or 1}))
-	table.insert(tweens, TweenService:Create(nameLbl, tweenInfo, {TextTransparency = isIn and targets.Name or 1}))
-	table.insert(tweens, TweenService:Create(descLbl, tweenInfo, {TextTransparency = isIn and targets.Desc or 1}))
-	if stroke then
-		table.insert(tweens, TweenService:Create(stroke, tweenInfo, {Transparency = isIn and targets.Stroke or 1}))
-	end
-
-	for _, t in ipairs(tweens) do t:Play() end
-	return tweens[1] -- Mengembalikan satu tween untuk ditunggu selesai
-end
-
-local function playNextNotif()
-	if #queue == 0 then
-		isPlaying = false
-		return
-	end
-
-	isPlaying = true
-	local data = table.remove(queue, 1)
-
-	-- Set Teks
-	nameLbl.Text = data.PlayerName
-	descLbl.Text = data.Message
-
-	-- Coba ambil foto avatar (Headshot)
-	task.spawn(function()
-		local success, result = pcall(function()
-			-- Langsung pakai UserId dari server, nggak perlu nyari pakai nama lagi! Jauh lebih cepat & aman.
-			return Players:GetUserThumbnailAsync(data.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
-		end)
-
-		if success and result then
-			avatarImg.Image = result
-		else
-			avatarImg.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
-		end
-	end)
-
-	-- FADE IN (MUNCUL)
-	frame.Visible = true
-	local tShow = fade(true)
-	tShow.Completed:Wait()
-
-	-- Tunggu 5 detik di layar
-	task.wait(5)
-
-	-- FADE OUT (HILANG)
-	local tHide = fade(false)
-	tHide.Completed:Wait()
-	frame.Visible = false
-
-	-- Lanjut ke antrean berikutnya (jika ada 2 sultan join)
-	task.wait(0.5)
-	playNextNotif()
-end
-
-NotifEvent.OnClientEvent:Connect(function(data)
-	debugLog("📥 Sinyal notifikasi diterima untuk:", data.PlayerName)
-	table.insert(queue, data)
-	if not isPlaying then
-		playNextNotif()
-	end
-end)
-
-aman semua ini?, ini semua script ini ada di dalam stater gui

@@ -1,3 +1,5 @@
+--!native
+--!optimize 2
 -- GLightsClient (Client) — Versi Baru Tanpa Beat Detection
 -- Tidak ada Heartbeat loop, tidak ada sampling audio.
 -- Hanya listen RemoteEvent GLightColorSync dari server,

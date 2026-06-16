@@ -273,16 +273,7 @@ local function startLevelTimer(player)
 			LevelSystem:AddLevels(player, 1)
 		end
 	end)
-	
-	-- 🔥 ARCHITECT FIX: AUTO-SAVE LOOP
-	task.spawn(function()
-		while running and player.Parent and playerTimers[userId] do
-			task.wait(LevelSystem.Config.SAVE_COOLDOWN)
-			if not running or not player.Parent or not playerTimers[userId] then break end
-			-- Lakukan save secara background (bukan force save)
-			LevelSystem:SavePlayerLevel(player, false)
-		end
-	end)
+
 end
 
 local function stopLevelTimer(player)
@@ -409,8 +400,6 @@ game:BindToClose(function()
 			task.wait(0.2)
 		end
 	end
-	
-	task.wait(3) -- Beri waktu 3 detik terakhir untuk memastikan semua request beres
 end)
 
 return LevelSystem

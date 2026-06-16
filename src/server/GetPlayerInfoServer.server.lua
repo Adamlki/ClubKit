@@ -235,22 +235,34 @@ local function fetchPlayerInfo(userId, callerPlayer)
 		}
 	end
 
-	-- Fetch sequentially dengan jeda agar roproxy tidak panik
+	-- ✨ Fetch secara paralel dengan timeout untuk mencegah thread menahan
 	local rawDescription = ""
 	local friendsCount   = 0
 	local followersCount = 0
 	local followingCount = 0
 
-	rawDescription = fetchDescription(userId)
-	task.wait(0.6)
+	local completedTasks = 0
+	task.spawn(function()
+		rawDescription = fetchDescription(userId)
+		completedTasks += 1
+	end)
+	task.spawn(function()
+		friendsCount = fetchFriendsCount(userId)
+		completedTasks += 1
+	end)
+	task.spawn(function()
+		followersCount = fetchFollowersCount(userId)
+		completedTasks += 1
+	end)
+	task.spawn(function()
+		followingCount = fetchFollowingCount(userId)
+		completedTasks += 1
+	end)
 
-	friendsCount = fetchFriendsCount(userId)
-	task.wait(0.6)
-
-	followersCount = fetchFollowersCount(userId)
-	task.wait(0.6)
-
-	followingCount = fetchFollowingCount(userId)
+	local startTime = os.clock()
+	while completedTasks < 4 and (os.clock() - startTime) < 2 do
+		task.wait(0.1)
+	end
 
 	-- Simpan raw ke cache sebelum filter
 	setCached(userId, rawDescription, friendsCount, followersCount, followingCount)

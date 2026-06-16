@@ -14,9 +14,15 @@ end
 
 local HashLib = require(game:GetService("ReplicatedStorage").Packages.HashLib)
 
+local hashedNamesCache = {}
+
 function Remotes.Event(RemoteName)
 	
-	local EncryptedName = HashLib.bin_to_base64(HashLib.hex_to_bin(HashLib.sha1(RemoteName .. DataKey)))
+	local EncryptedName = hashedNamesCache[RemoteName]
+	if not EncryptedName then
+		EncryptedName = HashLib.bin_to_base64(HashLib.hex_to_bin(HashLib.sha1(RemoteName .. DataKey)))
+		hashedNamesCache[RemoteName] = EncryptedName
+	end
 	--RunService:IsServer() and
 	if not script:FindFirstChild(EncryptedName) then
 		
@@ -38,7 +44,11 @@ end
 
 function Remotes.Function(RemoteName)
 	
-	local EncryptedName = HashLib.bin_to_base64(HashLib.hex_to_bin(HashLib.sha1(RemoteName .. DataKey)))
+	local EncryptedName = hashedNamesCache[RemoteName]
+	if not EncryptedName then
+		EncryptedName = HashLib.bin_to_base64(HashLib.hex_to_bin(HashLib.sha1(RemoteName .. DataKey)))
+		hashedNamesCache[RemoteName] = EncryptedName
+	end
 	--RunService:IsServer() and
 	if not script:FindFirstChild(EncryptedName) then
 		

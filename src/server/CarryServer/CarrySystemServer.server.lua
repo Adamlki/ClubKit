@@ -1,3 +1,5 @@
+--!native
+--!optimize 2
 -- CarrySystemServer.lua (Script)
 
 local Players = game:GetService("Players")

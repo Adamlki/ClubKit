@@ -204,6 +204,24 @@ end
 -- ====================================
 -- OWNERSHIP CACHE SYSTEM
 -- ====================================
+local gamepassQueue = {}
+local isCheckingQueue = false
+
+local function processGamepassQueue()
+	if isCheckingQueue then return end
+	isCheckingQueue = true
+	task.spawn(function()
+		while #gamepassQueue > 0 do
+			local nextCheck = table.remove(gamepassQueue, 1)
+			if nextCheck and nextCheck.player and nextCheck.player.Parent then
+				nextCheck.callback()
+			end
+			-- ✨ Anti-Throttling API Global Jitter
+			task.wait(1.5)
+		end
+		isCheckingQueue = false
+	end)
+end
 
 -- CachePlayerOwnership:
 --   SYNC  → hanya baca DataStore givenpass (cepat, ~100-300ms)
@@ -243,41 +261,45 @@ function RoleSystem:CachePlayerOwnership(player)
 	-- 2. GamePass check ASYNC di background (tidak blocking PlayerAdded)
 	-- Hanya untuk player yang belum punya GivenPass dari DataStore
 	if ownership.GivenPass == "None" then
-		task.spawn(function()
-			local hasVVIP = checkAnyGamepass(player, self.Config.GamePasses.VVIP)
+		table.insert(gamepassQueue, {
+			player = player,
+			callback = function()
+				local hasVVIP = checkAnyGamepass(player, self.Config.GamePasses.VVIP)
 
-			if hasVVIP then
-				ownership.VVIP = true
-				ownership.GivenPass = "VVIP"
-				playerOwnershipCache[userId] = ownership
+				if hasVVIP then
+					ownership.VVIP = true
+					ownership.GivenPass = "VVIP"
+					playerOwnershipCache[userId] = ownership
 
-				if DEBUG_MODE then -- 🔥 DEBUG WRAPPER
-					print(string.format("[RoleSystem] Auto-saving VVIP purchase for user %d", userId))
+					if DEBUG_MODE then -- 🔥 DEBUG WRAPPER
+						print(string.format("[RoleSystem] Auto-saving VVIP purchase for user %d", userId))
+					end
+
+					self:GivePassToPlayer(userId, "VVIP", 0)
+					if player and player.Parent then
+						self:UpdatePlayerRole(player)
+					end
+					return
 				end
 
-				self:GivePassToPlayer(userId, "VVIP", 0)
-				if player and player.Parent then
-					self:UpdatePlayerRole(player)
+				local hasVIP = checkAnyGamepass(player, self.Config.GamePasses.VIP)
+				if hasVIP then
+					ownership.VIP = true
+					ownership.GivenPass = "VIP"
+					playerOwnershipCache[userId] = ownership
+
+					if DEBUG_MODE then -- 🔥 DEBUG WRAPPER
+						print(string.format("[RoleSystem] Auto-saving VIP purchase for user %d", userId))
+					end
+
+					self:GivePassToPlayer(userId, "VIP", 0)
+					if player and player.Parent then
+						self:UpdatePlayerRole(player)
+					end
 				end
-				return
 			end
-
-			local hasVIP = checkAnyGamepass(player, self.Config.GamePasses.VIP)
-			if hasVIP then
-				ownership.VIP = true
-				ownership.GivenPass = "VIP"
-				playerOwnershipCache[userId] = ownership
-
-				if DEBUG_MODE then -- 🔥 DEBUG WRAPPER
-					print(string.format("[RoleSystem] Auto-saving VIP purchase for user %d", userId))
-				end
-
-				self:GivePassToPlayer(userId, "VIP", 0)
-				if player and player.Parent then
-					self:UpdatePlayerRole(player)
-				end
-			end
-		end)
+		})
+		processGamepassQueue()
 	end
 
 	return ownership

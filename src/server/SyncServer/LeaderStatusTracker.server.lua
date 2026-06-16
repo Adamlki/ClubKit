@@ -32,6 +32,19 @@ local characterConnections = {}
 local updateScheduled = false
 local lastUpdateTime = 0
 
+-- ✨ Buffer untuk update leader status agar tidak spam RemoteEvent
+local pendingLeaderUpdates = {}
+task.spawn(function()
+	while task.wait(2) do
+		for plr, data in pairs(pendingLeaderUpdates) do
+			if plr and plr.Parent then
+				UpdateLeaderStatus:FireAllClients(plr, data.isLeader, data.followerCount)
+			end
+		end
+		table.clear(pendingLeaderUpdates)
+	end
+end)
+
 local function debug(...)
 	if CONFIG.DEBUG_ENABLED then
 		print("[LeaderTracker]", ...)
@@ -76,14 +89,14 @@ local function updatePlayerLeaderStatus(player)
 		if currentIsLeader ~= true or currentFollowerCount ~= followerCount then
 			player.Character:SetAttribute("IsLeader", true)
 			player.Character:SetAttribute("FollowerCount", followerCount)
-			UpdateLeaderStatus:FireAllClients(player, true, followerCount)
+			pendingLeaderUpdates[player] = {isLeader = true, followerCount = followerCount}
 			debug("Set leader status:", player.Name, "Followers:", followerCount)
 		end
 	else
 		if currentIsLeader or currentFollowerCount > 0 then
 			player.Character:SetAttribute("IsLeader", nil)
 			player.Character:SetAttribute("FollowerCount", nil)
-			UpdateLeaderStatus:FireAllClients(player, false, 0)
+			pendingLeaderUpdates[player] = {isLeader = false, followerCount = 0}
 			debug("Cleared leader status:", player.Name)
 		end
 	end
@@ -144,7 +157,7 @@ local function setupCharacterTracking(player, character)
 			-- ?? NOTE: No manual cache cleanup needed (weak tables auto-cleanup!)
 
 			-- Notify clients
-			UpdateLeaderStatus:FireAllClients(player, false, 0)
+			pendingLeaderUpdates[player] = {isLeader = false, followerCount = 0}
 
 			-- Cleanup connections
 			cleanupCharacterConnections(character)
@@ -194,7 +207,7 @@ Players.PlayerAdded:Connect(function(player)
 		-- ?? NOTE: No manual cache cleanup needed!
 
 		-- Notify clients
-		UpdateLeaderStatus:FireAllClients(player, false, 0)
+		pendingLeaderUpdates[player] = {isLeader = false, followerCount = 0}
 
 		-- Cleanup connections
 		cleanupCharacterConnections(character)

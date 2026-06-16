@@ -1,5 +1,7 @@
 local TweenService = game:GetService("TweenService")
 local ServerMusicAudioHandler = require(script.Parent.ServerMusicAudioHandler)
+local BridgeNet = require(game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet"))
+local musicBroadcastBridge = BridgeNet.CreateBridge("MusicBroadcast")
 
 local MusicPlaybackManager = {}
 MusicPlaybackManager.__index = MusicPlaybackManager
@@ -377,29 +379,33 @@ end
 
 function MusicPlaybackManager:BroadcastStopMusic(remotes)
 	pcall(function()
-		remotes.MusicBroadcast:FireAllClients("StopMusic", {
-			IsPlaying = false
+		musicBroadcastBridge:FireAll({
+			eventType = "StopMusic",
+			data = { IsPlaying = false }
 		})
 	end)
 end
 
 function MusicPlaybackManager:BroadcastSongUpdate(remotes, musicData, uploaderName, duration, playbackSpeed)
 	pcall(function()
-		remotes.MusicBroadcast:FireAllClients("SongUpdate", {
-			SoundId = musicData.id,
-			Title = musicData.judul or "Unknown",
-			AlbumCover = musicData.sampul or CONFIG.DEFAULT_COVER,
-			AddedBy = uploaderName or "Unknown",
-			Duration = duration,
-			PlaybackSpeed = playbackSpeed or 1.0,
-			IsPlaying = true,
+		musicBroadcastBridge:FireAll({
+			eventType = "SongUpdate",
+			data = {
+				SoundId = musicData.id,
+				Title = musicData.judul or "Unknown",
+				AlbumCover = musicData.sampul or CONFIG.DEFAULT_COVER,
+				AddedBy = uploaderName or "Unknown",
+				Duration = duration,
+				PlaybackSpeed = playbackSpeed or 1.0,
+				IsPlaying = true,
 
-			-- 🔥 FIX: Gunakan Waktu Absolut Server, BUKAN tick() lokal!
-			ServerTime = workspace:GetServerTimeNow(), 
+				-- 🔥 FIX: Gunakan Waktu Absolut Server, BUKAN tick() lokal!
+				ServerTime = workspace:GetServerTimeNow(), 
 
-			MetadataDuration = musicData.Duration, 
-			DetectedDuration = duration, 
-			WasDetected = (musicData.Duration ~= duration) 
+				MetadataDuration = musicData.Duration, 
+				DetectedDuration = duration, 
+				WasDetected = (musicData.Duration ~= duration) 
+			}
 		})
 	end)
 end
@@ -410,13 +416,16 @@ function MusicPlaybackManager:UpdateProgress(remotes)
 	local elapsed = self.audioHandler:GetTimePosition()
 
 	pcall(function()
-		remotes.MusicBroadcast:FireAllClients("Progress", {
-			Current = elapsed,
-			Duration = self.adjustedDuration,
-			IsPlaying = true,
+		musicBroadcastBridge:FireAll({
+			eventType = "Progress",
+			data = {
+				Current = elapsed,
+				Duration = self.adjustedDuration,
+				IsPlaying = true,
 
-			-- 🔥 FIX: Samakan dengan ServerTime Absolut
-			ServerTime = workspace:GetServerTimeNow()
+				-- 🔥 FIX: Samakan dengan ServerTime Absolut
+				ServerTime = workspace:GetServerTimeNow()
+			}
 		})
 	end)
 end

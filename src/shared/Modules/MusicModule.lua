@@ -2187,6 +2187,15 @@ local MusicDatabase = {
 		PlaybackSpeed = 0.7,
 		PitchOctave = 1
 	},
+	{
+		id = "88996971963655",
+		judul = "Funkot Bukit Berbunga",
+		sampul = "rbxassetid://110370706778065",
+		album = "FUNKOT STYLE",
+		Duration = nil,
+		PlaybackSpeed = 0.7,
+		PitchOctave = 1
+	},
 }
 
 -- ====================================

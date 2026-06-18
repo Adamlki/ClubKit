@@ -503,7 +503,10 @@ function MusicPlayer:ForceAudioSync(payload)
 
 			-- 6. EKSEKUSI SNAP MUTLAK: Potong lagu secara paksa!
 			if compensatedTime > 0 and compensatedTime < serverSound.TimeLength then
-				serverSound.TimePosition = compensatedTime
+				-- Hanya paksakan sinkronisasi jika melenceng jauh (cegah efek double di awal lagu)
+				if math.abs(serverSound.TimePosition - compensatedTime) > 0.4 then
+					serverSound.TimePosition = compensatedTime
+				end
 			end
 
 			-- 🔥 FIX PENTING: Jika HP ngelag parah sampai Roblox native replication menyerah, PAKSA MAIN!

@@ -33,6 +33,15 @@ function MusicPlaylistManager:GetNextSong()
 		self.preparedNextSong = nil
 		-- Mark as played
 		self.playedSongs[song.id] = true
+
+		-- Advance playlist index for sequential mode
+		if not self.shuffleMode then
+			self.playlistIndex = self.playlistIndex + 1
+			if self.playlistIndex > #playlist then
+				self.playlistIndex = 1
+			end
+		end
+
 		return song
 	end
 

@@ -354,11 +354,27 @@ function OverheadManager:CreateOverhead(player, character)
 	local playerRole    = textContainer:WaitForChild("PlayerRole")
 	local levelLabel    = textContainer:WaitForChild("LevelLabel")
 
-	-- Player Name
-	playerName.Text          = player.DisplayName
+	-- Player Name & Likes
+	local totalLikes = player:GetAttribute("TotalLikes") or 0
+	playerName.Text          = player.DisplayName .. " | ❤️ " .. tostring(totalLikes)
 	playerName.TextScaled    = true
 	playerName.AutomaticSize = Enum.AutomaticSize.X
 	setupTextSizeConstraint(playerName)
+
+	-- Update Likes in Real-time
+	local likesConn
+	likesConn = player:GetAttributeChangedSignal("TotalLikes"):Connect(function()
+		if not playerName or not playerName.Parent then return end
+		local newLikes = player:GetAttribute("TotalLikes") or 0
+		playerName.Text = player.DisplayName .. " | ❤️ " .. tostring(newLikes)
+	end)
+	
+	overhead.Destroying:Connect(function()
+		if likesConn then
+			likesConn:Disconnect()
+			likesConn = nil
+		end
+	end)
 
 	local role      = RoleSystem:GetPlayerRole(player)
 	local roleLabel = getDisplayText(role, player)

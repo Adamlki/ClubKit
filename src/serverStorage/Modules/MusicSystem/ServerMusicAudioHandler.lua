@@ -81,10 +81,10 @@ function ServerMusicAudioHandler:CreateServerSound()
 	if not compressor then
 		compressor = Instance.new("CompressorSoundEffect")
 		compressor.Name = "ConcertCompressor"
-		compressor.Attack = 0.01      -- Bereaksi instan saat ada suara menghentak
-		compressor.Release = 0.15     -- Waktu pemulihan standar
-		compressor.Ratio = 4          -- Skala penekanan 4:1
-		compressor.Threshold = -8     -- Menangkap puncak (peak) suara keras agar tidak clip
+		compressor.Attack = 0     -- Bereaksi instan saat ada suara menghentak
+		compressor.Release = 0     -- Waktu pemulihan standar
+		compressor.Ratio = 0          -- Skala penekanan 4:1
+		compressor.Threshold = 0     -- Menangkap puncak (peak) suara keras agar tidak clip
 		compressor.GainMakeup = 0     -- DITURUNKAN: +5dB bikin snare/gitar pecah (clipping), 0 lebih natural
 		compressor.Parent = existingSound
 	end
@@ -96,7 +96,7 @@ function ServerMusicAudioHandler:CreateServerSound()
 		eq.Name = "ConcertEQ"
 		eq.LowGain = 10    -- DITURUNKAN: Bass +12 dB terlalu besar & bikin pecah/clipping saat lagu dilambatkan (+4 dB aman)
 		eq.MidGain = -5    -- Dinormalkan ke 0 dB agar gitar tidak mendem/pecah
-		eq.HighGain = 1   -- DITURUNKAN: High +5 dB terlalu tajam, bikin snare/cymbal pecah (+1 dB lebih aman)
+		eq.HighGain = -5   -- DITURUNKAN: High +5 dB terlalu tajam, bikin snare/cymbal pecah (+1 dB lebih aman)
 		eq.Parent = existingSound
 	end
 
@@ -105,10 +105,10 @@ function ServerMusicAudioHandler:CreateServerSound()
 	if not reverb then
 		reverb = Instance.new("ReverbSoundEffect")
 		reverb.Name = "ConcertReverb"
-		reverb.DecayTime = 2.5   -- Durasi gema layaknya stadion besar
-		reverb.Density = 0.8     -- Kepadatan gema
+		reverb.DecayTime = 1   -- Durasi gema layaknya stadion besar
+		reverb.Density = 0.5     -- Kepadatan gema
 		reverb.DryLevel = 0      -- Volume asli tidak disentuh (0 dB)
-		reverb.WetLevel = -12    -- Volume gema diatur agak pelan agar lagu tetap jelas (-12 dB)
+		reverb.WetLevel = -10    -- Volume gema diatur agak pelan agar lagu tetap jelas (-12 dB)
 		reverb.Parent = existingSound
 	end
 

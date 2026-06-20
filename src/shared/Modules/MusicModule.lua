@@ -2189,11 +2189,20 @@ local MusicDatabase = {
 	},
 	{
 		id = "88996971963655",
-		judul = "Funkot Bukit Berbunga",
+		judul = "FUNKOT Bukit Berbunga",
 		sampul = "rbxassetid://110370706778065",
 		album = "FUNKOT STYLE",
 		Duration = nil,
 		PlaybackSpeed = 0.7,
+		PitchOctave = 1
+	},
+	{
+		id = "103253348115248",
+		judul = "DJ Obh Combi Sachet",
+		sampul = "rbxassetid://110370706778065",
+		album = "NEW SONGS",
+		Duration = nil,
+		PlaybackSpeed = 1,
 		PitchOctave = 1
 	},
 }

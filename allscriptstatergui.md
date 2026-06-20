@@ -415,6 +415,7 @@ end)
 -- ====================================
 refreshTimerData()
 
+
 local CONFIG = {
 	DEBUG_ENABLED = false,
 
@@ -480,6 +481,11 @@ local RunService        = game:GetService("RunService")
 local Teams             = game:GetService("Teams")
 
 local LocalPlayer = Players.LocalPlayer
+
+-- ====================================
+-- MODULE ANIMASI UI
+-- ====================================
+local UIAnimator = require(ReplicatedStorage:WaitForChild("UIAnimator"))
 
 -- ====================================
 -- SAFE INVOKE UTILITY (ANTI-FREEZE)
@@ -696,13 +702,14 @@ local function showNotification(message, isSuccess)
 	end
 	notificationtext.Text       = message
 	notificationtext.TextColor3 = isSuccess and Color3.fromRGB(85,255,127) or Color3.fromRGB(255,85,85)
-	notificationframe.Visible                = true
-	notificationframe.BackgroundTransparency = 0
-	local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+	-- Membuka Notification Frame dengan Animasi
+	UIAnimator.Open(notificationframe)
+
 	task.delay(3, function()
-		local fadeOut = TweenService:Create(notificationframe, tweenInfo, { BackgroundTransparency = 1 })
-		fadeOut:Play()
-		fadeOut.Completed:Connect(function() notificationframe.Visible = false end)
+		if notificationframe.Visible then
+			UIAnimator.Close(notificationframe)
+		end
 	end)
 end
 
@@ -710,10 +717,22 @@ end
 -- TAB SWITCHING
 -- ====================================
 local function switchTab(tab)
-	currentTab         = tab
-	roleframe.Visible  = (tab == "Role")
-	titleframe.Visible = (tab == "Title")
-	teamframe.Visible  = (tab == "Team")
+	currentTab = tab
+
+	-- Tutup semua frame tab secara instan agar tidak tumpang tindih
+	roleframe.Visible  = false
+	titleframe.Visible = false
+	teamframe.Visible  = false
+
+	-- Buka frame tab yang dipilih dengan animasi pop-up
+	if tab == "Role" then
+		UIAnimator.Open(roleframe)
+	elseif tab == "Title" then
+		UIAnimator.Open(titleframe)
+	elseif tab == "Team" then
+		UIAnimator.Open(teamframe)
+	end
+
 	for name, btn in pairs({ Role=roleBtn, Title=titleBtn, Team=teamBtn }) do
 		btn.BackgroundColor3 = (name == tab) and Color3.fromRGB(255,200,50) or Color3.fromRGB(60,60,60)
 	end
@@ -736,10 +755,17 @@ local function updatePlayerInfoDisplay(userId)
 		playername.TextColor3 = Color3.fromRGB(255, 255, 255) 
 	end
 
-	local ok, thumbUrl = pcall(function()
-		return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
+	-- 🔥 FIX UI FREEZE: Download gambar secara Asynchronous (Latar Belakang)
+	task.spawn(function()
+		local ok, thumbUrl = pcall(function()
+			return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
+		end)
+
+		-- Pastikan admin tidak keburu klik player lain saat gambar sedang loading
+		if selectedUserId == userId and ok and thumbUrl then 
+			playerimage.Image = thumbUrl 
+		end
 	end)
-	if ok and thumbUrl then playerimage.Image = thumbUrl end
 
 	rolelabel.Text = "Role: " .. roleName
 	teamlabel.Text = "Team: "..(target.Team and target.Team.Name or "-")
@@ -747,11 +773,11 @@ local function updatePlayerInfoDisplay(userId)
 
 	task.spawn(function()
 		local ok2, data = SafeInvoke(GetPlayerDataRemote, 3, target)
-		-- 🔥 ARCHITECT FIX: Jangan timpa teks UI jika Admin sudah klik player lain!
 		if selectedUserId ~= userId then return end
 		titlelabel.Text = (ok2 and data) and "Title: "..(data.Title ~= "" and data.Title or "-") or "Title: -"
 	end)
 end
+
 
 -- ====================================
 -- PLAYER LIST
@@ -992,12 +1018,9 @@ function loadTitleData(userId)
 	titleconfirmBtn.Text = "Loading..."
 	task.spawn(function()
 		local ok, data = SafeInvoke(GetPlayerDataRemote, 3, targetPlayer)
-
-		-- 🔥 ARCHITECT FIX: Pengecekan krusial, abaikan hasil jika Admin sudah pindah player!
 		if selectedUserId ~= userId then return end
 
 		titleconfirmBtn.Text = "Confirm"
-
 		if not ok or not data then return end
 
 		entrytitlebox.Text = data.Title or ""
@@ -1027,7 +1050,6 @@ redbox:GetPropertyChangedSignal("Text"):Connect(updateColorPreview)
 greenbox:GetPropertyChangedSignal("Text"):Connect(updateColorPreview)
 bluebox:GetPropertyChangedSignal("Text"):Connect(updateColorPreview)
 
--- 🔥 ARCHITECT FIX: Anti-Spam Tombol (Debounce)
 local isProcessingTitle = false
 
 titleconfirmBtn.MouseButton1Click:Connect(function()
@@ -1138,7 +1160,6 @@ local function buildTeamList()
 		local ok, teamList = SafeInvoke(GetTeamListRemote, 3)
 		if not ok or type(teamList) ~= "table" then return end
 
-		-- 🔥 ARCHITECT FIX: Hapus tombol lama TEPAT sebelum membuat yang baru di dalam Thread!
 		for _, btn in pairs(teamButtons) do if btn and btn.Parent then btn:Destroy() end end
 		teamButtons      = {}
 		selectedTeamName = nil
@@ -1241,19 +1262,18 @@ local function checkAccess()
 		hasAccess = false
 		adminIcon:setEnabled(false)
 		if mainframe.Visible then
-			mainframe.Visible = false
-			selectedUserId    = nil
+			-- Panggil deselect otomatis menutup dan memainkan animasi
 			adminIcon:deselect()
 		end
 	end
 end
 
 -- ====================================
--- OPEN / CLOSE
+-- OPEN / CLOSE (MENGGUNAKAN UIANIMATOR)
 -- ====================================
 local function openPanel()
 	if not hasAccess then return end
-	mainframe.Visible = true
+	UIAnimator.Open(mainframe) -- Animasi Buka
 	refreshPlayerList()
 	buildTeamList()
 	loadColorTemplates() 
@@ -1266,25 +1286,23 @@ local function openPanel()
 	selectedUserId    = nil
 end
 
-local function closePanel()
-	mainframe.Visible = false
-	selectedUserId    = nil
-	resetTitleForm()
-	resetRoleForm()
-	adminIcon:deselect()
-end
-
 adminIcon:bindEvent("selected", function()
 	if not hasAccess then adminIcon:deselect(); return end
 	openPanel()
 end)
+
 adminIcon:bindEvent("deselected", function()
-	mainframe.Visible = false
+	UIAnimator.Close(mainframe) -- Animasi Tutup
 	selectedUserId    = nil
 	resetTitleForm()
 	resetRoleForm()
 end)
-closeBtn.MouseButton1Click:Connect(function() closePanel() end)
+
+-- Mengklik CloseBtn akan mendeselect Topbar, yang otomatis memicu animasi tutup di atas
+closeBtn.MouseButton1Click:Connect(function() 
+	adminIcon:deselect() 
+end)
+
 roleBtn.MouseButton1Click:Connect(function()  switchTab("Role")  end)
 titleBtn.MouseButton1Click:Connect(function() switchTab("Title") end)
 teamBtn.MouseButton1Click:Connect(function()
@@ -1292,18 +1310,20 @@ teamBtn.MouseButton1Click:Connect(function()
 	buildTeamList()
 	loadColorTemplates()
 end)
+
 local searchDebounce = nil
+
 searchbox:GetPropertyChangedSignal("Text"):Connect(function()
 	if searchDebounce then
 		task.cancel(searchDebounce)
 	end
-	
 	searchDebounce = task.delay(0.3, function()
 		if not isRefreshing then 
 			refreshPlayerList() 
 		end
 	end)
 end)
+
 
 -- ====================================
 -- ROLE REMOTE RESPONSE
@@ -1321,7 +1341,7 @@ if giveRoleRemote then
 				end
 			end
 			task.wait(1.5)
-			mainframe.Visible = false
+			adminIcon:deselect() -- Tutup dengan animasi setelah sukses
 		else
 			showNotification(responseData.message or "Operasi gagal", false)
 		end
@@ -1398,6 +1418,9 @@ task.wait(1)
 
 local CarryConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("CarryConfig"))
 
+-- 🔥 INTEGRASI MODULE ANIMASI
+local UIAnimator  = require(ReplicatedStorage:WaitForChild("UIAnimator"))
+
 local remoteFolder = ReplicatedStorage:WaitForChild(CarryConfig.REMOTE_FOLDER, 10)
 if not remoteFolder then
 	warn("[CARRY UI] Remote folder not found!")
@@ -1408,7 +1431,6 @@ local RequestRemote  = remoteFolder:WaitForChild("CarryRequest", 10)
 local ResponseRemote = remoteFolder:WaitForChild("CarryResponse", 10)
 local EndRemote      = remoteFolder:WaitForChild("CarryEnd", 10)
 
--- 🔥 SECURITY FIX: Proteksi Crash apabila internet pemain lag (Timeout Null Reference)
 if not RequestRemote or not ResponseRemote or not EndRemote then
 	warn("[CARRY UI] Gagal memuat Remote! Sinyal terlalu lambat atau folder tidak ada.")
 	return
@@ -1447,13 +1469,8 @@ local pendingCarrier    = nil
 local pendingStyle      = nil
 local styleTimeoutToken = 0
 local currentAnimTracks = {}
-local loadedAnimationsCache = {} -- Cache animasi
+local loadedAnimationsCache = {} 
 local jumpBlockConn     = nil
-
--- Store original sizes
-local mainFrameOriginalSize  = mainFrame.Size
-local notifFrameOriginalSize = notificationFrame.Size
-local getDownBtnOriginalSize = getDownBtn.Size
 
 -- ============================================
 -- ANIMATION
@@ -1463,15 +1480,21 @@ local function getHumanoid()
 	return player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 end
 
-
 local function stopAllAnimations()
 	for role, track in pairs(currentAnimTracks) do
-		if track and track.IsPlaying then
-			track:Stop(0.2)
+		if track then
+			if track.IsPlaying then
+				track:Stop(0.2)
+			end
+			-- Hancurkan track setelah berhenti agar memori selalu fresh
+			task.delay(0.25, function() pcall(function() track:Destroy() end) end)
 		end
 		currentAnimTracks[role] = nil
 	end
+	-- Kosongkan juga cache agar dibuat ulang setiap kali digendong (opsional)
+	loadedAnimationsCache = {}
 end
+
 
 local function playAnimation(style, role)
 	local hum = getHumanoid()
@@ -1483,7 +1506,6 @@ local function playAnimation(style, role)
 		animator.Parent = hum
 	end
 
-	-- Hentikan animasi yang sedang berjalan
 	if currentAnimTracks[role] then
 		currentAnimTracks[role]:Stop(0.15)
 	end
@@ -1496,7 +1518,6 @@ local function playAnimation(style, role)
 
 	local track = loadedAnimationsCache[animId]
 
-	-- Jika belum pernah di-load, buat dan load sekali saja!
 	if not track then
 		local anim = Instance.new("Animation")
 		anim.AnimationId = "rbxassetid://" .. tostring(animId)
@@ -1514,7 +1535,6 @@ local function playAnimation(style, role)
 		end
 	end
 
-	-- Mainkan animasi dari cache
 	if track then
 		track.Priority = Enum.AnimationPriority.Action
 		track.Looped = true
@@ -1525,102 +1545,14 @@ local function playAnimation(style, role)
 end
 
 -- ============================================
--- UI ANIMATIONS
--- ============================================
-
-local function fadeInMainFrame(duration)
-	mainFrame.Visible = true
-	mainFrame.Size = UDim2.new(0, 0, mainFrameOriginalSize.Y.Scale, mainFrameOriginalSize.Y.Offset)
-
-	TweenService:Create(mainFrame,
-		TweenInfo.new(duration or 0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-		{ Size = mainFrameOriginalSize }
-	):Play()
-end
-
-local function fadeOutMainFrame(duration, callback)
-	local tween = TweenService:Create(mainFrame,
-		TweenInfo.new(duration or 0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In),
-		{ Size = UDim2.new(0, 0, mainFrameOriginalSize.Y.Scale, mainFrameOriginalSize.Y.Offset) }
-	)
-	tween.Completed:Connect(function()
-		mainFrame.Visible = false
-		mainFrame.Size = mainFrameOriginalSize
-		if callback then callback() end
-	end)
-	tween:Play()
-end
-
-local function fadeInNotificationFrame(duration)
-	notificationFrame.Visible = true
-	notificationFrame.Size = UDim2.new(
-		notifFrameOriginalSize.X.Scale * 0.95, notifFrameOriginalSize.X.Offset * 0.95,
-		notifFrameOriginalSize.Y.Scale * 0.95, notifFrameOriginalSize.Y.Offset * 0.95
-	)
-	TweenService:Create(notificationFrame,
-		TweenInfo.new(duration or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-		{ Size = notifFrameOriginalSize }
-	):Play()
-end
-
-local function fadeOutNotificationFrame(duration, callback)
-	local shrunk = UDim2.new(
-		notifFrameOriginalSize.X.Scale * 0.95, notifFrameOriginalSize.X.Offset * 0.95,
-		notifFrameOriginalSize.Y.Scale * 0.95, notifFrameOriginalSize.Y.Offset * 0.95
-	)
-	local tween = TweenService:Create(notificationFrame,
-		TweenInfo.new(duration or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-		{ Size = shrunk }
-	)
-	tween.Completed:Connect(function()
-		notificationFrame.Visible = false
-		notificationFrame.Size = notifFrameOriginalSize
-		if callback then callback() end
-	end)
-	tween:Play()
-end
-
-local function fadeInGetDownBtn(duration)
-	getDownBtn.Visible = true
-	getDownBtn.Size = UDim2.new(
-		getDownBtnOriginalSize.X.Scale * 0.8, getDownBtnOriginalSize.X.Offset * 0.8,
-		getDownBtnOriginalSize.Y.Scale * 0.8, getDownBtnOriginalSize.Y.Offset * 0.8
-	)
-	TweenService:Create(getDownBtn,
-		TweenInfo.new(duration or 0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-		{ Size = getDownBtnOriginalSize }
-	):Play()
-end
-
-local function fadeOutGetDownBtn(duration, callback)
-	local shrunk = UDim2.new(
-		getDownBtnOriginalSize.X.Scale * 0.8, getDownBtnOriginalSize.X.Offset * 0.8,
-		getDownBtnOriginalSize.Y.Scale * 0.8, getDownBtnOriginalSize.Y.Offset * 0.8
-	)
-	local tween = TweenService:Create(getDownBtn,
-		TweenInfo.new(duration or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-		{ Size = shrunk }
-	)
-	tween.Completed:Connect(function()
-		getDownBtn.Visible = false
-		getDownBtn.Size = getDownBtnOriginalSize
-		if callback then callback() end
-	end)
-	tween:Play()
-end
-
--- ============================================
 -- UI STATE FUNCTIONS
 -- ============================================
 
 local function hideAllFrames()
+	-- Fitur reset instan tanpa perlu memutar animasi mengecil
 	mainFrame.Visible = false
 	notificationFrame.Visible = false
 	getDownBtn.Visible = false
-
-	mainFrame.Size = mainFrameOriginalSize
-	notificationFrame.Size = notifFrameOriginalSize
-	getDownBtn.Size = getDownBtnOriginalSize
 end
 
 local function cleanupState()
@@ -1632,29 +1564,22 @@ local function cleanupState()
 end
 
 local function showStyleSelection(target)
-	if not target or not target:IsA("Player") then
-		warn("[CARRY UI] Invalid target for style selection")
-		return
-	end
-
-	if not mainFrame or not mainFrame.Parent then
-		warn("[CARRY UI] MainFrame not found or destroyed!")
-		return
-	end
+	if not target or not target:IsA("Player") then return end
+	if not mainFrame or not mainFrame.Parent then return end
 
 	currentState  = "selecting_style"
 	selectedTarget = target
 
 	hideAllFrames()
 	task.wait(0.05)
-	fadeInMainFrame(0.35)
+	UIAnimator.Open(mainFrame)
 
 	local myToken = styleTimeoutToken + 1
 	styleTimeoutToken = myToken
 
 	task.delay(CarryConfig.REQUEST_TIMEOUT, function()
 		if styleTimeoutToken == myToken and currentState == "selecting_style" then
-			fadeOutMainFrame(0.25, function()
+			UIAnimator.Close(mainFrame, function()
 				cleanupState()
 				currentState = "idle"
 			end)
@@ -1677,7 +1602,7 @@ local function showCarryNotification(carrierId, carrierName, style)
 	)
 
 	task.wait(0.05)
-	fadeInNotificationFrame(0.2)
+	UIAnimator.Open(notificationFrame)
 end
 
 local function showGetDownButton()
@@ -1685,7 +1610,7 @@ local function showGetDownButton()
 
 	hideAllFrames()
 	task.wait(0.05)
-	fadeInGetDownBtn(0.3)
+	UIAnimator.Open(getDownBtn)
 
 	if not jumpBlockConn then
 		jumpBlockConn = UserInputService.JumpRequest:Connect(function()
@@ -1696,7 +1621,7 @@ local function showGetDownButton()
 end
 
 local function hideGetDownButton()
-	fadeOutGetDownBtn(0.2)
+	UIAnimator.Close(getDownBtn)
 
 	if jumpBlockConn then
 		jumpBlockConn:Disconnect()
@@ -1709,17 +1634,10 @@ end
 -- ============================================
 
 local function handleStyleSelection(styleName)
-	if currentState ~= "selecting_style" or not selectedTarget then
-		CarryConfig.debugPrint("UI", "Cannot select style - wrong state or no target")
-		return
-	end
+	if currentState ~= "selecting_style" or not selectedTarget then return end
+	if not CarryConfig.isValidStyle(styleName) then return end
 
-	if not CarryConfig.isValidStyle(styleName) then
-		warn("[CARRY UI] Invalid style:", styleName)
-		return
-	end
-
-	fadeOutMainFrame(0.25)
+	UIAnimator.Close(mainFrame)
 
 	RequestRemote:FireServer({
 		cmd      = "RequestCarry",
@@ -1743,7 +1661,7 @@ piggyUpperBackBtn.MouseButton1Click:Connect(function() handleStyleSelection("pig
 acceptBtn.MouseButton1Click:Connect(function()
 	if currentState ~= "pending_response" or not pendingCarrier then return end
 
-	fadeOutNotificationFrame(0.2)
+	UIAnimator.Close(notificationFrame)
 	ResponseRemote:FireServer({ cmd = "AcceptCarry" })
 	currentState = "waiting"
 end)
@@ -1751,7 +1669,7 @@ end)
 rejectBtn.MouseButton1Click:Connect(function()
 	if currentState ~= "pending_response" or not pendingCarrier then return end
 
-	fadeOutNotificationFrame(0.2, function()
+	UIAnimator.Close(notificationFrame, function()
 		cleanupState()
 		currentState = "idle"
 	end)
@@ -1783,7 +1701,7 @@ RequestRemote.OnClientEvent:Connect(function(data)
 
 	if cmd == "CarryStarted" then
 		currentState = "carrying"
-		fadeInGetDownBtn(0.3)
+		UIAnimator.Open(getDownBtn)
 		playAnimation(data.style, "carrier")
 
 	elseif cmd == "BeingCarried" then
@@ -1791,7 +1709,7 @@ RequestRemote.OnClientEvent:Connect(function(data)
 		playAnimation(data.style, "carried")
 
 	elseif cmd == "RequestExpired" or cmd == "RequestFailed" then
-		fadeOutMainFrame(0.25, function()
+		UIAnimator.Close(mainFrame, function()
 			cleanupState()
 			currentState = "idle"
 		end)
@@ -1812,7 +1730,7 @@ ResponseRemote.OnClientEvent:Connect(function(data)
 		showCarryNotification(data.carrierId, data.carrierName, data.style)
 
 	elseif cmd == "RequestExpired" or cmd == "CarryFailed" then
-		fadeOutNotificationFrame(0.2, function()
+		UIAnimator.Close(notificationFrame, function()
 			cleanupState()
 			currentState = "idle"
 		end)
@@ -1852,28 +1770,14 @@ local function setupCarryEventListener()
 	end
 
 	return showUIEvent.Event:Connect(function(target)
-		if not target or not target:IsA("Player") then
-			warn("[CARRY UI] Invalid target received:", target)
-			return
-		end
-
-		if not player.Character or not target.Character then
-			warn("[CARRY UI] Character not ready")
-			return
-		end
+		if not target or not target:IsA("Player") then return end
+		if not player.Character or not target.Character then return end
 
 		local myHRP     = player.Character:FindFirstChild("HumanoidRootPart")
 		local targetHRP = target.Character:FindFirstChild("HumanoidRootPart")
 
-		if not myHRP or not targetHRP then
-			warn("[CARRY UI] HumanoidRootPart not found")
-			return
-		end
-
-		if (myHRP.Position - targetHRP.Position).Magnitude > CarryConfig.MAX_DISTANCE then
-			warn("[CARRY UI] Target too far!")
-			return
-		end
+		if not myHRP or not targetHRP then return end
+		if (myHRP.Position - targetHRP.Position).Magnitude > CarryConfig.MAX_DISTANCE then return end
 
 		if currentState == "idle" or currentState == "selecting_style" then
 			showStyleSelection(target)
@@ -1882,8 +1786,6 @@ local function setupCarryEventListener()
 			currentState = "idle"
 			task.wait(0.1)
 			showStyleSelection(target)
-		else
-			CarryConfig.debugPrint("UI", "Cannot show - current state:", currentState)
 		end
 	end)
 end
@@ -1904,13 +1806,12 @@ if CarryConfig.DEBUG_ENABLED then
 	testBtn.Parent = gui
 
 	testBtn.MouseButton1Click:Connect(function()
-		mainFrame.Visible = true
-		fadeInMainFrame(0.35)
+		UIAnimator.Open(mainFrame)
 	end)
 end
 
 -- ============================================
--- RESPAWN HANDLING
+-- RESPAWN HANDLING (OPTIMIZED & MEMORY LEAK FIXED)
 -- ============================================
 
 player.CharacterAdded:Connect(function()
@@ -1918,8 +1819,13 @@ player.CharacterAdded:Connect(function()
 	cleanupState()
 	currentState = "idle"
 
-	-- 🔥 ARCHITECT FIX 1: Cuci bersih Cache Animasi tiap kali Player Respawn!
-	-- Hal ini mencegah animasi memutar tulang (rig) dari karakter yang sudah mati/terhapus.
+	-- 🔥 FIX MEMORY LEAK: Hancurkan sisa animasi lama dari Engine Roblox
+	if loadedAnimationsCache then
+		for _, track in pairs(loadedAnimationsCache) do
+			pcall(function() track:Destroy() end)
+		end
+	end
+
 	loadedAnimationsCache = {}
 	currentAnimTracks = {}
 
@@ -1930,6 +1836,7 @@ player.CharacterAdded:Connect(function()
 	task.wait(1)
 	carryEventConnection = setupCarryEventListener()
 end)
+
 
 -- ============================================
 -- CLEANUP ON LEAVE
@@ -1942,13 +1849,11 @@ Players.PlayerRemoving:Connect(function(leavingPlayer)
 		stopAllAnimations()
 		cleanupState()
 	else
-		-- 🔥 ARCHITECT FIX 2: Jika target lari / kabur keluar game, batalkan secara instan!
 		if leavingPlayer == selectedTarget or leavingPlayer.UserId == pendingCarrier then
 			hideAllFrames()
 			cleanupState()
 			currentState = "idle"
 
-			-- Kirim notifikasi singkat ke UI bawaan Roblox bahwa operasi batal
 			pcall(function()
 				game.StarterGui:SetCore("SendNotification", {
 					Title = "Carry Cancelled",
@@ -2006,16 +1911,15 @@ local function removeEmptySlots()
 	for index = 1, 9 do
 		local toolObject = inventoryHandler.OBJECTS.HotBar[index]
 		local toolFrame = hotBar:FindFirstChild(index)
+
+		-- 🔥 Cukup gunakan Destroy tanpa memanggil fungsi berulang
 		if not toolObject and toolFrame then
 			toolFrame:Destroy()
-			if hotBar:FindFirstChild(index) then
-				removeEmptySlots()
-			end
 		end
 	end
+
 	-- Pastikan slot backpack selalu ada setelah pembersihan
 	if not hotBar:FindFirstChild("backpackSlot") then
-		-- akan dibuat ulang oleh createBackpackSlot
 		local frame = toolButton:Clone()
 		frame.Name = "backpackSlot"
 		frame.toolName.Text = ""
@@ -2028,6 +1932,7 @@ local function removeEmptySlots()
 		frame.Parent = hotBar
 	end
 end
+
 
 -- Fungsi untuk membuat slot backpack permanen di hotbar
 local function createBackpackSlot()
@@ -2670,6 +2575,7 @@ return module
 local Players            = game:GetService("Players")
 local MarketplaceService = game:GetService("MarketplaceService")
 local ReplicatedStorage  = game:GetService("ReplicatedStorage")
+local TweenService       = game:GetService("TweenService")
 
 local ClientConfig = require(script:WaitForChild("ClientConfig"))
 local ClientUI     = require(script:WaitForChild("ClientUI"))
@@ -2689,8 +2595,12 @@ local UI = {
 	messageFrame      = gui:WaitForChild("MessageFrame"),
 	notificationFrame = gui:WaitForChild("NotificationFrame"),
 	container         = gui:WaitForChild("MainFrame"):WaitForChild("Container"),
-	templateFrame     = gui:WaitForChild("MainFrame"):WaitForChild("Container"):WaitForChild("TemplateFrame"),
+	templateBtn       = gui:WaitForChild("MainFrame"):WaitForChild("Container"):WaitForChild("RobuxBtn"),
+	saweriaFrame      = gui:WaitForChild("MainFrame"):WaitForChild("SawriaFrame"),
 }
+
+local saweriaTextBox = UI.saweriaFrame:WaitForChild("SaweriaTextBox")
+local copyBtn        = UI.saweriaFrame:WaitForChild("CopyBtn")
 
 -- ============================================
 -- STATE
@@ -2698,7 +2608,7 @@ local UI = {
 local State = {
 	productsLoaded       = false,
 	isLoading            = false,
-	isSending            = false,  -- Mencegah double-send broadcast
+	isSending            = false,  
 	currentButtons       = {},
 	lastPurchasedAmount  = 0,
 	canSendMessage       = false,
@@ -2715,6 +2625,43 @@ local function debugLog(...)
 end
 
 -- ============================================
+-- ANIMASI POP-UP
+-- ============================================
+local function openFrame(frame)
+	frame.Visible = true
+
+	-- Menggunakan UIScale untuk efek zoom
+	local uiScale = frame:FindFirstChild("PopUpScale")
+	if not uiScale then
+		uiScale = Instance.new("UIScale")
+		uiScale.Name = "PopUpScale"
+		uiScale.Parent = frame
+	end
+
+	uiScale.Scale = 0
+	-- EasingStyle.Back memberikan efek memantul sedikit saat muncul
+	local tween = TweenService:Create(uiScale, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1})
+	tween:Play()
+end
+
+local function closeFrame(frame)
+	local uiScale = frame:FindFirstChild("PopUpScale")
+	if not uiScale then
+		uiScale = Instance.new("UIScale")
+		uiScale.Name = "PopUpScale"
+		uiScale.Parent = frame
+		uiScale.Scale = 1
+	end
+
+	local tween = TweenService:Create(uiScale, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Scale = 0})
+	tween:Play()
+
+	tween.Completed:Once(function()
+		frame.Visible = false
+	end)
+end
+
+-- ============================================
 -- PRODUCT UI
 -- ============================================
 
@@ -2722,17 +2669,16 @@ local loadProducts
 local createProductButton
 local clearProducts
 
-createProductButton = function(productData, index)
-	local frame = UI.templateFrame:Clone()
-	frame.Name    = "Product_" .. productData.Id
-	frame.Visible = true
-	frame.Parent  = UI.container
+createProductButton = function(productData)
+	local btn = UI.templateBtn:Clone()
+	btn.Name    = "Product_" .. productData.Id
+	btn.Visible = true
+	btn.Parent  = UI.container
 
-	local btn = frame:WaitForChild("TemplateBtn")
 	btn.Text  = "R$ " .. ClientUI.formatNumber(productData.Price)
 
-	local yPos = (index - 1) * (frame.Size.Y.Offset + ClientConfig.UI.BUTTON_SPACING)
-	frame.Position = UDim2.new(0, 0, 0, yPos)
+	-- Hover effect sengaja tidak pakai Transparency agar tidak jadi hitam 
+	-- (Bisa pakai properti AutoButtonColor bawaan Studio)
 
 	-- Click handler dengan anti double-click
 	local isProcessing = false
@@ -2759,15 +2705,8 @@ createProductButton = function(productData, index)
 		end
 	end)
 
-	btn.MouseEnter:Connect(function()
-		btn.BackgroundTransparency = 0.3
-	end)
-	btn.MouseLeave:Connect(function()
-		btn.BackgroundTransparency = 1
-	end)
-
-	table.insert(State.currentButtons, frame)
-	return frame
+	table.insert(State.currentButtons, btn)
+	return btn
 end
 
 clearProducts = function()
@@ -2804,13 +2743,11 @@ loadProducts = function()
 
 	if ok and products and #products > 0 then
 		debugLog("Loaded", #products, "products")
-		for i, product in ipairs(products) do
-			createProductButton(product, i)
+		for _, product in ipairs(products) do
+			createProductButton(product)
 			task.wait(ClientConfig.UI.BUTTON_CREATE_DELAY)
 		end
 
-		local totalH = #products * (UI.templateFrame.Size.Y.Offset + ClientConfig.UI.BUTTON_SPACING)
-		UI.container.CanvasSize = UDim2.new(0, 0, 0, totalH)
 		State.productsLoaded = true
 		ClientUI.notify("Berhasil", #products .. " produk tersedia", 2)
 	else
@@ -2833,22 +2770,16 @@ local donationIcon = Icon.new()
 	:setOrder(3)
 	:setRight()
 	:bindEvent("selected", function()
-		UI.mainFrame.Visible = true
+		openFrame(UI.mainFrame) -- Menggunakan animasi pop up
 		debugLog("Donation UI dibuka via TopbarPlus")
 		if not State.productsLoaded and not State.isLoading then
 			task.spawn(loadProducts)
 		end
 	end)
 	:bindEvent("deselected", function()
-		UI.mainFrame.Visible = false
+		closeFrame(UI.mainFrame) -- Menggunakan animasi pop up
 		debugLog("Donation UI ditutup via TopbarPlus")
 	end)
-
-UI.mainFrame:GetPropertyChangedSignal("Visible"):Connect(function()
-	if not UI.mainFrame.Visible then
-		donationIcon:deselect()
-	end
-end)
 
 -- ============================================
 -- MESSAGE UI
@@ -2858,8 +2789,8 @@ local function showMessageFrame(amount)
 	State.lastPurchasedAmount = amount
 	State.canSendMessage      = true
 
-	UI.mainFrame.Visible    = false
-	UI.messageFrame.Visible = true
+	donationIcon:deselect() -- Tutup MainFrame secara otomatis
+	openFrame(UI.messageFrame) -- Buka MessageFrame dengan animasi pop up
 
 	local textbox = UI.messageFrame:WaitForChild("TextBox")
 	textbox.Text = ""
@@ -2880,7 +2811,7 @@ local function hideMessageFrame(shouldSendDefault)
 		State.lastPurchasedAmount = 0
 	end
 
-	UI.messageFrame.Visible = false
+	closeFrame(UI.messageFrame) -- Tutup dengan animasi
 	State.canSendMessage    = false
 
 	local textbox = UI.messageFrame:WaitForChild("TextBox")
@@ -2904,7 +2835,6 @@ local function sendMessage()
 		return
 	end
 
-	-- 🔥 ARCHITECT FIX 4: Menggunakan os.clock()
 	local now       = os.clock()
 	local remaining = ClientConfig.MESSAGE.COOLDOWN - (now - State.lastMessageTime)
 	if remaining > 0 then
@@ -2977,7 +2907,7 @@ MarketplaceService.PromptProductPurchaseFinished:Connect(function(userId, produc
 		task.wait(1)
 		showMessageFrame(State.lastPurchasedAmount)
 	else
-		UI.mainFrame.Visible = false
+		donationIcon:deselect()
 		debugLog("Auto-closed (donasi kecil, tanpa message frame)")
 	end
 end)
@@ -2987,15 +2917,51 @@ end)
 -- ============================================
 
 UI.mainFrame.Visible         = false
-UI.templateFrame.Visible     = false
+UI.templateBtn.Visible       = false
 UI.messageFrame.Visible      = false
 UI.notificationFrame.Visible = false
 
-UI.mainFrame:WaitForChild("Header"):WaitForChild("CloseBtn").MouseButton1Click:Connect(function()
-	UI.mainFrame.Visible = false
-	donationIcon:deselect()
-	debugLog("Main frame ditutup")
+-- Auto Resize ScrollingFrame (Container)
+local listLayout = UI.container:WaitForChild("UIListLayout")
+listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+	UI.container.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10)
 end)
+
+-- Saweria Setup
+saweriaTextBox.Text             = "https://saweria.co/JeksAl"
+saweriaTextBox.TextEditable     = false
+saweriaTextBox.ClearTextOnFocus = false
+
+copyBtn.MouseButton1Click:Connect(function()
+	saweriaTextBox:CaptureFocus()
+	saweriaTextBox.SelectionStart = 1
+	saweriaTextBox.CursorPosition = #saweriaTextBox.Text + 1
+	ClientUI.notify("Link Siap Disalin!", "Teks dipilih, tekan Ctrl+C untuk menyalin.", 3)
+end)
+
+-- CLOSE BUTTON MAIN FRAME
+task.spawn(function()
+	-- Mencari CloseBtn langsung di dalam MainFrame
+	local btnClose = UI.mainFrame:WaitForChild("CloseBtn", 3)
+
+	-- Jika tidak ketemu, coba cari di dalam Header (berjaga-jaga)
+	if not btnClose then
+		local mainHeader = UI.mainFrame:FindFirstChild("Header")
+		if mainHeader then
+			btnClose = mainHeader:FindFirstChild("CloseBtn")
+		end
+	end
+
+	if btnClose then
+		btnClose.MouseButton1Click:Connect(function()
+			donationIcon:deselect() -- Ini akan otomatis menutup frame & menjalankan animasi
+			debugLog("Donation UI ditutup via CloseBtn")
+		end)
+	else
+		warn("[DonationUI] CloseBtn tidak ditemukan di dalam MainFrame!")
+	end
+end)
+
 
 local messageHeader = UI.messageFrame:WaitForChild("Header")
 local sendBtn       = UI.messageFrame:WaitForChild("SendBtn")
@@ -3516,6 +3482,9 @@ local AnimationPreloader = require(Modules:WaitForChild("AnimationPreloader"))
 local AnimatorUtils = require(Modules:WaitForChild("AnimatorUtils"))
 AnimatorUtils.AnimationPreloader = AnimationPreloader
 
+-- 🔥 INTEGRASI MODULE ANIMASI
+local UIAnimator = require(ReplicatedStorage:WaitForChild("UIAnimator"))
+
 -- ============================================
 -- GUI ELEMENTS
 -- ============================================
@@ -3534,7 +3503,6 @@ preloadLabel.Font = Enum.Font.Montserrat
 preloadLabel.Visible = false
 preloadLabel.Parent = mainframe
 
-local emoteBtn = gui:WaitForChild("Emote")
 local containerframe = mainframe:WaitForChild("Container")
 local controlframe = mainframe:WaitForChild("Control")
 local unsyncframe = mainframe:WaitForChild("UnsyncFrame")
@@ -3586,7 +3554,6 @@ local syncUpdateConnection = nil
 local savedLocalEmoteData = nil
 local animationStarted -- Forward Declaration
 
--- 🔥 ARCHITECT FIX 1: Variabel global yang hilang akhirnya dideklarasikan
 local lastEmoteClickTime = 0 
 
 -- ============================================
@@ -3682,6 +3649,7 @@ end
 
 local function showNotification(message, duration, bgColor)
 	table.insert(notificationQueue, { message = message, duration = duration or 3, bgColor = bgColor or Color3.fromRGB(50, 150, 255) })
+
 	if not isShowingNotification then
 		task.spawn(function()
 			while #notificationQueue > 0 do
@@ -3689,14 +3657,19 @@ local function showNotification(message, duration, bgColor)
 				local notif = table.remove(notificationQueue, 1)
 				notiflabel.Text = notif.message
 				notifframe.BackgroundColor3 = notif.bgColor
-				notifframe.Position = UDim2.new(0.5, 0, -0.2, 0)
-				notifframe.Visible = true
-				TweenService:Create(notifframe, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, 0, 0.1, 0)}):Play()
-				task.wait(notif.duration + 0.5)
-				local outTween = TweenService:Create(notifframe, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Position = UDim2.new(0.5, 0, -0.2, 0)})
-				outTween:Play()
-				outTween.Completed:Wait()
-				notifframe.Visible = false
+
+				-- Set posisinya di tempat yang benar karena UIAnimator akan men-scale pop-up di lokasi tersebut
+				notifframe.Position = UDim2.new(0.5, 0, 0.1, 0)
+
+				-- Buka notifikasi pakai UIAnimator
+				UIAnimator.Open(notifframe)
+
+				task.wait(notif.duration)
+
+				-- Tutup notifikasi pakai UIAnimator
+				UIAnimator.Close(notifframe)
+
+				task.wait(0.3) -- Jeda kecil sebelum menampilkan antrean berikutnya
 			end
 			isShowingNotification = false
 		end)
@@ -3793,7 +3766,6 @@ local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
 		end
 	end
 
-	-- LOGIKA STOP / UNSYNC
 	if not danceId then
 		if localSyncTrack then
 			localSyncTrack:Stop(actualFade)
@@ -3815,7 +3787,6 @@ local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
 		return
 	end
 
-	-- LOGIKA PLAY
 	local targetAnim = findAnimById(danceId)
 	if not targetAnim then return end
 
@@ -3834,11 +3805,10 @@ local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
 	localSyncTrack = track
 
 	track.Priority = Enum.AnimationPriority.Action3
-	track:Play(actualFade, 1, speed)
+	track:Play(actualFade, 1, 0)
 
 	local capturedTicket = applyTicket
 	task.spawn(function()
-		-- 🔥 ARCHITECT FIX 2: os.clock()
 		local timeout = os.clock() + 5
 		while track and track.Length == 0 and os.clock() < timeout do RunService.RenderStepped:Wait() end
 		if char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
@@ -3847,8 +3817,9 @@ local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
 			local finalTime = workspace:GetServerTimeNow()
 			local exactPos = ((finalTime - startTime) * speed) % track.Length
 			track.TimePosition = exactPos
-			track:AdjustSpeed(speed) 
 		end
+
+		track:AdjustSpeed(speed) 
 
 		task.delay(actualFade + 0.05, function()
 			if char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
@@ -3862,7 +3833,6 @@ local function monitorPlayerCharacter(targetPlayer)
 		if globalSyncListeners[char] then return end
 		globalSyncListeners[char] = true
 
-		-- 🔥 ARCHITECT FIX 3: Tambahkan batas waktu untuk cegah Infinite Yield!
 		local humanoid = char:WaitForChild("Humanoid", 10)
 		if not humanoid then return end
 
@@ -3910,7 +3880,6 @@ local function monitorPlayerCharacter(targetPlayer)
 
 			if char ~= player.Character and track.Animation and emoteIdCache[track.Animation.AnimationId] then
 				task.spawn(function()
-					-- 🔥 ARCHITECT FIX 2: os.clock()
 					local timeout = os.clock() + 5
 					while track and track.Length == 0 and os.clock() < timeout do RunService.RenderStepped:Wait() end
 					forceSnapCharacterDance(track)
@@ -3999,16 +3968,26 @@ Players.PlayerAdded:Connect(monitorPlayerCharacter)
 -- GUI & SYNC MANAGEMENT
 -- ============================================
 local function updateUnsyncFrame()
-	if not player.Character then unsyncframe.Visible = false return end
+	if not player.Character then 
+		if unsyncframe.Visible then UIAnimator.Close(unsyncframe) end
+		return 
+	end
+
 	local syncTarget = player.Character:GetAttribute("Syncing")
 	if syncTarget and syncTarget ~= "" then
 		isSyncing = true
 		currentLeaderName = syncTarget
 		local leaderPlayer = Players:FindFirstChild(syncTarget)
 		unsyncBtn.Text = "Synced to " .. (leaderPlayer and leaderPlayer.DisplayName or syncTarget) .. "\nTap to Unsync"
-		unsyncframe.Visible = true
+
+		if not unsyncframe.Visible then
+			UIAnimator.Open(unsyncframe)
+		end
 	else
-		unsyncframe.Visible = false
+		if unsyncframe.Visible then
+			UIAnimator.Close(unsyncframe)
+		end
+
 		isSyncing = false
 		currentLeaderName = nil
 		if localSyncTrack then 
@@ -4079,7 +4058,6 @@ function animationStarted(animation, button)
 	inputLock = true
 	task.delay(0.01, function() inputLock = false end)
 
-	-- 🔥 ARCHITECT FIX 2: os.clock()
 	local currentTime = os.clock()
 	local character = player.Character
 	local animator = character and character:FindFirstChild("Humanoid") and character.Humanoid:FindFirstChild("Animator")
@@ -4284,7 +4262,9 @@ if speedSlider and speedBar and speedtext and speedButton then
 				speedtext.Text = string.format("%.1fx", math.floor(currentSpeed * 10 + 0.5) / 10)
 				if not isSyncing then
 					sendSpeedToServer(currentSpeed)
-					if localAnimTrack then pcall(function() localAnimTrack:AdjustSpeed(currentSpeed) end) end
+					if localAnimTrack then
+						localAnimTrack:AdjustSpeed(currentSpeed)
+					end
 				end
 			end
 		else
@@ -4295,11 +4275,6 @@ if speedSlider and speedBar and speedtext and speedButton then
 	speedtext.Text = string.format("%.1fx", SPEED_DEFAULT)
 end
 
-emoteBtn.MouseButton1Click:Connect(function()
-	mainframe.Visible = not mainframe.Visible
-	local popSound = ReplicatedStorage:FindFirstChild("Sounds") and ReplicatedStorage.Sounds:FindFirstChild("cartoon_pop")
-	if popSound then popSound:Play() end
-end)
 
 -- ============================================
 -- PRELOAD & LOAD ANIMATIONS
@@ -4368,13 +4343,14 @@ task.spawn(function()
 										if diff > track.Length / 2 then diff = diff - track.Length end
 										if diff < -track.Length / 2 then diff = diff + track.Length end
 
+										-- 🔥 Menghapus pcall, performa meningkat secara drastis
 										if math.abs(diff) > 0.4 then
-											pcall(function() track.TimePosition = exactPos end)
+											track.TimePosition = exactPos
 										elseif math.abs(diff) > 0.03 then
 											local catchUpSpeed = currentSpeed + (diff * 2.5)
-											pcall(function() track:AdjustSpeed(catchUpSpeed) end)
+											track:AdjustSpeed(catchUpSpeed)
 										else
-											pcall(function() track:AdjustSpeed(currentSpeed) end)
+											track:AdjustSpeed(currentSpeed)
 										end
 									end
 								end
@@ -4408,13 +4384,14 @@ task.spawn(function()
 									if diff > track.Length / 2 then diff = diff - track.Length end
 									if diff < -track.Length / 2 then diff = diff + track.Length end
 
+									-- 🔥 Menghapus pcall di loop ini juga
 									if math.abs(diff) > 0.4 then
-										pcall(function() track.TimePosition = exactPos end)
+										track.TimePosition = exactPos
 									elseif math.abs(diff) > 0.03 then
 										local catchUpSpeed = speed + (diff * 2.5)
-										pcall(function() track:AdjustSpeed(catchUpSpeed) end)
+										track:AdjustSpeed(catchUpSpeed)
 									else
-										pcall(function() track:AdjustSpeed(speed) end)
+										track:AdjustSpeed(speed)
 									end
 								end
 							end
@@ -4425,6 +4402,7 @@ task.spawn(function()
 		end
 	end
 end)
+
 
 -- ============================================
 -- THE ZOMBIE CLEANER
@@ -4443,7 +4421,6 @@ player.CharacterAdded:Connect(function(newCharacter)
 		localSyncTrack = nil
 	end
 
-	-- 🔥 ARCHITECT FIX 4: Pastikan localAnimTrack dibunuh saat pemain respawn
 	if localAnimTrack then
 		local oldTrack = localAnimTrack
 		pcall(function() oldTrack:Stop() oldTrack:Destroy() end)
@@ -4469,29 +4446,20 @@ script.Destroying:Connect(function()
 end)
 
 
--- ====================================
--- MAIN CLIENT SCRIPT (SIMPLIFIED)
--- ====================================
-
--- 🔥 FIX 4: Gunakan WaitForChild agar modul aman dimuat tanpa error
 local Config = require(script:WaitForChild("Config"))
 local Logger = require(script:WaitForChild("Logger"))
 local NotificationManager = require(script:WaitForChild("NotificationManager"))
 local UIManager = require(script:WaitForChild("UIManager"))
 local ShopHandler = require(script:WaitForChild("ShopHandler"))
 
--- ====================================
--- SERVICES
--- ====================================
 local Player = game.Players.LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- ====================================
--- GUI ELEMENTS (SHOP ONLY)
--- ====================================
+-- 🔥 INTEGRASI MODULE ANIMASI
+local UIAnimator = require(ReplicatedStorage:WaitForChild("UIAnimator"))
+
 local gui = script.Parent
 local mainframe = gui:WaitForChild("MainFrame")
-local ShopBtn = gui:WaitForChild("Shop")
 local content = mainframe:WaitForChild("Content")
 local VVIPFrame = content:WaitForChild("VVIP Pass")
 local VVIPBuyBtn = VVIPFrame:WaitForChild("BuyBtn")
@@ -4499,13 +4467,9 @@ local VIPFrame = content:WaitForChild("VIP Pass")
 local VIPBuyBtn = VIPFrame:WaitForChild("BuyBtn")
 local closeBtn = mainframe:WaitForChild("Header"):WaitForChild("CloseBtn")
 
--- Notification GUI
 local notificationframe = gui:WaitForChild("NotificationFrame")
 local notificationtext = notificationframe:WaitForChild("NotificationText")
 
--- ====================================
--- REMOTES
--- ====================================
 local GamepassFolder = ReplicatedStorage:WaitForChild("Gamepass")
 local remotes = {
 	shopRequest = GamepassFolder:WaitForChild("ShopRequest", Config.RemoteTimeout),
@@ -4515,113 +4479,64 @@ local remotes = {
 
 Logger:Success("Connected to remotes")
 
--- ====================================
--- INITIALIZE MODULES
--- ====================================
 NotificationManager:Init(notificationframe, notificationtext)
 ShopHandler:Init(remotes, UIManager, NotificationManager)
 
--- Setup gamepass data
 local GamepassData = {
-	VVIP = {
-		Frame = VVIPFrame,
-		Button = VVIPBuyBtn,
-		IDs = {},
-		Owned = false,
-		Name = "VVIP Pass",
-		Price = 0
-	},
-	VIP = {
-		Frame = VIPFrame,
-		Button = VIPBuyBtn,
-		IDs = {},
-		Owned = false,
-		Name = "VIP Pass",
-		Price = 0
-	}
+	VVIP = { Frame = VVIPFrame, Button = VVIPBuyBtn, IDs = {}, Owned = false, Name = "VVIP Pass", Price = 0 },
+	VIP = { Frame = VIPFrame, Button = VIPBuyBtn, IDs = {}, Owned = false, Name = "VIP Pass", Price = 0 }
 }
 
 ShopHandler:SetGamepassData(GamepassData)
 
--- ====================================
--- EVENT HANDLERS - SHOP
--- ====================================
-ShopBtn.MouseButton1Click:Connect(function()
-	mainframe.Visible = not mainframe.Visible
-
-	if mainframe.Visible then
-		if not ShopHandler.shopDataLoaded then
-			ShopHandler:LoadShopData()
-		end
+mainframe:GetPropertyChangedSignal("Visible"):Connect(function()
+	if mainframe.Visible and not ShopHandler.shopDataLoaded then
+		ShopHandler:LoadShopData()
 	end
 end)
 
+
 closeBtn.MouseButton1Click:Connect(function()
-	mainframe.Visible = false
+	UIAnimator.Close(mainframe)
 end)
 
-VVIPBuyBtn.MouseButton1Click:Connect(function()
-	ShopHandler:PromptPurchase("VVIP")
-end)
+VVIPBuyBtn.MouseButton1Click:Connect(function() ShopHandler:PromptPurchase("VVIP") end)
+VIPBuyBtn.MouseButton1Click:Connect(function() ShopHandler:PromptPurchase("VIP") end)
 
-VIPBuyBtn.MouseButton1Click:Connect(function()
-	ShopHandler:PromptPurchase("VIP")
-end)
-
--- ====================================
--- UPDATE HANDLER
--- ====================================
 remotes.playerDataUpdated.OnClientEvent:Connect(function(updateData)
 	local updateType = updateData.type
-
 	Logger:Debug("Received update: " .. updateType)
 
 	if updateType == "ownership_updated" then
-		local gamepassType = updateData.gamepassType
-		ShopHandler:HandleOwnershipUpdate(gamepassType, true)
-
+		ShopHandler:HandleOwnershipUpdate(updateData.gamepassType, true)
 	elseif updateType == "role_updated" then
 		Logger:Info("Role updated: " .. updateData.role)
-
 	elseif updateType == "purchase_complete" then
-		local gamepassType = updateData.gamepassType
-		ShopHandler:HandleOwnershipUpdate(gamepassType, true)
+		ShopHandler:HandleOwnershipUpdate(updateData.gamepassType, true)
 		NotificationManager:ShowVisual(updateData.message, true)
-
 	else
 		Logger:Warn("Unknown update type: " .. tostring(updateType))
 	end
 end)
 
--- ====================================
--- INITIALIZATION
--- ====================================
 mainframe.Visible = Config.StartVisible
 notificationframe.Visible = false
 
 Logger:Info("Initializing...")
 
 task.spawn(function()
-	-- 🔥 FIX 1: Cegah Infinite Yield dengan mengecek Player.Character lebih dulu
-	if not Player.Character then
-		Player.CharacterAdded:Wait()
-	end
-
+	if not Player.Character then Player.CharacterAdded:Wait() end
 	task.wait(2)
 	ShopHandler:LoadShopData()
 	Logger:Success("Initialization complete - Simplified Version (Self-Purchase Only)")
 end)
 
-
 -- ====================================
 -- CLIENT CONFIGURATION (SIMPLIFIED)
 -- ====================================
-
 local Config = {
 	Debug = false, -- Set false untuk production
-
 	StartVisible = false,
-
 	ButtonStates = {
 		Buy = {
 			Text = "Buy",
@@ -4648,7 +4563,6 @@ local Config = {
 			Enabled = false
 		}
 	},
-
 	Notifications = {
 		ErrorServer = {
 			Title = "Error",
@@ -4676,13 +4590,10 @@ local Config = {
 			Duration = 3
 		}
 	},
-
 	RemoteTimeout = 10,
 	RoleRefreshDelay = 1
 }
-
 return Config
-
 
 -- ====================================
 -- CLIENT LOGGER MODULE
@@ -4720,14 +4631,12 @@ end
 return Logger
 
 
--- ====================================
--- NOTIFICATION MANAGER
--- ====================================
 local Config = require(script.Parent:WaitForChild("Config"))
 local Logger = require(script.Parent:WaitForChild("Logger"))
 
 local StarterGui = game:GetService("StarterGui")
-local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UIAnimator = require(ReplicatedStorage:WaitForChild("UIAnimator"))
 
 local NotificationManager = {}
 
@@ -4735,7 +4644,7 @@ function NotificationManager:Init(notificationFrame, notificationText)
 	self.frame = notificationFrame
 	self.text = notificationText
 	self.frame.Visible = false
-	self.currentNotificationTicket = 0 -- 🔥 FIX 3: Sistem Ticket untuk hindari overlap
+	self.currentNotificationTicket = 0 
 	Logger:Debug("NotificationManager initialized")
 end
 
@@ -4753,30 +4662,13 @@ function NotificationManager:ShowVisual(message, isSuccess)
 		self.frame.BackgroundColor3 = Color3.fromRGB(231, 76, 60)
 	end
 
-	self.frame.Visible = true
-	self.frame.BackgroundTransparency = 1
+	self.frame.BackgroundTransparency = 0.2
 
-	local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	local fadeIn = TweenService:Create(self.frame, tweenInfo, {
-		BackgroundTransparency = 0.2
-	})
-
-	fadeIn:Play()
+	UIAnimator.Open(self.frame)
 
 	task.delay(4, function()
-		-- 🔥 FIX 3: Jika ada notifikasi baru yang masuk, abaikan delay penutupan yang lama
 		if self.currentNotificationTicket ~= myTicket then return end
-
-		local fadeOut = TweenService:Create(self.frame, tweenInfo, {
-			BackgroundTransparency = 1
-		})
-
-		fadeOut:Play()
-		fadeOut.Completed:Connect(function()
-			if self.currentNotificationTicket == myTicket then
-				self.frame.Visible = false
-			end
-		end)
+		UIAnimator.Close(self.frame)
 	end)
 end
 
@@ -4939,15 +4831,14 @@ end
 return ShopHandler
 
 
--- ====================================
--- UI MANAGER
--- ====================================
 local Config = require(script.Parent:WaitForChild("Config"))
 local Logger = require(script.Parent:WaitForChild("Logger"))
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UIAnimator = require(ReplicatedStorage:WaitForChild("UIAnimator"))
+
 local UIManager = {}
 
--- 🔥 FIX 2: Mencegah Memory Leak dengan melacak koneksi Dialog
 UIManager.activeConfirmConnections = nil 
 
 function UIManager:SetButtonState(button, state)
@@ -4958,12 +4849,7 @@ function UIManager:SetButtonState(button, state)
 	button.BackgroundColor3 = stateConfig.BackgroundColor
 	button.TextColor3 = stateConfig.TextColor
 	button.Active = stateConfig.Enabled
-
-	if stateConfig.Enabled then
-		button.AutoButtonColor = true
-	else
-		button.AutoButtonColor = false
-	end
+	button.AutoButtonColor = stateConfig.Enabled
 end
 
 function UIManager:ShowConfirmDialog(confirmDialog, confirmText, text, onYes, onNo)
@@ -4974,7 +4860,9 @@ function UIManager:ShowConfirmDialog(confirmDialog, confirmText, text, onYes, on
 	end
 
 	confirmText.Text = text
-	confirmDialog.Visible = true
+
+	-- Munculkan dialog konfirmasi pakai animasi
+	UIAnimator.Open(confirmDialog)
 
 	return {
 		yesConnection = nil,
@@ -4984,7 +4872,6 @@ function UIManager:ShowConfirmDialog(confirmDialog, confirmText, text, onYes, on
 end
 
 function UIManager:SetupConfirmButtons(confirmYesBtn, confirmNoBtn, onYes, onNo)
-	-- 🔥 FIX 2: Hapus koneksi dari Jendela Dialog sebelumnya jika belum diklik
 	if self.activeConfirmConnections and self.activeConfirmConnections.cleanup then
 		self.activeConfirmConnections.cleanup()
 	end
@@ -4995,7 +4882,6 @@ function UIManager:SetupConfirmButtons(confirmYesBtn, confirmNoBtn, onYes, onNo)
 		dialog = nil
 	}
 
-	-- Function to cleanup connections
 	local function cleanup()
 		if connections.yesConnection then
 			connections.yesConnection:Disconnect()
@@ -5004,6 +4890,11 @@ function UIManager:SetupConfirmButtons(confirmYesBtn, confirmNoBtn, onYes, onNo)
 		if connections.noConnection then
 			connections.noConnection:Disconnect()
 			connections.noConnection = nil
+		end
+
+		-- Tutup dialog pakai animasi jika direferensikan
+		if connections.dialog then
+			UIAnimator.Close(connections.dialog)
 		end
 
 		if self.activeConfirmConnections == connections then
@@ -5016,17 +4907,13 @@ function UIManager:SetupConfirmButtons(confirmYesBtn, confirmNoBtn, onYes, onNo)
 	connections.yesConnection = confirmYesBtn.MouseButton1Click:Connect(function()
 		Logger:Debug("Confirm Yes clicked")
 		cleanup()
-		if onYes then 
-			pcall(onYes)
-		end
+		if onYes then pcall(onYes) end
 	end)
 
 	connections.noConnection = confirmNoBtn.MouseButton1Click:Connect(function()
 		Logger:Debug("Confirm No clicked")
 		cleanup()
-		if onNo then 
-			pcall(onNo)
-		end
+		if onNo then pcall(onNo) end
 	end)
 
 	self.activeConfirmConnections = connections
@@ -5035,203 +4922,6 @@ function UIManager:SetupConfirmButtons(confirmYesBtn, confirmNoBtn, onYes, onNo)
 end
 
 return UIManager
-
-
--- ====================================
--- HELP GUI CONTROLLER
--- Place in ScreenGui sebagai LocalScript
--- ====================================
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
-local Player = Players.LocalPlayer
-
--- Wait for Icon Module
-local IconModule = ReplicatedStorage:WaitForChild("Icon")
-local Icon = require(IconModule)
-
--- Wait for GUI
-local gui = script.Parent
-local mainframe = gui:WaitForChild("MainFrame")
-local header = mainframe:WaitForChild("Header")
-local closeBtn = header:WaitForChild("CloseBtn")
-local container = mainframe:WaitForChild("Content")
-
-local textbox2 = container:WaitForChild("TextBox2")
--- 🔥 FIX 1: Diganti menjadi WaitForChild agar tidak meledak jika UI lambat dimuat
-local textbox3 = container:WaitForChild("TextBox3") 
-
-local copy2 = textbox2:WaitForChild("copytext2")
-local copy3 = textbox3:WaitForChild("copytext3")
-
--- ====================================
--- CONFIGURATION
--- ====================================
-local Config = {
-	IconOrder = 2,
-	IconName = "Saweria",
-	-- Teks yang akan disalin (edit sesuai kebutuhan)
-	CopyText2 = "https://www.roblox.com/id/communities/192828493",
-	CopyText3 = "https://saweria.co/JeksAl",
-
-	-- PENGATURAN TEKS UNTUK TEXTBOX
-	TextBoxTextSize = 14, -- Ukuran teks link
-	TextBoxTextColor = Color3.fromRGB(255, 255, 255), -- Warna teks link (Putih)
-	TextBoxFont = Enum.Font.GothamSemibold, -- Jenis font link
-
-	-- PENGATURAN TEKS UNTUK TOMBOL COPY
-	BtnTextSize = 14, -- Ukuran teks tombol
-	BtnTextColor = Color3.fromRGB(255, 255, 255), -- Warna teks tombol (Putih)
-	BtnFont = Enum.Font.GothamBold -- Jenis font tombol
-}
-
--- ====================================
--- GUI STATE
--- ====================================
-local isGUIVisible = false
-mainframe.Visible = false
-
--- ====================================
--- SETUP TEXTBOX UNTUK COPY
--- ====================================
-local function setupTextBoxForCopy(textBox, text)
-	-- Set properties dasar
-	textBox.Text = text
-	textBox.ClearTextOnFocus = false
-	textBox.TextEditable = false
-	textBox.TextXAlignment = Enum.TextXAlignment.Left
-
-	-- Set ukuran, warna, dan font teks dari Config
-	textBox.TextSize = Config.TextBoxTextSize
-	textBox.TextColor3 = Config.TextBoxTextColor
-	textBox.Font = Config.TextBoxFont
-	textBox.TextScaled = false -- Pastikan false agar TextSize berfungsi manual
-
-	-- Auto select semua text saat diklik
-	textBox.Focused:Connect(function()
-		textBox.SelectionStart = 1
-		task.spawn(function()
-			task.wait(0.05)
-			if textBox:IsFocused() then
-				textBox.CursorPosition = #textBox.Text + 1
-				textBox.SelectionStart = 1
-			end
-		end)
-	end)
-end
-
--- ====================================
--- FUNCTIONS
--- ====================================
-local function openGUI()
-	isGUIVisible = true
-	mainframe.Visible = true
-end
-
-local function closeGUI()
-	isGUIVisible = false
-	mainframe.Visible = false
-end
-
--- Fungsi untuk setup copy button
-local function setupCopyButton(button, textBox)
-	local originalText = button.Text
-	local originalColor = button.BackgroundColor3
-
-	-- 🔥 FIX 2: Tambahkan pengunci/debounce agar tidak tumpang tindih jika dispam klik
-	local isCopying = false 
-
-	-- Set ukuran, warna, dan font tombol dari Config
-	button.TextSize = Config.BtnTextSize
-	button.TextColor3 = Config.BtnTextColor
-	button.Font = Config.BtnFont
-
-	button.MouseButton1Click:Connect(function()
-		-- Mencegah proses ganda jika tombol masih dalam keadaan diproses (cooldown 3 detik)
-		if isCopying then return end
-		isCopying = true
-
-		-- 1. Fokus dan blok teks otomatis
-		textBox:CaptureFocus()
-
-		-- 2. Cek apakah pemain menggunakan HP (Touch screen) atau PC (Keyboard)
-		local hasKeyboard = UserInputService.KeyboardEnabled
-		local hasTouch = UserInputService.TouchEnabled
-
-		if hasTouch and not hasKeyboard then
-			-- Pemain di HP / Tablet
-			button.Text = "Tap 'Copy'!" 
-		else
-			-- Pemain di PC / Laptop
-			button.Text = "Press Ctrl+C!" 
-		end
-
-		button.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-
-		-- Kasih jeda waktu sedikit lebih lama agar pemain sempat baca & salin
-		task.wait(3)
-
-		-- Kembalikan ke semula
-		button.Text = originalText
-		button.BackgroundColor3 = originalColor
-		isCopying = false -- Buka kembali kunciannya
-	end)
-
-	-- Hover effect
-	button.MouseEnter:Connect(function()
-		if not isCopying then
-			local r, g, b = originalColor.R, originalColor.G, originalColor.B
-			button.BackgroundColor3 = Color3.new(
-				math.min(r * 1.2, 1), 
-				math.min(g * 1.2, 1), 
-				math.min(b * 1.2, 1)
-			)
-		end
-	end)
-
-	button.MouseLeave:Connect(function()
-		if not isCopying then
-			button.BackgroundColor3 = originalColor
-		end
-	end)
-end
-
--- ====================================
--- CREATE TOPBAR ICON
--- ====================================
-local helpIcon = Icon.new()
-	:setLabel(Config.IconName)
-	:setOrder(Config.IconOrder)
-	:setRight()
-	:bindEvent("selected", function()
-		openGUI()
-	end)
-	:bindEvent("deselected", function()
-		closeGUI()
-	end)
-
--- ====================================
--- BUTTON CONNECTIONS
--- ====================================
-closeBtn.MouseButton1Click:Connect(function()
-	closeGUI()
-	helpIcon:deselect()
-end)
-
--- Setup TextBox dengan properties yang benar
-setupTextBoxForCopy(textbox2, Config.CopyText2)
-setupTextBoxForCopy(textbox3, Config.CopyText3)
-
--- Setup copy buttons 
-setupCopyButton(copy2, textbox2)
-setupCopyButton(copy3, textbox3)
-
--- 🔥 FIX 3: Tambahkan pembersihan Topbar saat pemain keluar untuk menghindari memory leak (Minor)
-Players.PlayerRemoving:Connect(function(leavingPlayer)
-	if leavingPlayer == Player then
-		if helpIcon then helpIcon:Destroy() end
-	end
-end)
 
 
 -- LocalScript: CinematicHandler
@@ -6406,7 +6096,7 @@ mainframe.Visible = false
 
 
 -- ============================================
--- PlayerMenuClient
+-- PlayerMenuClient (UPDATED DENGAN FITUR LIKE)
 -- Letakkan di: StarterGui > [ScreenGui] > LocalScript
 -- ============================================
 
@@ -6416,6 +6106,8 @@ local GuiService           = game:GetService("GuiService")
 local TextChatService      = game:GetService("TextChatService")
 local UserInputService     = game:GetService("UserInputService")
 local TweenService         = game:GetService("TweenService")
+local RunService           = game:GetService("RunService")
+local StarterGui           = game:GetService("StarterGui")
 
 local localPlayer = Players.LocalPlayer
 local camera      = workspace.CurrentCamera
@@ -6448,6 +6140,10 @@ local remotes     = ReplicatedStorage:WaitForChild("Remotes")
 local startSyncRE = remotes:WaitForChild("startSync")
 local CarryConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("CarryConfig"))
 
+-- Remotes untuk fitur Like
+local LikePlayerRemote = remotes:WaitForChild("LikePlayer")
+local CheckLikeCooldownRemote = remotes:WaitForChild("CheckLikeCooldown")
+
 -- ============================================
 -- GUI ELEMENTS
 -- ============================================
@@ -6456,6 +6152,8 @@ local mainframe = gui:WaitForChild("MainFrame")
 local container = mainframe:WaitForChild("Container")
 
 local TemplateFrame = container:WaitForChild("TemplateFrame")
+TemplateFrame.Visible = false
+
 
 local OutfitFrame    = container:WaitForChild("OutfitFrame")
 local outfitView     = OutfitFrame:WaitForChild("OutfitView")
@@ -6471,9 +6169,19 @@ local playerinfo      = ProfileFrame:WaitForChild("PlayerInfo")
 local Connectionlabel = playerinfo:WaitForChild("Connections")
 local FollowersLabel  = playerinfo:WaitForChild("Followers")
 local FollowingLabel  = playerinfo:WaitForChild("Following")
+
 local playerAvatar    = ProfileFrame:WaitForChild("PlayerAvatar")
 local namelabel       = ProfileFrame:WaitForChild("NameLabel")
 local usernamelabel   = ProfileFrame:WaitForChild("UsernameLabel")
+
+-- GUI Elements untuk fitur Like (Menyesuaikan dengan struktur Screenshot Anda)
+local LikeBtn         = ProfileFrame:WaitForChild("LikeBtn")
+-- Menggunakan FindFirstChild untuk mengatasi typo (LovelImage / LoveImage)
+local LoveImage       = LikeBtn:WaitForChild("LoveImage", 3) or LikeBtn:WaitForChild("LovelImage", 3)
+
+-- CooldownLabel dan NumberLoveLabel sekarang sejajar dengan PlayerAvatar di dalam ProfileFrame
+local CooldownLabel   = ProfileFrame:WaitForChild("CooldownLabel")
+local NumberLoveLabel = ProfileFrame:WaitForChild("NumberLoveLabel")
 
 local CloseBtn = mainframe:WaitForChild("CloseBtn")
 
@@ -6488,6 +6196,10 @@ local createdButtons        = {}
 local hiddenPlayers         = {}
 local monitoringConnections = {}
 local isLoadingMenu         = false  -- cegah spam klik saat data masih di-fetch
+
+-- State untuk Like
+local currentCooldownEnd = 0
+local isLiking = false
 
 -- Outfit pagination
 local outfitItemIds = {}  -- semua asset id player saat ini
@@ -6514,6 +6226,83 @@ local playClickSound
 local closeMenu
 local updateSyncButtonState
 local updateHideButtonState
+
+-- ============================================
+-- LIKE SYSTEM HANDLERS
+-- ============================================
+local function formatTime(seconds)
+	if seconds <= 0 then return "00:00:00" end
+	local hours = math.floor(seconds / 3600)
+	local mins = math.floor((seconds % 3600) / 60)
+	local secs = math.floor(seconds % 60)
+	return string.format("%02d:%02d:%02d", hours, mins, secs)
+end
+
+-- Update total like secara real-time dari Attribute "TotalLikes"
+local function setupLikeListener(player)
+	player:GetAttributeChangedSignal("TotalLikes"):Connect(function()
+		if currentTargetPlayer == player then
+			NumberLoveLabel.Text = tostring(player:GetAttribute("TotalLikes") or 0)
+		end
+	end)
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+	setupLikeListener(player)
+end
+Players.PlayerAdded:Connect(setupLikeListener)
+
+-- Logika Countdown yang terus berjalan
+RunService.Heartbeat:Connect(function()
+	if currentTargetPlayer and CooldownLabel.Visible then
+		local remaining = currentCooldownEnd - os.time()
+		if remaining > 0 then
+			CooldownLabel.Text = "Cooldown " .. formatTime(remaining)
+		else
+			CooldownLabel.Visible = false
+			LoveImage.ImageColor3 = Color3.fromRGB(255, 255, 255)
+		end
+	end
+end)
+
+-- Tombol Like Diklik
+LikeBtn.MouseButton1Click:Connect(function()
+	if isLiking or not currentTargetPlayer then return end
+	if currentCooldownEnd > os.time() then return end
+
+	isLiking = true
+	LoveImage.ImageColor3 = Color3.fromRGB(255, 50, 50)
+	playClickSound()
+
+	-- Animasi kecil untuk merespon klik
+	local originalSize = LoveImage.Size
+	local tweenClick = TweenService:Create(LoveImage, TweenInfo.new(0.1, Enum.EasingStyle.Sine), {Size = UDim2.new(originalSize.X.Scale * 0.8, originalSize.X.Offset, originalSize.Y.Scale * 0.8, originalSize.Y.Offset)})
+	tweenClick:Play()
+	tweenClick.Completed:Connect(function()
+		TweenService:Create(LoveImage, TweenInfo.new(0.2, Enum.EasingStyle.Bounce), {Size = originalSize}):Play()
+	end)
+
+	-- Kirim remote ke server
+	local success, result = LikePlayerRemote:InvokeServer(currentTargetPlayer.UserId)
+	if success and currentTargetPlayer then
+		currentCooldownEnd = result
+		CooldownLabel.Visible = true
+		StarterGui:SetCore("SendNotification", {
+			Title = "Like Sent! ❤️",
+			Text = "You sent a like to " .. currentTargetPlayer.Name,
+			Duration = 3,
+		})
+	else
+		-- Jika gagal atau target tidak valid, kembalikan UI ke semula
+		LoveImage.ImageColor3 = Color3.fromRGB(255, 255, 255)
+		if result then
+			warn("[LIKE] Failed:", result)
+		end
+	end
+
+	isLiking = false
+end)
+
 
 -- ============================================
 -- HIDE PLAYER — UTILITY
@@ -6823,16 +6612,11 @@ end
 -- ====================================
 local OutfitCache = {}
 
---[[
-	Ambil daftar aksesoris player via GetCharacterAppearanceInfoAsync,
-	lalu render halaman pertama. Berjalan async di background.
-]]
 local function loadAccessoriesForPlayer(targetPlayer)
 	clearOutfitTiles()
 	outfitItemIds = {}
 	outfitPage    = 1
 
-	-- Mengecek apakah outfit pemain ini sudah pernah dimuat
 	if OutfitCache[targetPlayer.UserId] then
 		outfitItemIds = OutfitCache[targetPlayer.UserId]
 		renderOutfitPage()
@@ -6852,14 +6636,12 @@ local function loadAccessoriesForPlayer(targetPlayer)
 		end
 
 		outfitItemIds = (#ids > 0) and ids or DEFAULT_BACON_ITEMS
-		-- Simpan data di cache untuk mencegah API throttling
 		OutfitCache[targetPlayer.UserId] = outfitItemIds
 		renderOutfitPage()
 	end)
 end
 
 
--- Tombol Back & Forward
 backBtn.Visible   = true
 fowardBtn.Visible = true
 
@@ -6892,12 +6674,10 @@ local MENU_CONFIG = {
 			lastSyncTime = now
 
 			if inputLock or not targetPlayer then 
-				warn("[DEBUG-CLIENT] DIBLOKIR: inputLock aktif, atau target kosong!")
 				return 
 			end
 
 			if not targetPlayer.Parent then 
-				warn("[DEBUG-CLIENT] DIBLOKIR: Target sudah keluar dari game (Parent nil).")
 				return 
 			end 
 
@@ -7167,11 +6947,17 @@ local function updatePlayerInfo(targetPlayer, onReady)
 	FollowersLabel.Text  = "Followers ..."
 	FollowingLabel.Text  = "Following ..."
 
+	-- Reset UI Like System
+	CooldownLabel.Visible = false
+	LoveImage.ImageColor3 = Color3.fromRGB(255, 255, 255)
+	NumberLoveLabel.Text  = tostring(targetPlayer:GetAttribute("TotalLikes") or 0)
+
 	loadAccessoriesForPlayer(targetPlayer)
 
 	if onReady then onReady() end
 
 	task.spawn(function()
+		-- Fetch Data Player
 		local getPlayerInfoRF = remotes:FindFirstChild("GetPlayerInfo")
 		local profileData     = nil
 
@@ -7181,15 +6967,17 @@ local function updatePlayerInfo(targetPlayer, onReady)
 			end)
 			if ok and data then
 				profileData = data
-			else
-				warn("[CLIENT] InvokeServer gagal untuk:", targetPlayer.Name)
 			end
-		else
-			warn("[CLIENT] RemoteFunction 'GetPlayerInfo' tidak ditemukan di Remotes")
 		end
+
+		-- Fetch Cooldown Data
+		local cdOk, cdData = pcall(function()
+			return CheckLikeCooldownRemote:InvokeServer(targetPlayer.UserId)
+		end)
 
 		if currentTargetPlayer ~= targetPlayer then return end
 
+		-- Update Social Stats
 		if profileData then
 			Playerbio.Text       = (profileData.description ~= "" and profileData.description) or DEFAULT_BIO
 			Connectionlabel.Text = "Connections " .. tostring(profileData.friendsCount   or 0)
@@ -7200,6 +6988,19 @@ local function updatePlayerInfo(targetPlayer, onReady)
 			Connectionlabel.Text = "Connections N/A"
 			FollowersLabel.Text  = "Followers N/A"
 			FollowingLabel.Text  = "Following N/A"
+		end
+
+		-- Update Like Status
+		if cdOk and cdData then
+			currentCooldownEnd = cdData.cooldownTime or 0
+			if currentCooldownEnd > os.time() then
+				LoveImage.ImageColor3 = Color3.fromRGB(255, 50, 50)
+				CooldownLabel.Visible = true
+			else
+				LoveImage.ImageColor3 = Color3.fromRGB(255, 255, 255)
+				CooldownLabel.Visible = false
+			end
+			NumberLoveLabel.Text = tostring(cdData.targetLikes or targetPlayer:GetAttribute("TotalLikes") or 0)
 		end
 	end)
 end
@@ -7301,9 +7102,6 @@ end)
 -- ============================================
 -- INITIALIZE
 -- ============================================
--- ✨ OPTIMASI: SetupPlayerMonitoring dihapus dari proses inisialisasi awal.
--- Karena player hanya dipantau SAAT mereka sedang di-hide.
-
 Players.PlayerRemoving:Connect(function(player)
 	hiddenPlayers[player] = nil
 	if monitoringConnections[player] then
@@ -9543,12 +9341,14 @@ function EffectsSystem:OnCharacterAdded(character, otherPlayer)
 			self:HideAuraEffects(character, true)
 		end
 
+		-- Di dalam EffectsSystem:OnCharacterAdded
 		character.DescendantAdded:Connect(function(descendant)
-			-- 🔥 FIX 3: task.wait() ditaruh di atas
-			task.wait(0.1)
-			if FeatureManager:GetFeatureState("effects") or FeatureManager:GetFeatureState("players") then
-				Utils:HideEffect(descendant, true)
-				Utils:HideLight(descendant, true)
+			-- 🔥 FIX MEMORY SPIKE: Langsung filter dan eksekusi TANPA task.wait()
+			if descendant:IsA("ParticleEmitter") or descendant:IsA("Light") then
+				if FeatureManager:GetFeatureState("effects") or FeatureManager:GetFeatureState("players") then
+					Utils:HideEffect(descendant, true)
+					Utils:HideLight(descendant, true)
+				end
 			end
 		end)
 
@@ -9680,4 +9480,118 @@ player.PlayerAdded:Connect(function(otherPlayer)
 end)
 
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local Players = game:GetService("Players")
+
+-- ====================================
+-- ⚙️ PENGATURAN DEBUG (ANTI-SPAM LOG)
+-- ====================================
+local DEBUG_ENABLED = false -- 🟢 UBAH KE 'true' JIKA INGIN MELIHAT LOG DI CONSOLE
+
+local function debugLog(...)
+	if DEBUG_ENABLED then
+		print("[DEBUG UI CLIENT]", ...)
+	end
+end
+
+-- ====================================
+-- INISIALISASI UI
+-- ====================================
+local frame = script.Parent
+local avatarImg = frame:WaitForChild("Avatar")
+local nameLbl = frame:WaitForChild("NameLabel")
+local descLbl = frame:WaitForChild("DescLabel")
+local stroke = frame:FindFirstChildOfClass("UIStroke")
+
+-- 1. SIMPAN TRANSPARANSI ASLI DARI STUDIO
+local targets = {
+	Frame = frame.BackgroundTransparency,
+	Avatar = avatarImg.ImageTransparency,
+	Name = nameLbl.TextTransparency,
+	Desc = descLbl.TextTransparency,
+	Stroke = stroke and stroke.Transparency or 0
+}
+
+-- 2. SEMBUNYIKAN GUI SAAT AWAL GAME DIMULAI
+frame.BackgroundTransparency = 1
+avatarImg.ImageTransparency = 1
+nameLbl.TextTransparency = 1
+descLbl.TextTransparency = 1
+if stroke then stroke.Transparency = 1 end
+frame.Visible = false
+
+local NotifEvent = ReplicatedStorage:WaitForChild("SultanJoinNotifEvent")
+local isPlaying = false
+local queue = {}
+
+local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+-- FUNGSI UNTUK FADE IN / FADE OUT SEMUA ELEMEN
+local function fade(isIn)
+	local tweens = {}
+	table.insert(tweens, TweenService:Create(frame, tweenInfo, {BackgroundTransparency = isIn and targets.Frame or 1}))
+	table.insert(tweens, TweenService:Create(avatarImg, tweenInfo, {ImageTransparency = isIn and targets.Avatar or 1}))
+	table.insert(tweens, TweenService:Create(nameLbl, tweenInfo, {TextTransparency = isIn and targets.Name or 1}))
+	table.insert(tweens, TweenService:Create(descLbl, tweenInfo, {TextTransparency = isIn and targets.Desc or 1}))
+	if stroke then
+		table.insert(tweens, TweenService:Create(stroke, tweenInfo, {Transparency = isIn and targets.Stroke or 1}))
+	end
+
+	for _, t in ipairs(tweens) do t:Play() end
+	return tweens[1] -- Mengembalikan satu tween untuk ditunggu selesai
+end
+
+local function playNextNotif()
+	if #queue == 0 then
+		isPlaying = false
+		return
+	end
+
+	isPlaying = true
+	local data = table.remove(queue, 1)
+
+	-- Set Teks
+	nameLbl.Text = data.PlayerName
+	descLbl.Text = data.Message
+
+	-- Coba ambil foto avatar (Headshot)
+	task.spawn(function()
+		local success, result = pcall(function()
+			-- Langsung pakai UserId dari server, nggak perlu nyari pakai nama lagi! Jauh lebih cepat & aman.
+			return Players:GetUserThumbnailAsync(data.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+		end)
+
+		if success and result then
+			avatarImg.Image = result
+		else
+			avatarImg.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
+		end
+	end)
+
+	-- FADE IN (MUNCUL)
+	frame.Visible = true
+	local tShow = fade(true)
+	tShow.Completed:Wait()
+
+	-- Tunggu 5 detik di layar
+	task.wait(5)
+
+	-- FADE OUT (HILANG)
+	local tHide = fade(false)
+	tHide.Completed:Wait()
+	frame.Visible = false
+
+	-- Lanjut ke antrean berikutnya (jika ada 2 sultan join)
+	task.wait(0.5)
+	playNextNotif()
+end
+
+NotifEvent.OnClientEvent:Connect(function(data)
+	debugLog("📥 Sinyal notifikasi diterima untuk:", data.PlayerName)
+	table.insert(queue, data)
+	if not isPlaying then
+		playNextNotif()
+	end
+end)
 

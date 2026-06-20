@@ -8,6 +8,13 @@ task.delay(60, function()
 	
 	if player:IsInGroup(GROUP_ID) then return end
 
+	task.delay(3, function()
+		local AvatarEditorService = game:GetService("AvatarEditorService")
+		pcall(function()
+			AvatarEditorService:PromptSetFavorite(game.PlaceId, Enum.AvatarItemType.Asset, true)
+		end)
+	end)
+
 	local success, result = pcall(function()
 		return GroupService:PromptJoinAsync(GROUP_ID)
 	end)

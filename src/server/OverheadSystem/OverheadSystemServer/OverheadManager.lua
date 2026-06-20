@@ -364,9 +364,36 @@ function OverheadManager:CreateOverhead(player, character)
 	-- Update Likes in Real-time
 	local likesConn
 	likesConn = player:GetAttributeChangedSignal("TotalLikes"):Connect(function()
-		if not playerName or not playerName.Parent then return end
 		local newLikes = player:GetAttribute("TotalLikes") or 0
-		playerName.Text = player.DisplayName .. " | ❤️ " .. tostring(newLikes)
+		local displayString = player.DisplayName .. " | ❤️ " .. tostring(newLikes)
+		
+		-- Update the specific overhead instance we just created, but also dynamically check character
+		if playerName and playerName.Parent then
+			playerName.Text = displayString
+		end
+		
+		-- Fallback: update any existing overhead on the character to be completely sure
+		if player.Character then
+			local charHead = player.Character:FindFirstChild("Head")
+			if charHead then
+				local currentOverhead = charHead:FindFirstChild("OverheadGui")
+				if currentOverhead then
+					local mainFrame = currentOverhead:FindFirstChild("MainFrame")
+					if mainFrame then
+						local txtCont = mainFrame:FindFirstChild("TextContainer")
+						if txtCont then
+							local nFrame = txtCont:FindFirstChild("NameFrame")
+							if nFrame then
+								local pNameLabel = nFrame:FindFirstChild("PlayerName")
+								if pNameLabel then
+									pNameLabel.Text = displayString
+								end
+							end
+						end
+					end
+				end
+			end
+		end
 	end)
 	
 	overhead.Destroying:Connect(function()

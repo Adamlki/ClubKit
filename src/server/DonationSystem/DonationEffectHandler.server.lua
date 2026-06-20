@@ -44,7 +44,7 @@ local PRICE_RANGES = {
 		minPrice          = 900,
 		maxPrice          = 9999999,
 		templateName      = "Level4",
-		useCinematic      = true,
+		useCinematic      = false,
 		cinematicColor    = { r = 255, g = 215, b = 0 },
 		cinematicDuration = 10,
 	},

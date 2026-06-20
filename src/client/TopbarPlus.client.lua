@@ -12,6 +12,9 @@ local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local Icon      = require(ReplicatedStorage:WaitForChild("Icon"))
 
+-- 🔥 INTEGRASI MODULE ANIMASI
+local UIAnimator = require(ReplicatedStorage:WaitForChild("UIAnimator"))
+
 -- Remotes untuk SyncTo
 local Remotes            = ReplicatedStorage:WaitForChild("Remotes", 15)
 local UpdateLeaderStatus = Remotes and Remotes:WaitForChild("UpdateLeaderStatus", 10)
@@ -23,6 +26,7 @@ local startSyncRE        = Remotes and Remotes:WaitForChild("startSync", 10)
 local CONFIG = {
 	Alignment = "left",
 	InitDelay = 2,
+	GlobalAnimations = true, -- Ganti ke false untuk mematikan semua animasi secara global
 
 	UseStroke       = false,
 	StrokeThickness = 0,
@@ -38,12 +42,14 @@ local CONFIG = {
 
 -- ============================================================
 -- PER-ICON CONFIG
+-- (Tambahkan `animate = false` untuk mematikan animasi secara spesifik)
 -- ============================================================
 local ICON_CONFIGS = {
 	Menu      = { enabled = true, image = "rbxassetid://87603332567027",  label = "Menu", order = 1 },
 	Dance     = { enabled = true, image = "rbxassetid://113394514826547", label = "", order = 2 },
-	Music     = { enabled = true, image = "rbxassetid://123643550590893", label = "", order = 3 },
+	Music     = { enabled = true, image = "rbxassetid://123643550590893", label = "", order = 3, animate = false },
 	Gamepass  = { enabled = true, image = "rbxassetid://140276937557646", label = "", order = 4 }, -- Shop di luar menu
+	Refresh   = { enabled = true, image = nil, label = "/", alignment = "right", order = 5 },
 
 	-- Item di dalam Menu:
 	Broadcast = { enabled = true, label = "BC"       },
@@ -64,6 +70,7 @@ local function getCfg(name)
 		caption    = cfg.caption    or nil,
 		order      = cfg.order      or nil,
 		alignment  = cfg.alignment  or CONFIG.Alignment,
+		animate    = CONFIG.GlobalAnimations and (cfg.animate ~= false),
 	}
 end
 
@@ -99,6 +106,7 @@ local guis = {
 	MyHat         = safeGet(playerGui, "MyHat"),
 	ServerMessage = safeGet(playerGui, "AdminNotif"),
 	GlobalEffect  = safeGet(playerGui, "GlobalEffectGui", 5),
+	Refresh       = safeGet(playerGui, "RefreshGui"),
 }
 
 -- ============================================================
@@ -216,20 +224,28 @@ local function createIcon(name, targetGui, targetFrame)
 	applyConfig(icon, cfg)
 	applyStroke(icon)
 
-	icons[name] = { icon = icon, gui = targetGui, frame = targetFrame, isOpen = false, lockSync = false }
+	icons[name] = { icon = icon, gui = targetGui, frame = targetFrame, isOpen = false, lockSync = false, animate = cfg.animate }
 
 	icon:bindEvent("selected", function()
 		playClick()
 		for otherName, d in pairs(icons) do
 			if otherName ~= name and d.isOpen and not d.lockSync then
-				d.frame.Visible = false
+				if d.animate then
+					UIAnimator.Close(d.frame)
+				else
+					d.frame.Visible = false
+				end
 				d.isOpen = false
 				d.icon:deselect()
 			end
 		end
 		local d = icons[name]
 		if d and d.frame and not d.lockSync then
-			d.frame.Visible = true
+			if d.animate then
+				UIAnimator.Open(d.frame)
+			else
+				d.frame.Visible = true
+			end
 			d.isOpen = true
 		end
 		if menuIcon then
@@ -242,7 +258,11 @@ local function createIcon(name, targetGui, targetFrame)
 		playClick()
 		local d = icons[name]
 		if d and not d.lockSync then
-			d.frame.Visible = false
+			if d.animate then
+				UIAnimator.Close(d.frame)
+			else
+				d.frame.Visible = false
+			end
 			d.isOpen = false
 		end
 	end)
@@ -304,7 +324,7 @@ if guis.Emote then
 	local frame = guis.Emote:FindFirstChild("MainFrame")
 	local icon  = createIcon("Dance", guis.Emote, frame)
 	if icon then
-		setupFrameSync("Dance", frame, nil)
+		setupFrameSync("Dance", frame, {"Header", "CloseBtn"})
 		hideOriginalButton(guis.Emote, "Dance")
 	end
 end
@@ -325,6 +345,15 @@ if guis.Gamepass then
 		hideOriginalButton(guis.Gamepass, "Shop")
 		local cp = frame and frame:FindFirstChild("Header") and {"Header","CloseBtn"} or {"CloseBtn"}
 		setupFrameSync("Gamepass", frame, cp)
+	end
+end
+
+if guis.Refresh then
+	local frame = guis.Refresh:FindFirstChild("MainFrame")
+	local icon  = createIcon("Refresh", guis.Refresh, frame)
+	if icon then
+		local cp = frame and frame:FindFirstChild("Header") and {"Header","CloseBtn"} or {"CloseBtn"}
+		setupFrameSync("Refresh", frame, cp)
 	end
 end
 
@@ -397,7 +426,11 @@ if guis.MyHat then
 						if not show then
 							local d = icons["MyHat"]
 							if d then
-								d.frame.Visible = false
+								if d.animate then
+									UIAnimator.Close(d.frame)
+								else
+									d.frame.Visible = false
+								end
 								d.isOpen = false
 								icon:deselect()
 							end

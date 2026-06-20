@@ -231,4 +231,30 @@ function module.stripAnimationId(id)
 	return string.match(id, "%d+") or ""
 end
 
+-- ============================================
+-- Auto-Cleanup Event (Mencegah Memory Leak)
+-- ============================================
+local Players = game:GetService("Players")
+
+local function setupAutoCleanup(player)
+	player.CharacterRemoving:Connect(function(character)
+		-- Menggunakan referensi 'character' yang sedang dihapus
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			local animator = humanoid:FindFirstChildOfClass("Animator")
+			if animator and trackCache[animator] then
+				for _, track in pairs(trackCache[animator]) do
+					pcall(function() track:Destroy() end)
+				end
+				trackCache[animator] = nil
+			end
+		end
+	end)
+end
+
+Players.PlayerAdded:Connect(setupAutoCleanup)
+for _, p in ipairs(Players:GetPlayers()) do
+	setupAutoCleanup(p)
+end
+
 return module

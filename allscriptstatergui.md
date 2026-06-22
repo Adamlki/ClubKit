@@ -1413,8 +1413,10 @@ local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-repeat task.wait() until player.Character
-task.wait(1)
+-- 🔥 FIX: Hindari Busy Waiting! Gunakan event bawaan Roblox
+if not player.Character then
+	player.CharacterAdded:Wait()
+end
 
 local CarryConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("CarryConfig"))
 
@@ -2038,7 +2040,7 @@ end
 
 updateHudPosition(); updateHudPosition()
 createBackpackSlot() -- buat slot backpack permanen
-reloadInventory(player.Character or player.CharacterAdded:Wait())
+reloadInventory(player.Character or player.CharacterAdded:task.wait())
 camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateHudPosition)
 player.CharacterAdded:Connect(reloadInventory)
 Inventory.SearchBox:GetPropertyChangedSignal("Text"):Connect(searchTool)
@@ -2523,7 +2525,7 @@ function module:addTool(tool: Tool, parent: string, position: number)
 					local character = player.Character
 					if character then
 						tool.Parent = character
-						RunService.RenderStepped:Wait()
+						RunService.RenderStepped:task.wait()
 						tool.Parent = workspace
 					end
 				end
@@ -2869,6 +2871,27 @@ end
 -- BROADCAST LISTENER
 -- ============================================
 
+local donationQueue = {}
+local isProcessingDonation = false
+
+local function processDonationQueue()
+	if isProcessingDonation then return end
+	isProcessingDonation = true
+
+	while #donationQueue > 0 do
+		local data = table.remove(donationQueue, 1)
+
+		ClientUI.updateNotificationContent(data.displayName, data.amount, data.message)
+		ClientUI.showNotification()
+		
+		task.wait(5)
+		ClientUI.hideNotification()
+		task.wait(0.5)
+	end
+
+	isProcessingDonation = false
+end
+
 local function setupBroadcastListener()
 	local receiveRemote = ReplicatedStorage:WaitForChild("ReceiveDonationBroadcast", 10)
 	if not receiveRemote then
@@ -2882,11 +2905,12 @@ local function setupBroadcastListener()
 		ClientUI.sendDonationChatMessage(displayName, amount)
 
 		if amount >= ClientConfig.NOTIFICATION.MIN_DONATION then
-			ClientUI.updateNotificationContent(displayName, amount, message)
-			ClientUI.showNotification()
-			task.delay(5, function()
-				ClientUI.hideNotification()
-			end)
+			table.insert(donationQueue, {
+				displayName = displayName,
+				amount = amount,
+				message = message
+			})
+			processDonationQueue()
 		else
 			debugLog("Skip notifikasi UI (amount < MIN_DONATION)")
 		end
@@ -3810,7 +3834,7 @@ local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
 	local capturedTicket = applyTicket
 	task.spawn(function()
 		local timeout = os.clock() + 5
-		while track and track.Length == 0 and os.clock() < timeout do RunService.RenderStepped:Wait() end
+		while track and track.Length == 0 and os.clock() < timeout do RunService.RenderStepped:task.wait() end
 		if char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
 
 		if startTime and track.Length > 0 then
@@ -3881,7 +3905,7 @@ local function monitorPlayerCharacter(targetPlayer)
 			if char ~= player.Character and track.Animation and emoteIdCache[track.Animation.AnimationId] then
 				task.spawn(function()
 					local timeout = os.clock() + 5
-					while track and track.Length == 0 and os.clock() < timeout do RunService.RenderStepped:Wait() end
+					while track and track.Length == 0 and os.clock() < timeout do RunService.RenderStepped:task.wait() end
 					forceSnapCharacterDance(track)
 				end)
 			end
@@ -4022,7 +4046,7 @@ end)
 
 local function setupSyncMonitoring()
 	if syncUpdateConnection then syncUpdateConnection:Disconnect() syncUpdateConnection = nil end
-	if not player.Character then player.CharacterAdded:Wait() end
+	if not player.Character then player.CharacterAdded:task.wait() end
 	updateUnsyncFrame()
 
 	syncUpdateConnection = player.Character:GetAttributeChangedSignal("Syncing"):Connect(function()
@@ -4282,7 +4306,7 @@ end
 task.spawn(function()
 	repeat task.wait() until #emotesFolder:GetChildren() > 0
 	preloadLabel.Visible = true
-	if not player.Character then player.CharacterAdded:Wait() end
+	if not player.Character then player.CharacterAdded:task.wait() end
 	task.wait(2)
 	local success = AnimationPreloader.preloadAnimations(emotesFolder)
 	preloadLabel.Text = success and "Animations ready!" or "Preload failed"
@@ -4525,7 +4549,7 @@ notificationframe.Visible = false
 Logger:Info("Initializing...")
 
 task.spawn(function()
-	if not Player.Character then Player.CharacterAdded:Wait() end
+	if not Player.Character then Player.CharacterAdded:task.wait() end
 	task.wait(2)
 	ShopHandler:LoadShopData()
 	Logger:Success("Initialization complete - Simplified Version (Self-Purchase Only)")
@@ -5242,8 +5266,8 @@ local function showCinematic(donationData)
 		local ep = UDim2.new(0.5, -200 + (i * 80), 0.5,  150)
 		task.spawn(function()
 			-- Batas waktu 10 detik agar thread mati jika frame error
-			local startTime = tick()
-			while ray and ray.Parent and (tick() - startTime < 10) do
+			local startTime = os.clock()
+			while ray and ray.Parent and (os.clock() - startTime < 10) do
 				local mt = TweenService:Create(ray, TweenInfo.new(2, Enum.EasingStyle.Linear), {Position = ep})
 				mt:Play() 
 				mt.Completed:Wait()
@@ -5280,6 +5304,8 @@ local function showCinematic(donationData)
 	TweenService:Create(shadow2, zoomInfo, {Size = UDim2.new(1.5, 0, 0, 90), TextSize = 44, Position = UDim2.new(0.5, 4, 0, 4)}):Play()
 	zoomIn:Play()
 	zoomIn.Completed:Wait()
+
+	if skipRequested then resetCinematic() return end
 
 	-- Impact flash
 	impactFlash.Visible                = true
@@ -5321,6 +5347,8 @@ local function showCinematic(donationData)
 	TweenService:Create(shadow1, bounceInfo, {Size = UDim2.new(1,0,0,60), TextSize = 36, Position = UDim2.new(0.5,2,0,2)}):Play()
 	TweenService:Create(shadow2, bounceInfo, {Size = UDim2.new(1,0,0,60), TextSize = 36, Position = UDim2.new(0.5,4,0,4)}):Play()
 	bb:Play() bb.Completed:Wait()
+
+	if skipRequested then resetCinematic() return end
 
 	-- Chromatic aberration (sementara)
 	local redChrome  = titleLabel:Clone()
@@ -5498,7 +5526,7 @@ local Workspace = game:GetService("Workspace")
 
 local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then
-	Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+	Players:GetPropertyChangedSignal("LocalPlayer"):task.wait()
 	LocalPlayer = Players.LocalPlayer
 end
 
@@ -6292,15 +6320,17 @@ LikeBtn.MouseButton1Click:Connect(function()
 			Text = "You sent a like to " .. currentTargetPlayer.Name,
 			Duration = 3,
 		})
+		
+		-- 🔥 FIX: Lepaskan kuncian tombol agar bisa dipakai lagi nanti!
+		isLiking = false
 	else
 		-- Jika gagal atau target tidak valid, kembalikan UI ke semula
 		LoveImage.ImageColor3 = Color3.fromRGB(255, 255, 255)
 		if result then
 			warn("[LIKE] Failed:", result)
 		end
+		isLiking = false
 	end
-
-	isLiking = false
 end)
 
 
@@ -6920,7 +6950,7 @@ local function setupSyncMonitoring()
 		syncConnection:Disconnect()
 		syncConnection = nil
 	end
-	local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+	local character = localPlayer.Character or localPlayer.CharacterAdded:task.wait()
 	updateSyncButtonState()
 	syncConnection = character:GetAttributeChangedSignal("Syncing"):Connect(updateSyncButtonState)
 end
@@ -7104,6 +7134,7 @@ end)
 -- ============================================
 Players.PlayerRemoving:Connect(function(player)
 	hiddenPlayers[player] = nil
+	OutfitCache[player.UserId] = nil
 	if monitoringConnections[player] then
 		for _, conn in ipairs(monitoringConnections[player]) do
 			conn:Disconnect()
@@ -7278,10 +7309,10 @@ local function event(donator, reciever, amount)
 
 	local u8 = true;
 	local u9 = 0.5;
-	spawn(function()
+	task.spawn(function()
 		while u8 == true do
-			wait(u9);
-			spawn(function()
+			task.wait(u9);
+			task.spawn(function()
 				local v30 = math.random(100, 400) / 100;
 				local v31 = math.random(250, 400) / 100;
 				local v32 = math.random(500, 750);
@@ -7320,7 +7351,7 @@ local function event(donator, reciever, amount)
 				l__TweenService__1:Create(v33.Whoosh, TweenInfo.new(v31 * 0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
 					Volume = 1
 				}):Play();
-				wait(v31);
+				task.wait(v31);
 				v33.Transparency = 1;
 				v33.Orientation = Vector3.new(0, 0, 0);
 				v33.Glow.Range = v33.Glow.Range * 1.5;
@@ -7342,13 +7373,13 @@ local function event(donator, reciever, amount)
 				v33.Trail.Enabled = false;
 				v33.Whoosh.Playing = false;
 				v33.Impact:Play();
-				wait(3);
+				task.wait(3);
 				v33:Destroy();
 			end);		
 		end;
 	end);
 
-	spawn(function()
+	task.spawn(function()
 		l__Sounds__20.Summon:Play();
 		l__Sounds__20.Earthquake:Play();
 		v25.PortalAmbiance.Playing = true;
@@ -7371,7 +7402,7 @@ local function event(donator, reciever, amount)
 			PlaybackSpeed = 1
 		}):Play();
 		v24:ShakeSustain(u3.Presets.Earthquake);
-		wait(7);
+		task.wait(7);
 		l__TweenService__1:Create(l__Sounds__20.CrumbleLoop, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
 			Volume = 0
 		}):Play();
@@ -7382,7 +7413,7 @@ local function event(donator, reciever, amount)
 		}):Play();
 	end)
 
-	wait(math.random(14, 19))
+	task.wait(math.random(14, 19))
 	v67.Parent = workspace
 	v68.Parent = workspace
 	v69.Parent = workspace
@@ -7392,7 +7423,7 @@ local function event(donator, reciever, amount)
 	charge.Parent = heavenball
 	heavenball.Parent = workspace
 	charge:Play()
-	wait(1.25)
+	task.wait(1.25)
 	doit = true
 	if doit then
 		tweening(heavenball, 6, {
@@ -7401,7 +7432,7 @@ local function event(donator, reciever, amount)
 		local ending = l__Sounds__20.ChargeEndSound:Clone()
 		ending.Parent = heavenball
 		ending:Play()
-		wait(1.5)
+		task.wait(1.5)
 		v67:Destroy()
 		v68:Destroy()
 		v69:Destroy()
@@ -7412,7 +7443,7 @@ local function event(donator, reciever, amount)
 		l__TweenService__1:Create(heavenball, TweenInfo.new(3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, 0, false, 0), {
 			Position = Vector3.new(-232, 126.381, -443) 
 		}):Play();
-		wait(1.25)
+		task.wait(1.25)
 
 		doit = false
 	end
@@ -7427,7 +7458,7 @@ local function event(donator, reciever, amount)
 		}):Play();
 		l__Sounds__20.Sparkle:Play()
 		v24:ShakeSustain(u3.Presets.Earthquake);
-		wait(3)
+		task.wait(3)
 		ticking = true
 	end
 
@@ -7437,55 +7468,55 @@ local function event(donator, reciever, amount)
 		ticksound.Playing = true
 		l__Lighting__4.ClockTime = 10
 		l__Lighting__4.FogColor = Color3.fromRGB(144, 228, 248)
-		wait(1)
+		task.wait(1)
 		l__Lighting__4.ClockTime = 0
 		l__Lighting__4.FogColor = Color3.fromRGB(0,0,0)
-		wait(1)
+		task.wait(1)
 		l__Lighting__4.ClockTime = 10
 		l__Lighting__4.FogColor = Color3.fromRGB(144, 228, 248)
-		wait(1)
+		task.wait(1)
 		l__Lighting__4.ClockTime = 0
 		l__Lighting__4.FogColor = Color3.fromRGB(0,0,0)
-		wait(1)
+		task.wait(1)
 		l__Lighting__4.ClockTime = 10
 		l__Lighting__4.FogColor = Color3.fromRGB(144, 228, 248)
-		wait(1)
+		task.wait(1)
 		l__Lighting__4.ClockTime = 0
 		l__Lighting__4.FogColor = Color3.fromRGB(0,0,0)
-		wait(1)
+		task.wait(1)
 		l__Lighting__4.ClockTime = 10
 		l__Lighting__4.FogColor = Color3.fromRGB(144, 228, 248)
-		wait(1)
+		task.wait(1)
 		l__Lighting__4.ClockTime = 0
 		l__Lighting__4.FogColor = Color3.fromRGB(0,0,0)
-		wait(1)
+		task.wait(1)
 		l__Lighting__4.ClockTime = 10
 		l__Lighting__4.FogColor = Color3.fromRGB(144, 228, 248)
-		wait(1)
+		task.wait(1)
 		l__Lighting__4.ClockTime = 0
 		l__Lighting__4.FogColor = Color3.fromRGB(0,0,0)
-		wait(1)
+		task.wait(1)
 		l__Lighting__4.ClockTime = 10
 		l__Lighting__4.FogColor = Color3.fromRGB(144, 228, 248)
-		wait(1)
+		task.wait(1)
 		l__Lighting__4.ClockTime = 0
 		l__Lighting__4.FogColor = Color3.fromRGB(0,0,0)
-		wait(1)
+		task.wait(1)
 		l__Lighting__4.ClockTime = 10
 		l__Lighting__4.FogColor = Color3.fromRGB(144, 228, 248)
-		wait(1)
+		task.wait(1)
 		l__Lighting__4.ClockTime = 0
 		l__Lighting__4.FogColor = Color3.fromRGB(0,0,0)
-		wait(1)
+		task.wait(1)
 		l__Lighting__4.ClockTime = 10
 		l__Lighting__4.FogColor = Color3.fromRGB(144, 228, 248)
-		wait(1)
+		task.wait(1)
 		l__Lighting__4.ClockTime = 0
 		l__Lighting__4.FogColor = Color3.fromRGB(0,0,0)
-		wait(1)
+		task.wait(1)
 		ticksound:Stop()
 		ticksound:Destroy()
-		wait(5)
+		task.wait(5)
 		ticking = false
 	end
 
@@ -7495,7 +7526,7 @@ local function event(donator, reciever, amount)
 		l__TweenService__1:Create(l__Sounds__20.CrumbleLoop, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
 			Volume = 0
 		}):Play();
-		wait(1)
+		task.wait(1)
 		l__TweenService__1:Create(v25, TweenInfo.new(10, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, 0, false, 0), {
 			Size = Vector3.new(75,75,75)
 		}):Play();
@@ -7507,7 +7538,7 @@ local function event(donator, reciever, amount)
 				u2(l2, 2);
 			end;
 		end;
-		wait(10)
+		task.wait(10)
 		for l1, l2 in pairs(v25.Attachment:GetChildren()) do
 			if l2:IsA("ParticleEmitter") then
 				l2.Rate = 0
@@ -7564,7 +7595,7 @@ local function event(donator, reciever, amount)
 		l__Sounds__20.Drop1:Play()
 		l__Sounds__20.Drop2:Play()
 		v25.LaunchSound:Play();
-		wait(1.7)
+		task.wait(1.7)
 		l__Sounds__20.ExplosionSound:Play()
 		l__Sounds__20.Sparkle:Stop()
 		ambiance:Destroy()
@@ -7628,7 +7659,7 @@ local function event(donator, reciever, amount)
 		l__TweenService__1:Create(game.Lighting.ColorCorrection, TweenInfo.new(0.05), {
 			Brightness = 1.2
 		}):Play();
-		wait(0.05);
+		task.wait(0.05);
 		l__TweenService__1:Create(game.Lighting.ColorCorrection, TweenInfo.new(3), {
 			Brightness = 0.05
 		}):Play();
@@ -7689,11 +7720,11 @@ local function event(donator, reciever, amount)
 		l__TweenService__1:Create(v18.Star, TweenInfo.new(10), {Rotation = 360}):Play()
 		l__TweenService__1:Create(v18.Star, TweenInfo.new(10), {ImageTransparency = 1}):Play()
 
-		wait(.25)
+		task.wait(.25)
 		l__TweenService__1:Create(v18.TopText, TweenInfo.new(5, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out, 0, false, 0), {Size = UDim2.fromScale(1.5, 0.1)}):Play()
-		wait(.25)
+		task.wait(.25)
 		l__TweenService__1:Create(v18.MiddleText, TweenInfo.new(5, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out, 0, false, 0), {Size = UDim2.fromScale(1, 1)}):Play()
-		wait(.25)
+		task.wait(.25)
 		l__TweenService__1:Create(v18.BottomText, TweenInfo.new(5, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out, 0, false, 0), {Size = UDim2.fromScale(1.5, 0.1)}):Play()
 		l__TweenService__1:Create(v25, TweenInfo.new(0.4, Enum.EasingStyle.Cubic, Enum.EasingDirection.In), {
 			Transparency = 1
@@ -7703,12 +7734,12 @@ local function event(donator, reciever, amount)
 		}):Play();
 		impact.EmitPoint.Sparks.Enabled = true
 		impact.EmitPoint.SparkleExplosion.Enabled = true
-		wait(15)
+		task.wait(15)
 		l__TweenService__1:Create(impact.ChimeLoop, TweenInfo.new(60),{Volume = 0}):Play()
 		l__TweenService__1:Create(impact.ApplauseLoop, TweenInfo.new(60),{Volume = 0}):Play()
 		l__TweenService__1:Create(impact.CoinsLoop, TweenInfo.new(30),{Volume = 0}):Play()
 		heavenball:Remove();
-		wait(15)
+		task.wait(15)
 		v25:Destroy();
 		l__TweenService__1:Create(v18, TweenInfo.new(14, Enum.EasingStyle.Quint, Enum.EasingDirection.In, 0, false, 0),{Size = UDim2.fromScale(0,0)}):Play()
 		for i,v in pairs(impact.EmitPoint:GetChildren()) do
@@ -7716,9 +7747,9 @@ local function event(donator, reciever, amount)
 				l__TweenService__1:Create(v, TweenInfo.new(14), {Rate = 0}):Play()
 			end
 		end
-		wait(15)
+		task.wait(15)
 		v18:Destroy()
-		wait(45)
+		task.wait(45)
 		impact.CoinsLoop:Stop()
 		impact.ApplauseLoop:Stop()
 		impact.ChimeLoop:Stop()
@@ -7764,7 +7795,7 @@ local function event(donator, reciever, amount)
 			Intensity = -1
 		}):Play()
 
-		wait(7)
+		task.wait(7)
 
 		if v22 then v22:Destroy() end
 		if v23 then v23:Destroy() end
@@ -7890,7 +7921,7 @@ local function u7(p3, p4, p5, p6)
 		v7.AlignPosition.Position = l__NukeCFrame__8.Value.Position
 		v7.AlignOrientation.CFrame = l__NukeCFrame__8.Value
 	end)
-	wait(1)
+	task.wait(1)
 	script.Alarm:Play()
 	v7.Sparkles.Enabled = false
 	v7.ThrustEmitPoint.SmokePreLaunch.Enabled = true
@@ -7905,7 +7936,7 @@ local function u7(p3, p4, p5, p6)
 	l__TweenService__1:Create(v7.ThrustEmitPoint.SmokePreLaunch, TweenInfo.new(2.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
 		Rate = 100
 	}):Play()
-	wait(5)
+	task.wait(5)
 	v15:ShakeSustain(u3.Presets.Earthquake)
 	v7.Sparkles.Enabled = true
 	v7.ThrustEmitPoint.SmokePreLaunch.Enabled = false
@@ -7938,12 +7969,12 @@ local function u7(p3, p4, p5, p6)
 	for v19 = 1, 10 do
 		l__NukeCFrame__8.Value = l__NukeCFrame__8.Value:ToWorldSpace(CFrame.Angles(0, 0, 0.17453292519943295))
 		l__NukeCFrame__8.Value = l__NukeCFrame__8.Value:ToWorldSpace(CFrame.new(0, 25, 0))
-		wait(v19 * 0.2)
+		task.wait(v19 * 0.2)
 	end
 	v7.AlignPosition.Responsiveness = 10
 	v7.AlignOrientation.Responsiveness = 10
 	l__NukeCFrame__8.Value = CFrame.new(l__NukeCFrame__8.Value.Position, u4):ToWorldSpace(CFrame.Angles(-1.5707963267948966, 0, 0))
-	wait(0.5)
+	task.wait(0.5)
 	v12.Intensity = 1
 	v12.Size = 20
 	l__TweenService__1:Create(v12, TweenInfo.new(1, Enum.EasingStyle.Circular, Enum.EasingDirection.Out, 0, false, 0), {
@@ -7972,7 +8003,7 @@ local function u7(p3, p4, p5, p6)
 	l__TweenService__1:Create(l__NukeCFrame__8, TweenInfo.new(2.5, Enum.EasingStyle.Back, Enum.EasingDirection.In, 0, false, 0), {
 		Value = CFrame.new(u4 + Vector3.new(0, -1, 0), u4):ToWorldSpace(CFrame.Angles(1.5707963267948966, 0, 0))
 	}):Play()
-	wait(3)
+	task.wait(3)
 	v15:StopSustained(0)
 	v15:ShakeOnce(4, 6, 0.25, 4)
 	script.Alarm:Stop()
@@ -8068,14 +8099,14 @@ local function u7(p3, p4, p5, p6)
 	l__TweenService__1:Create(v26, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
 		Size = Vector3.new(1000, 100, 1000)
 	}):Play()
-	spawn(function()
+	task.spawn(function()
 		local v27 = v26:GetChildren()
 		for v28, v29 in pairs(v27) do
 			if v29:IsA("ParticleEmitter") then
 				v29.Enabled = true
 			end
 		end
-		wait(60)
+		task.wait(60)
 		for v30, v31 in pairs(v27) do
 			if v31:IsA("ParticleEmitter") then
 				l__TweenService__1:Create(v31, TweenInfo.new(60, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
@@ -8083,9 +8114,9 @@ local function u7(p3, p4, p5, p6)
 				}):Play()
 			end
 		end
-		wait(90)
+		task.wait(90)
 		v26.Size = Vector3.new(0, 0, 0)
-		wait(30)
+		task.wait(30)
 		v26:Destroy()
 	end)
 
@@ -8108,14 +8139,14 @@ local function u7(p3, p4, p5, p6)
 		Volume = 0, 
 		PlaybackSpeed = 1
 	}):Play()
-	wait(30) 
+	task.wait(30) 
 	l__TweenService__1:Create(l__Frame__9.UIScale, TweenInfo.new(3, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
 		Scale = 0
 	}):Play()
-	wait(15) 
+	task.wait(15) 
 	l__Frame__9.Parent.Enabled = false
 
-	wait(30) 
+	task.wait(30) 
 	if v15 then v15:Stop() end
 	if v12 then v12:Destroy() end
 	if v16 then v16:Disconnect() end
@@ -8356,7 +8387,7 @@ local function u7(modelTemplate, p5, p6, p7, p8)
 	local u9 = 0.5;
 	task.spawn(function()
 		while u8 == true do
-			wait(u9);
+			task.wait(u9);
 			task.spawn(function()
 				local v30 = math.random(100, 400) / 100;
 				local v31 = math.random(250, 400) / 100;
@@ -8396,7 +8427,7 @@ local function u7(modelTemplate, p5, p6, p7, p8)
 				l__TweenService__1:Create(v33.Whoosh, TweenInfo.new(v31 * 0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
 					Volume = 0.1
 				}):Play();
-				wait(v31);
+				task.wait(v31);
 				v33.Transparency = 1;
 				v33.Orientation = Vector3.new(0, 0, 0);
 				v33.Glow.Range = v33.Glow.Range * 1.5;
@@ -8418,7 +8449,7 @@ local function u7(modelTemplate, p5, p6, p7, p8)
 				v33.Trail.Enabled = false;
 				v33.Whoosh.Playing = false;
 				v33.Impact:Play();
-				wait(3);
+				task.wait(3);
 				v33:Destroy();
 			end);		
 		end;
@@ -8448,7 +8479,7 @@ local function u7(modelTemplate, p5, p6, p7, p8)
 				v43.Enabled = true;
 			end;
 		end;
-		wait(90);
+		task.wait(90);
 		l__TweenService__1:Create(l__Sounds__20.FireLoop, TweenInfo.new(30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
 			Volume = 0, 
 			PlaybackSpeed = 0.5
@@ -8468,10 +8499,10 @@ local function u7(modelTemplate, p5, p6, p7, p8)
 				}):Play();
 			end;
 		end;
-		wait(60);
+		task.wait(60);
 		v38.Size = Vector3.new(0, 0, 0);
 		v39.Size = Vector3.new(0, 0, 0);
-		wait(30);
+		task.wait(30);
 		v38:Destroy();
 		v39:Destroy();
 	end);
@@ -8729,11 +8760,11 @@ local function u7(modelTemplate, p5, p6, p7, p8)
 			Volume = 0, 
 			PlaybackSpeed = 1
 		}):Play();
-		wait(30);
+		task.wait(30);
 		l__TweenService__1:Create(l__Frame__66.UIScale, TweenInfo.new(15, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
 			Scale = 0
 		}):Play();
-		wait(30);
+		task.wait(30);
 		v63:Destroy();
 	end);
 	v21:GetMarkerReachedSignal("Release"):Connect(function(p16)
@@ -8789,10 +8820,10 @@ local function u7(modelTemplate, p5, p6, p7, p8)
 	v21:GetMarkerReachedSignal("FadeEnd"):Connect(function(p18)
 		debugPrint("Animation event: FadeEnd");
 		v52:Disconnect();
-		wait(5);
+		task.wait(5);
 		v11:Destroy();
 	end);
-	wait(1);
+	task.wait(1);
 	v21:Play();
 	task.spawn(function()
 		l__Sounds__20.Earthquake:Play();
@@ -8816,7 +8847,7 @@ local function u7(modelTemplate, p5, p6, p7, p8)
 				}):Play();
 			end;
 		end;
-		wait(7);
+		task.wait(7);
 		l__TweenService__1:Create(l__Sounds__20.CrumbleLoop, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
 			Volume = 0
 		}):Play();
@@ -8843,10 +8874,10 @@ local function u7(modelTemplate, p5, p6, p7, p8)
 			PlaybackSpeed = 0
 		}):Play();
 		v25.PortalClose1.PlayOnRemove = true;
-		wait(5);
+		task.wait(5);
 		v25:Destroy();
 	end);
-	wait(90);
+	task.wait(90);
 	u3:Stop();
 	l__TweenService__1:Create(v22, TweenInfo.new(30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
 		TintColor = Color3.fromRGB(255, 255, 255), 
@@ -8858,7 +8889,7 @@ local function u7(modelTemplate, p5, p6, p7, p8)
 		Intensity = -1
 	}):Play()
 
-	wait(15) 
+	task.wait(15) 
 	if v22 then v22:Destroy() end
 	if v23 then v23:Destroy() end
 	if l__Sounds__20 then l__Sounds__20:Destroy() end
@@ -9542,56 +9573,53 @@ local function fade(isIn)
 	return tweens[1] -- Mengembalikan satu tween untuk ditunggu selesai
 end
 
-local function playNextNotif()
-	if #queue == 0 then
-		isPlaying = false
-		return
-	end
-
+local function processQueue()
+	if isPlaying then return end
 	isPlaying = true
-	local data = table.remove(queue, 1)
 
-	-- Set Teks
-	nameLbl.Text = data.PlayerName
-	descLbl.Text = data.Message
+	while #queue > 0 do
+		local data = table.remove(queue, 1)
 
-	-- Coba ambil foto avatar (Headshot)
-	task.spawn(function()
-		local success, result = pcall(function()
-			-- Langsung pakai UserId dari server, nggak perlu nyari pakai nama lagi! Jauh lebih cepat & aman.
-			return Players:GetUserThumbnailAsync(data.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+		-- Set Teks
+		nameLbl.Text = data.PlayerName
+		descLbl.Text = data.Message
+
+		-- Coba ambil foto avatar (Headshot)
+		task.spawn(function()
+			local success, result = pcall(function()
+				-- Langsung pakai UserId dari server, nggak perlu nyari pakai nama lagi! Jauh lebih cepat & aman.
+				return Players:GetUserThumbnailAsync(data.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+			end)
+
+			if success and result then
+				avatarImg.Image = result
+			else
+				avatarImg.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
+			end
 		end)
 
-		if success and result then
-			avatarImg.Image = result
-		else
-			avatarImg.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
-		end
-	end)
+		-- FADE IN (MUNCUL)
+		frame.Visible = true
+		local tShow = fade(true)
+		tShow.Completed:Wait()
 
-	-- FADE IN (MUNCUL)
-	frame.Visible = true
-	local tShow = fade(true)
-	tShow.Completed:Wait()
+		-- Tunggu 5 detik di layar
+		task.wait(5)
 
-	-- Tunggu 5 detik di layar
-	task.wait(5)
+		-- FADE OUT (HILANG)
+		local tHide = fade(false)
+		tHide.Completed:Wait()
+		frame.Visible = false
 
-	-- FADE OUT (HILANG)
-	local tHide = fade(false)
-	tHide.Completed:Wait()
-	frame.Visible = false
+		-- Lanjut ke antrean berikutnya (jika ada 2 sultan join)
+		task.wait(0.5)
+	end
 
-	-- Lanjut ke antrean berikutnya (jika ada 2 sultan join)
-	task.wait(0.5)
-	playNextNotif()
+	isPlaying = false
 end
 
 NotifEvent.OnClientEvent:Connect(function(data)
 	debugLog("📥 Sinyal notifikasi diterima untuk:", data.PlayerName)
 	table.insert(queue, data)
-	if not isPlaying then
-		playNextNotif()
-	end
+	processQueue()
 end)
-

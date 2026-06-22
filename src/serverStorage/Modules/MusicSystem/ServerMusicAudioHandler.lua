@@ -210,8 +210,8 @@ function ServerMusicAudioHandler:Play(soundId, timePosition, playbackSpeed, pitc
 		end
 
 		-- Tunggu engine Roblox selesai mendownload lagu sebelum lanjut (Max 5 detik per percobaan)
-		local startLoad = tick()
-		while not self.serverSound.IsLoaded and (tick() - startLoad) < 5 do
+		local startLoad = os.clock()
+		while not self.serverSound.IsLoaded and (os.clock() - startLoad) < 5 do
 			task.wait(0.1)
 		end
 
@@ -325,8 +325,8 @@ function ServerMusicAudioHandler:Reload()
 			self.serverSound.SoundGroup = self.musicGroup
 		end
 
-		local startTime = tick()
-		while self.serverSound.TimeLength == 0 and (tick() - startTime) < 5 do
+		local startTime = os.clock()
+		while self.serverSound.TimeLength == 0 and (os.clock() - startTime) < 5 do
 			task.wait(0.1)
 		end
 

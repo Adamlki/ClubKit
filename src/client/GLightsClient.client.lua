@@ -109,7 +109,6 @@ end)
 -- Tidak menggunakan TweenService agar tidak mengubah ratusan part setiap frame.
 -- ============================================================
 local BLACK = Color3.new(0, 0, 0)
-local pendingColor = nil 
 
 local function setColors(newColor)
 	for neon in pairs(daftarNeon) do
@@ -130,37 +129,18 @@ local function setColors(newColor)
 	end
 end
 
-local colorTransitionActive = false
-
-local function applyColorWithFlash(color)
-	pendingColor = color
-	if colorTransitionActive then return end
-
-	colorTransitionActive = true
-	task.spawn(function()
-		-- FASE 1: Redup ke hitam (Instan)
-		setColors(BLACK)
-		task.wait(0.05) -- Flash hitam sangat singkat
-
-		-- FASE 2: Nyala warna baru (Instan)
-		setColors(pendingColor)
-
-		task.wait(0.1) -- Cooldown agar tidak terlalu cepat
-		colorTransitionActive = false
-	end)
+local function applyColor(color)
+	setColors(color)
 end
 
 local function turnOffAll()
-	pendingColor = BLACK
 	setColors(BLACK)
-	colorTransitionActive = false
 end
 
 -- ============================================================
--- 🔥 ARCHITECT FIX: 100% LOCAL BEAT DETECTION (0 PING SERVER)
+-- 🔥 LIGHTWEIGHT COLOR LOOP (Super Ringan 0% FPS Drop)
 -- ============================================================
 local SoundService = game:GetService("SoundService")
-local RunService   = game:GetService("RunService")
 
 -- Cari sumber lagu yang diputar oleh server
 local sound = SoundService:WaitForChild("ServerMusicSound", 30)
@@ -176,53 +156,29 @@ local stageColors = {
 	Color3.fromRGB(255, 255, 255) -- Putih Terang
 }
 
-local lastBeatTime = 0
-local beatCount = 0
-local FALLBACK_INTV = 2
 local isMusicPlaying = false
 
 local function pickRandomColor()
-	-- Trik AAA: Gunakan ServerTime sebagai "benih" acak. 
-	-- Hasilnya: Walau dihitung sendiri-sendiri oleh 100 HP pemain, 
-	-- warna yang muncul di 100 layar HP akan SELALU SAMA PERSIS detik itu juga!
-	local timeSeed = math.floor(workspace:GetServerTimeNow() * 2) 
+	-- Trik AAA: Gunakan ServerTime agar warna selalu sama persis
+	-- di semua HP pemain (Sync tanpa server lag).
+	local timeSeed = math.floor(workspace:GetServerTimeNow() / 1.5) 
 	local rng = Random.new(timeSeed)
 	return stageColors[rng:NextInteger(1, #stageColors)]
 end
 
-RunService.RenderStepped:Connect(function()
-	-- 1. Pastikan lagu ada dan sedang diputar
-	if not sound or not sound.IsPlaying then 
-		if isMusicPlaying then
-			isMusicPlaying = false
-			turnOffAll() -- Matikan lampu panggung jika lagu dijeda/berhenti
-		end
-		return 
-	end
-
-	isMusicPlaying = true
-
-	-- 2. BACA BASS LANGSUNG DARI SPEAKER HP PEMAIN!
-	local loudness = sound.PlaybackLoudness / 1000
-	local now = tick()
-
-	-- 3. LOGIKA DENTUMAN BASS
-	if loudness > 0.25 then
-		-- Cooldown anti-epilepsi (maksimal ganti warna 4 kali per detik)
-		if now - lastBeatTime > 0.25 then 
-			lastBeatTime = now
-			local interval = (loudness > 0.55) and 1 or 2
-			beatCount = beatCount + 1
-
-			if beatCount >= interval then
-				beatCount = 0
-				applyColorWithFlash(pickRandomColor())
+task.spawn(function()
+	while true do
+		task.wait(1.5) -- Ganti warna dengan santai setiap 1.5 detik
+		
+		if not sound or not sound.IsPlaying then 
+			if isMusicPlaying then
+				isMusicPlaying = false
+				turnOffAll() -- Matikan lampu panggung jika lagu dijeda/berhenti
 			end
+		else
+			isMusicPlaying = true
+			applyColor(pickRandomColor())
 		end
-
-		-- 4. LOGIKA LAGU SEPI (Misal intro lagu atau vokalnya saja)
-	elseif now - lastBeatTime >= FALLBACK_INTV then
-		lastBeatTime = now
-		applyColorWithFlash(pickRandomColor())
 	end
 end)
+

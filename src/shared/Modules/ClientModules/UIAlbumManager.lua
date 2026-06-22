@@ -108,6 +108,8 @@ function UIAlbumManager:UpdateFavorites(favoriteSongs)
 	-- CRITICAL: Restore previous selection!
 	if previousAlbum and self.albumButtons[previousAlbum] then
 		self:SelectAlbum(previousAlbum)
+	else
+		self:SelectAlbum("All Songs")
 	end
 end
 

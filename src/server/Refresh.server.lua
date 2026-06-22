@@ -56,7 +56,7 @@ local function onRefreshRequest(player)
 
 		if head then
 			for _, child in ipairs(head:GetChildren()) do
-				if child:IsA("BillboardGui") then
+				if child:IsA("BillboardGui") and child.Name ~= "OverheadGui" then
 					local clone = child:Clone()
 					table.insert(savedBillboards, {
 						name = child.Name,

@@ -360,6 +360,9 @@ function UIManager:UpdateQueue(queueData)
 			queueFrame.Parent = self.queueList
 		end
 
+		queueFrame.LayoutOrder = index
+		queueFrame.Name = "QueueItem_" .. string.format("%04d", index) -- Extra safety
+
 		local positionLabel = queueFrame:FindFirstChild("PositionLabel")
 		local requesterLabel = queueFrame:FindFirstChild("RequesterLabel")
 		local songTitleLabel = queueFrame:FindFirstChild("SongTitleLabel")

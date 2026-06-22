@@ -85,6 +85,17 @@ local function onCharacterAdded(player, character)
 			OverheadManager:RemoveOverhead(character)
 		end
 	end)
+
+	character:GetAttributeChangedSignal("RefreshTrigger"):Connect(function()
+		task.wait(0.5)
+		if player and player.Parent and character and character.Parent then
+			OverheadManager:CreateOverhead(player, character)
+			OverheadManager:UpdateTeam(player)
+			if OverheadManager.UpdateDonationRank then
+				OverheadManager:UpdateDonationRank(player, nil, nil)
+			end
+		end
+	end)
 end
 
 local function onPlayerAdded(player)

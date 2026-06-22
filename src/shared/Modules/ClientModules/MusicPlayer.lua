@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SoundService = game:GetService("SoundService")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local BridgeNet = require(game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet"))
 
 local UIManager = require(script.Parent.UIManager)
@@ -52,6 +53,17 @@ function MusicPlayer.new()
 	self:SetupToggleKey()
 	self:SetupChatCommands()
 	self:SetupRoleWatcher() -- ✅ NEW: Watch for role changes
+
+	-- ✅ NEW: Smooth local UI update loop (60 FPS)
+	RunService.RenderStepped:Connect(function()
+		local serverSound = SoundService:FindFirstChild("ServerMusicSound")
+		if serverSound and serverSound.IsPlaying and serverSound.TimeLength > 0 then
+			local current = serverSound.TimePosition
+			local duration = serverSound.TimeLength
+			local progress = math.clamp(current / duration, 0, 1)
+			self.uiManager:UpdateProgress(progress, current, duration)
+		end
+	end)
 
 	-- Set initial volume
 	self.uiManager:SetVolume(self.currentVolume * 100)
@@ -129,19 +141,10 @@ end
 -- SETUP VOLUME CONTROL (LIGHTWEIGHT - WAIT ONCE)
 -- ====================================
 function MusicPlayer:SetupVolumeControl()
-	-- Simple wait with timeout
-	local musicGroup = SoundService:WaitForChild("MusicGroup", 10)
-
-	if not musicGroup then
-		warn("[MusicPlayer] MusicGroup not found after 10s! Creating fallback...")
-		musicGroup = Instance.new("SoundGroup")
-		musicGroup.Name = "MusicGroup"
-		musicGroup.Parent = SoundService
-	end
-
+	-- Hilangkan angka 10, biarkan dia menunggu grup asli dari server
+	local musicGroup = SoundService:WaitForChild("MusicGroup") 
 	self.musicGroup = musicGroup
 	self.musicGroup.Volume = CONFIG.DEFAULT_VOLUME
-
 end
 
 -- ====================================
@@ -214,8 +217,8 @@ function MusicPlayer:RetryAudio()
 			end
 
 			-- Wait for sound to load
-			local startTime = tick()
-			while serverSound.TimeLength == 0 and (tick() - startTime) < 5 do
+			local startTime = os.clock()
+			while serverSound.TimeLength == 0 and (os.clock() - startTime) < 5 do
 				task.wait(0.1)
 			end
 
@@ -373,33 +376,10 @@ function MusicPlayer:HandleDispatchEvent(data)
 	elseif eventType == "QUEUE_UPDATE" then
 		self.uiManager:UpdateQueue(payload.queue or {})
 		
-		-- 🔥 PRELOAD AUDIO ANTRIAN: Agar transisi mulus dan tidak nge-lag/masuk di tengah-tengah
-		if payload.queue and #payload.queue > 0 then
-			task.spawn(function()
-				local ContentProvider = game:GetService("ContentProvider")
-				local soundsToPreload = {}
-				
-				-- Preload up to 2 next songs
-				for i = 1, math.min(2, #payload.queue) do
-					local item = payload.queue[i]
-					if item and item.musicData and item.musicData.id then
-						local sound = Instance.new("Sound")
-						sound.SoundId = "rbxassetid://" .. item.musicData.id
-						table.insert(soundsToPreload, sound)
-					end
-				end
-				
-				if #soundsToPreload > 0 then
-					pcall(function()
-						ContentProvider:PreloadAsync(soundsToPreload)
-					end)
-					-- Clean up temp sounds
-					for _, sound in ipairs(soundsToPreload) do
-						sound:Destroy()
-					end
-				end
-			end)
-		end
+		-- 🔥 AUDIO PRELOAD DINONAKTIFKAN
+		-- Menggunakan PreloadAsync pada Sound object seringkali membuat Roblox nge-freeze/stutter
+		-- karena memaksa client mendecode audio berat di main thread.
+		-- Roblox sudah punya sistem auto-streaming bawaan yang lebih mulus tanpa PreloadAsync.
 
 	elseif eventType == "SKIP_VOTE_START" then
 		self.uiManager:ShowSkipVote(payload.initiator, payload.songTitle, payload.totalVoters)
@@ -430,18 +410,9 @@ function MusicPlayer:HandleDispatchEvent(data)
 		self.uiManager:UpdateFavorites(payload.favoriteSongs or {})
 		
 	elseif eventType == "PRELOAD_AUDIO" then
-		-- 🔥 Menerima instruksi dari server untuk memuat lagu otomatis (Auto-Playlist/Queue) berikutnya
-		if payload.id then
-			task.spawn(function()
-				local ContentProvider = game:GetService("ContentProvider")
-				local sound = Instance.new("Sound")
-				sound.SoundId = "rbxassetid://" .. payload.id
-				pcall(function()
-					ContentProvider:PreloadAsync({sound})
-				end)
-				sound:Destroy()
-			end)
-		end
+		-- 🔥 AUDIO PRELOAD DINONAKTIFKAN 
+		-- Sengaja dimatikan agar tidak menyebabkan client freeze.
+		-- (Fitur ini sebelumnya menerima ID dari server untuk dipreload)
 	end
 end
 
@@ -474,15 +445,15 @@ function MusicPlayer:ForceAudioSync(payload)
 	-- Gunakan task.spawn agar tidak memblokir antarmuka UI
 	task.spawn(function()
 		local expectedAssetId = "rbxassetid://" .. payload.SoundId
-		local timeout = tick() + 300 
+		local timeout = os.clock() + 20 
 		
 		-- 0. Tunggu sampai SoundId benar-benar terupdate oleh Roblox Native Replication
-		while serverSound.SoundId ~= expectedAssetId and tick() < timeout do
+		while serverSound.SoundId ~= expectedAssetId and os.clock() < timeout do
 			task.wait(0.1)
 		end
 
 		-- 1. Tunggu chipset HP selesai mengunduh & mendecode audio (Tunggu hingga 60 detik untuk HP kentang/lag)
-		while serverSound.TimeLength == 0 and tick() < timeout do
+		while serverSound.TimeLength == 0 and os.clock() < timeout do
 			task.wait(0.2)
 		end
 
@@ -604,8 +575,7 @@ end
 -- ====================================
 function MusicPlayer:UpdateProgress(data)
 	if data.Duration and data.Duration > 0 then
-		local progress = math.clamp(data.Current / data.Duration, 0, 1)
-		self.uiManager:UpdateProgress(progress, data.Current, data.Duration)
+		-- UI visual update is now handled smoothly via RenderStepped loop!
 		
 		-- 🔥 SYNC AUDIO BERKELANJUTAN (SOFT SYNC)
 		local serverSound = SoundService:FindFirstChild("ServerMusicSound")

@@ -110,8 +110,10 @@ function MusicPlaybackManager:TryDetectDuration(soundId, playbackSpeed)
 		end
 
 		if sound.TimeLength > 0 then
-			-- ✅ FIX: sound.TimeLength is ALREADY adjusted by Roblox based on PlaybackSpeed
-			return sound.TimeLength
+			-- ✅ FIX: Convert to real-life duration by dividing by PlaybackSpeed
+			local speed = playbackSpeed or 1
+			if speed <= 0 then speed = 1 end
+			return sound.TimeLength / speed
 		end
 
 		return nil

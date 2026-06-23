@@ -109,7 +109,14 @@ end
 
 local function safeFind(parent, name)
 	if not parent then return nil end
-	return parent:FindFirstChild(name)
+	local cleanName = string.gsub(string.lower(name), "%s+", "")
+	for _, child in ipairs(parent:GetChildren()) do
+		local childClean = string.gsub(string.lower(child.Name), "%s+", "")
+		if childClean == cleanName then
+			return child
+		end
+	end
+	return nil
 end
 
 -- ====================================
@@ -162,16 +169,12 @@ end
 local function applyTitleEffect(titleFrame, titleLabel, titleData, character)
 	-- 🔥 FIX: Tambahkan fallback Color3.new(1, 1, 1) jika DataStore pemain corrupt
 	local base = titleData.Color or Color3.new(1, 1, 1)
-	local f    = CONFIG.FRAME_DARKEN_FACTOR
 
-	titleFrame.BackgroundColor3 = Color3.fromRGB(
-		math.floor(base.R * 255 * f),
-		math.floor(base.G * 255 * f),
-		math.floor(base.B * 255 * f)
-	)
+	-- TitleFrame Background diubah ke warna yang dipilih di admin panel
+	titleFrame.BackgroundColor3 = base
 
 	if not titleData.GradientEnabled then
-		titleLabel.TextColor3 = base
+		-- Teks biarkan putih default, jangan diubah
 		return
 	end
 
@@ -221,8 +224,6 @@ local function getSaweriaRank(player)
 
 			if dName == pName or dName == pDisplay then
 				return rank
-			elseif #dName >= 3 and (string.find(pName, dName, 1, true) or string.find(pDisplay, dName, 1, true)) then
-				return rank
 			end
 		end
 	end
@@ -235,13 +236,23 @@ end
 local function updateEditableFrame(editableFrame, player, titleData)
 	debugLog("??? Mulai merakit Overhead untuk:", player.Name)
 
-	local titleFrame      = safeFind(editableFrame, "TitleFrame") 
-	local topDonaturFrame = safeFind(editableFrame, "TopDonaturFrame")
+	-- Cari TitleFrame di EditableFrame ATAU di Parent-nya (BorderFrame) karena user memindahkannya
+	local titleFrame      = safeFind(editableFrame, "TitleFrame") or safeFind(editableFrame.Parent, "TitleFrame")
+	local topLikesFrame   = safeFind(editableFrame, "TopLikesFrame")
 	local topRobuxFrame   = safeFind(editableFrame, "TopRobuxFrame")
+	local topRupiahFrame  = safeFind(editableFrame, "TopRupiahFrame")
 
-	if not titleFrame or not topDonaturFrame or not topRobuxFrame then 
-		debugWarn("?? Frame UI tidak lengkap! Membatalkan update.")
-		return 
+	if not titleFrame then 
+		warn("[OVERHEAD] TitleFrame tidak ditemukan di EditableFrame!")
+	end
+	if not topLikesFrame then 
+		warn("[OVERHEAD] TopLikesFrame tidak ditemukan di EditableFrame!")
+	end
+	if not topRobuxFrame then 
+		warn("[OVERHEAD] TopRobuxFrame tidak ditemukan di EditableFrame!")
+	end
+	if not topRupiahFrame then 
+		warn("[OVERHEAD] TopRupiahFrame tidak ditemukan di EditableFrame!")
 	end
 
 	-- 1. Ambil Rank Rupiah (Otomatis dari Saweria)
@@ -262,57 +273,91 @@ local function updateEditableFrame(editableFrame, player, titleData)
 			end
 		end
 	end
-
-	-- No more fallback to old DonationRankSystem
-
 	local hasRobuxRank = robuxRank ~= nil and robuxRank >= 1 and robuxRank <= CONFIG.DONATION_TOP_RANKS
 
-	-- 3. Logika Penggabungan Teks
-	local combinedText = ""
-	local frameColor = nil
-	local textColor = nil
-
-	if hasRobuxRank and hasSaweriaRank then
-		combinedText = "TOP " .. robuxRank .. " ROBUX & TOP " .. saweriaRank .. " RUPIAH"
-		local colors = CONFIG.TOP_SPENDER_COLORS[robuxRank]
-		if colors then frameColor, textColor = colors.Frame, colors.Text end
-	elseif hasRobuxRank then
-		combinedText = "TOP " .. robuxRank .. " ROBUX"
-		local colors = CONFIG.TOP_SPENDER_COLORS[robuxRank]
-		if colors then frameColor, textColor = colors.Frame, colors.Text end
-	elseif hasSaweriaRank then
-		combinedText = "TOP " .. saweriaRank .. " RUPIAH"
-		local colors = CONFIG.TOP_DONATUR_COLORS[saweriaRank] or CONFIG.TOP_DONATUR_COLORS[1]
-		if colors then frameColor, textColor = colors.Frame, colors.Text end
-	end
-
-	-- 4. Tampilkan ke UI
-	if combinedText ~= "" then
-		topRobuxFrame.Visible = true
-		topDonaturFrame.Visible = false 
-		local robuxLabel = safeFind(topRobuxFrame, "toprobuxlabel")
-		if robuxLabel then
-			robuxLabel.Text = combinedText
-			if frameColor and textColor then
-				topRobuxFrame.BackgroundColor3 = frameColor
-				robuxLabel.TextColor3 = textColor
+	-- 3. Ambil Rank Likes
+	local likesRank = nil
+	if _G.LikesLeaderboardData then
+		local success, topLikes = pcall(function() return _G.LikesLeaderboardData end)
+		if success and type(topLikes) == "table" then
+			for _, donor in ipairs(topLikes) do
+				if donor.UserId == player.UserId then
+					likesRank = donor.Rank
+					break
+				end
 			end
 		end
-	else
-		topRobuxFrame.Visible = false
-		topDonaturFrame.Visible = false
+	end
+	-- Maksimal 30 sesuai dengan Leaderboard Likes
+	local hasLikesRank = likesRank ~= nil and likesRank >= 1 and likesRank <= 30
+
+	-- 4. Tampilkan ke UI: Top Likes
+	if topLikesFrame then
+		if hasLikesRank then
+			topLikesFrame.Visible = true
+			local likesLabel = safeFind(topLikesFrame, "TopLikesLabel")
+			if likesLabel then
+				likesLabel.Text = "Likes #" .. likesRank
+			end
+			-- Set frame color (menggunakan default colors yang tersedia)
+			local colorIndex = math.min(likesRank, 10)
+			local colors = CONFIG.TOP_DONATUR_COLORS and CONFIG.TOP_DONATUR_COLORS[colorIndex] or CONFIG.TOP_DONATUR_COLORS[10]
+			if colors and colors.Frame then
+				topLikesFrame.BackgroundColor3 = colors.Frame
+			end
+		else
+			topLikesFrame.Visible = false
+		end
 	end
 
-	-- 5. Title Custom
-	if titleData and titleData.Title ~= "" then
-		titleFrame.Visible = true
-		local titleLabel = safeFind(titleFrame, "TitleLabel")
-		if titleLabel then
-			titleLabel.Text = titleData.Title
-			task.spawn(function() applyTitleEffect(titleFrame, titleLabel, titleData, player.Character) end)
+	-- 5. Tampilkan ke UI: Top Robux
+	if topRobuxFrame then
+		if hasRobuxRank then
+			topRobuxFrame.Visible = true
+			local robuxLabel = safeFind(topRobuxFrame, "TopRobuxLabel")
+			if robuxLabel then
+				robuxLabel.Text = "Robux #" .. robuxRank
+			end
+			local colorIndex = math.min(robuxRank, 10)
+			local colors = CONFIG.TOP_SPENDER_COLORS and CONFIG.TOP_SPENDER_COLORS[colorIndex] or CONFIG.TOP_SPENDER_COLORS[10]
+			if colors and colors.Frame then
+				topRobuxFrame.BackgroundColor3 = colors.Frame
+			end
+		else
+			topRobuxFrame.Visible = false
 		end
-	else
-		titleFrame.Visible = false
+	end
+
+	-- 6. Tampilkan ke UI: Top Rupiah
+	if topRupiahFrame then
+		if hasSaweriaRank then
+			topRupiahFrame.Visible = true
+			local rupiahLabel = safeFind(topRupiahFrame, "TopRupiahLabel")
+			if rupiahLabel then
+				rupiahLabel.Text = "Rupiah #" .. saweriaRank
+			end
+			local colorIndex = math.min(saweriaRank, 10)
+			local colors = CONFIG.TOP_DONATUR_COLORS and CONFIG.TOP_DONATUR_COLORS[colorIndex] or CONFIG.TOP_DONATUR_COLORS[10]
+			if colors and colors.Frame then
+				topRupiahFrame.BackgroundColor3 = colors.Frame
+			end
+		else
+			topRupiahFrame.Visible = false
+		end
+	end
+
+	-- 7. Title Custom
+	if titleFrame then
+		if titleData and titleData.Title ~= "" then
+			titleFrame.Visible = true
+			local titleLabel = safeFind(titleFrame, "TitleLabel")
+			if titleLabel then
+				titleLabel.Text = titleData.Title
+				task.spawn(function() applyTitleEffect(titleFrame, titleLabel, titleData, player.Character) end)
+			end
+		else
+			titleFrame.Visible = false
+		end
 	end
 end
 

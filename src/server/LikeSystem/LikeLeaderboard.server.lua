@@ -83,12 +83,15 @@ local function updateLeaderboardBoard()
 	end
 
 	local rank = 1
+	local currentLikesData = {}
 	for _, entry in ipairs(pageData) do
 		local userId = tonumber(entry.key)
 		local likes = entry.value
 
 		-- Aturan: Jika like = 0, jangan ditampilin
 		if likes > 0 then
+			table.insert(currentLikesData, { UserId = userId, Rank = rank, Likes = likes })
+			
 			local dName = displayNameCache[userId] or ("Player_" .. tostring(userId))
 			
 			local newFrame = templateFrame:Clone()
@@ -107,6 +110,8 @@ local function updateLeaderboardBoard()
 			rank = rank + 1
 		end
 	end
+
+	_G.LikesLeaderboardData = currentLikesData
 
 	return true
 end

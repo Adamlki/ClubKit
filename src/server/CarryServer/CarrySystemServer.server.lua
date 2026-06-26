@@ -180,8 +180,10 @@ end
 -- ============================================
 
 local function saveHumanoidState(userId, hum)
+	local actualWalkSpeed = hum.WalkSpeed
+
 	savedHumanoidStates[userId] = {
-		WalkSpeed   = hum.WalkSpeed,
+		WalkSpeed   = actualWalkSpeed,
 		JumpPower   = hum.JumpPower,
 		JumpHeight  = hum.JumpHeight,
 		UseJumpPower = hum.UseJumpPower,
@@ -192,7 +194,6 @@ end
 local function applyCarriedState(hum)
 	hum.WalkSpeed  = 0
 	hum.AutoRotate = false
-	hum.Sit        = true
 	hum.PlatformStand = true
 
 	if hum.UseJumpPower then
@@ -201,9 +202,22 @@ local function applyCarriedState(hum)
 		hum.JumpHeight = 0
 	end
 
-	hum:SetStateEnabled(Enum.HumanoidStateType.Jumping,  false)
-	hum:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
-	hum:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
+	-- Matikan SEMUA State yang bisa memberi gaya gesek/berat (Physics fix)
+	local statesToDisable = {
+		Enum.HumanoidStateType.Running,
+		Enum.HumanoidStateType.RunningNoPhysics,
+		Enum.HumanoidStateType.FallingDown,
+		Enum.HumanoidStateType.GettingUp,
+		Enum.HumanoidStateType.Jumping,
+		Enum.HumanoidStateType.Climbing,
+		Enum.HumanoidStateType.Swimming,
+		Enum.HumanoidStateType.Freefall
+	}
+	for _, state in ipairs(statesToDisable) do
+		hum:SetStateEnabled(state, false)
+	end
+	
+	hum:ChangeState(Enum.HumanoidStateType.Physics)
 end
 
 local function restoreHumanoidState(userId, hum)
@@ -229,11 +243,23 @@ local function restoreHumanoidState(userId, hum)
 		end
 	end
 
-	hum.Sit = false
 	hum.PlatformStand = false -- [FIX FISIKA]: Kembalikan keseimbangan saat diturunkan
-	hum:SetStateEnabled(Enum.HumanoidStateType.Jumping,  true)
-	hum:SetStateEnabled(Enum.HumanoidStateType.Climbing, true)
-	hum:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
+	
+	local statesToEnable = {
+		Enum.HumanoidStateType.Running,
+		Enum.HumanoidStateType.RunningNoPhysics,
+		Enum.HumanoidStateType.FallingDown,
+		Enum.HumanoidStateType.GettingUp,
+		Enum.HumanoidStateType.Jumping,
+		Enum.HumanoidStateType.Climbing,
+		Enum.HumanoidStateType.Swimming,
+		Enum.HumanoidStateType.Freefall
+	}
+	for _, state in ipairs(statesToEnable) do
+		hum:SetStateEnabled(state, true)
+	end
+	
+	hum:ChangeState(Enum.HumanoidStateType.GettingUp)
 end
 
 -- ============================================
@@ -364,34 +390,30 @@ end
 -- ============================================
 
 local function endCarry(player1, player2)
-	if not player1 or not player2 then return end
+	-- Helper to robustly clean up a single player
+	local function cleanupSinglePlayer(player)
+		if not player then return end
+		activeCarries[player.UserId] = nil
+		
+		local char, _, hum = getCharHRP(player)
+		if char then
+			clearCarryWeld(char)
+			local carryable = char:FindFirstChild("Carryable")
+			if carryable then carryable.Value = true end
+		end
+		
+		if hum then restoreHumanoidState(player.UserId, hum) end
+		restorePhysics(player.UserId)
+		
+		if player.Parent == Players then
+			EndRemote:FireClient(player, { cmd = "CarryEnded" })
+		end
+	end
 
-	local char1        = player1.Character
-	local char2, _, hum2 = getCharHRP(player2)
+	cleanupSinglePlayer(player1)
+	cleanupSinglePlayer(player2)
 
-	if not (char1 and char2) then return end
-	if not isInCarry(char1) and not isInCarry(char2) then return end
-
-	activeCarries[player1.UserId] = nil
-	activeCarries[player2.UserId] = nil
-
-	clearCarryWeld(char1)
-	clearCarryWeld(char2)
-
-	if char1:FindFirstChild("Carryable") then char1.Carryable.Value = true end
-	if char2:FindFirstChild("Carryable") then char2.Carryable.Value = true end
-
-	local _, _, hum1 = getCharHRP(player1)
-	if hum1 then restoreHumanoidState(player1.UserId, hum1) end
-	if hum2 then restoreHumanoidState(player2.UserId, hum2) end
-
-	restorePhysics(player1.UserId)
-	restorePhysics(player2.UserId)
-
-	EndRemote:FireClient(player1, { cmd = "CarryEnded" })
-	EndRemote:FireClient(player2, { cmd = "CarryEnded" })
-
-	CarryConfig.debugPrint("CLEANUP", "Manual end complete")
+	CarryConfig.debugPrint("CLEANUP", "Robust manual end complete")
 end
 
 -- ============================================
@@ -578,7 +600,14 @@ EndRemote.OnServerEvent:Connect(function(player, _data)
 
 	local partner = Players:GetPlayerByUserId(partnerUserId)
 	if not partner then
+		-- Partner has left the game, but we must still clean up ourselves!
 		activeCarries[player.UserId] = nil
+		clearCarryWeld(char)
+		if char:FindFirstChild("Carryable") then char.Carryable.Value = true end
+		local _, _, hum = getCharHRP(player)
+		if hum then restoreHumanoidState(player.UserId, hum) end
+		restorePhysics(player.UserId)
+		EndRemote:FireClient(player, { cmd = "CarryEnded" })
 		return
 	end
 

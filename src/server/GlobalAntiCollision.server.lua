@@ -17,21 +17,6 @@ local function optimizePart(part)
 	end
 end
 
--- 🔥 TAMBAHAN ARCHITECT: Bunuh proses fisika Humanoid yang tidak berguna
-local function optimizeHumanoid(humanoid)
-	local disabledStates = {
-		Enum.HumanoidStateType.Climbing,
-		Enum.HumanoidStateType.Swimming,
-		Enum.HumanoidStateType.Ragdoll,
-		-- GettingUp DIHAPUS agar fitur "Pose" di EmoteHandler tidak rusak!
-		Enum.HumanoidStateType.Flying,
-	}
-
-	for _, state in ipairs(disabledStates) do
-		humanoid:SetStateEnabled(state, false)
-	end
-end
-
 -- 🔥 ARCHITECT FIX: Simpan connection per-player agar bisa di-disconnect
 local playerConnections = {}
 
@@ -52,27 +37,23 @@ local function onCharacterAdded(character, player)
 	cleanupPlayerConnections(player)
 	playerConnections[player] = {}
 
-	-- [OPTIMASI SUPER]: Gunakan task.defer agar server tidak freeze saat 100 orang respawn!
-	task.defer(function()
-		for _, part in ipairs(character:GetDescendants()) do
-			-- HANYA eksekusi jika itu Part atau Aksesoris (Lebih ringan)
-			if part:IsA("BasePart") or part:IsA("Accessory") then
-				optimizePart(part)
-			end
+	-- [OPTIMASI SUPER]: Eksekusi langsung tanpa task.defer agar tidak ada jeda 1 frame (mencegah ledakan fisika saat spawn barengan)
+	for _, part in ipairs(character:GetDescendants()) do
+		-- HANYA eksekusi jika itu Part atau Aksesoris (Lebih ringan)
+		if part:IsA("BasePart") or part:IsA("Accessory") then
+			optimizePart(part)
 		end
+	end
 
-		-- 🔥 Eksekusi pemangkasan state Humanoid
-		local humanoid = character:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			optimizeHumanoid(humanoid)
-		end
-	end)
+	-- 🔥 ARCHITECT FIX: Kita TIDAK MEMATIKAN state Humanoid (Ragdoll/Flying/dll) 
+	-- karena mematikan state bawaan Roblox sering membuat karakter nge-glitch 
+	-- saat physics engine mencoba menyelesaikan benturan dengan map yang baru loading (StreamingEnabled).
 
 	-- 🔥 ARCHITECT FIX: FILTER CERDAS ANTI-SPAM + SIMPAN CONNECTION
 	local descendantConn = character.DescendantAdded:Connect(function(part)
-		-- Jangan panggil fungsi jika yang masuk adalah Tulang/Decal/Weld!
+		-- Langsung eksekusi, JANGAN gunakan task.defer karena aksesoris yang punya jeda 1 frame collision bisa memicu tolakan fisika!
 		if part:IsA("BasePart") or part:IsA("Accessory") then
-			task.defer(optimizePart, part)
+			optimizePart(part)
 		end
 	end)
 	table.insert(playerConnections[player], descendantConn)

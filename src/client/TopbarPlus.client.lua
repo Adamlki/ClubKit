@@ -1,6 +1,5 @@
 -- ============================================================
 -- UNIFIED TOPBAR PLUS V3 & SYNCTO SCRIPT
--- LocalScript in StarterPlayer.StarterPlayerScripts
 -- ============================================================
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11,53 +10,33 @@ local RunService        = game:GetService("RunService")
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local Icon      = require(ReplicatedStorage:WaitForChild("Icon"))
-
--- 🔥 INTEGRASI MODULE ANIMASI
 local UIAnimator = require(ReplicatedStorage:WaitForChild("UIAnimator"))
 
--- Remotes untuk SyncTo
-local Remotes            = ReplicatedStorage:WaitForChild("Remotes", 15)
-local UpdateLeaderStatus = Remotes and Remotes:WaitForChild("UpdateLeaderStatus", 10)
-local startSyncRE        = Remotes and Remotes:WaitForChild("startSync", 10)
-
--- ============================================================
--- CONFIG
--- ============================================================
 local CONFIG = {
 	Alignment = "left",
-	InitDelay = 2,
-	GlobalAnimations = true, -- Ganti ke false untuk mematikan semua animasi secara global
-
+	InitDelay = 0.1,
+	GlobalAnimations = true,
 	UseStroke       = false,
 	StrokeThickness = 0,
 	StrokeColor     = Color3.fromRGB(255, 255, 255),
-
 	UseGradient   = false,
 	GradientSpeed = 90,
-
 	GradientColor0 = Color3.fromRGB(255, 255, 255),
 	GradientColor1 = Color3.fromRGB(0,   0,   0),
 	GradientColor2 = Color3.fromRGB(255, 255, 255),
 }
 
--- ============================================================
--- PER-ICON CONFIG
--- (Tambahkan `animate = false` untuk mematikan animasi secara spesifik)
--- ============================================================
 local ICON_CONFIGS = {
-	Menu      = { enabled = true, image = "rbxassetid://87603332567027",  label = "Menu", order = 1 },
+	Menu      = { enabled = true, image = "rbxassetid://87603332567027",  label = "", order = 1 },
 	Dance     = { enabled = true, image = "rbxassetid://113394514826547", label = "", order = 2 },
 	Music     = { enabled = true, image = "rbxassetid://123643550590893", label = "", order = 3, animate = false },
-	Gamepass  = { enabled = true, image = "rbxassetid://140276937557646", label = "", order = 4 }, -- Shop di luar menu
-	Refresh   = { enabled = true, image = nil, label = "/", alignment = "right", order = 5 },
-
-	-- Item di dalam Menu:
-	Broadcast = { enabled = true, label = "BC"       },
-	Teleport  = { enabled = true, label = "Places"   },
-	Setting   = { enabled = true, label = "Settings" },
-	MyHat     = { enabled = true, label = "Crown"    },
-	FreeCam   = { enabled = true, label = "FreeCam"  },
-	GlobalEffect = { enabled = true, label = "Global Effect" },
+	Gamepass  = { enabled = true, image = "rbxassetid://140276937557646", label = "", order = 4 },
+	Setting   = { enabled = true, image = "rbxassetid://116292866711662", label = "", order = 5 }, 
+	FreeCam   = { enabled = true, image = "rbxassetid://134750039859396", label = "", order = 6 }, 
+	Refresh   = { enabled = true, image = nil, label = "/", alignment = "right", order = 7 },
+	Broadcast = { enabled = true, image = "rbxassetid://124033060370841", label = ""},
+	MyHat     = { enabled = true, image = "rbxassetid://120495411505696", label = "" },
+	GlobalEffect = { enabled = true, image = "rbxassetid://84595853614117", label = "" },
 }
 
 local function getCfg(name)
@@ -74,12 +53,8 @@ local function getCfg(name)
 	}
 end
 
--- ============================================================
--- SOUND
--- ============================================================
 local clickSound
 pcall(function() clickSound = SoundService:WaitForChild("Sound", 3) end)
-
 local function playClick()
 	if clickSound then
 		pcall(function()
@@ -88,26 +63,6 @@ local function playClick()
 		end)
 	end
 end
-
--- ============================================================
--- GUI REFERENCES
--- ============================================================
-local function safeGet(parent, name, timeout)
-	local ok, res = pcall(function() return parent:WaitForChild(name, timeout or 15) end)
-	return ok and res or nil
-end
-
-local guis = {
-	Emote         = safeGet(playerGui, "EmoteGui"),
-	Gamepass      = safeGet(playerGui, "GamepassShop"),
-	Music         = safeGet(playerGui, "MusicPlayer"),
-	Setting       = safeGet(playerGui, "SettingGui"),
-	Teleport      = safeGet(playerGui, "Teleport"),
-	MyHat         = safeGet(playerGui, "MyHat"),
-	ServerMessage = safeGet(playerGui, "AdminNotif"),
-	GlobalEffect  = safeGet(playerGui, "GlobalEffectGui", 5),
-	Refresh       = safeGet(playerGui, "RefreshGui"),
-}
 
 -- ============================================================
 -- UISTROKE + GRADIENT
@@ -135,7 +90,6 @@ end
 
 local function applyStroke(icon)
 	if not CONFIG.UseStroke then return end
-
 	local widget = getIconWidget(icon)
 	if not widget then return end
 
@@ -156,10 +110,8 @@ local function applyStroke(icon)
 		})
 		gradient.Rotation = gradientRotation
 		gradient.Parent   = stroke
-
 		local uid = icon.UID
 		registeredGradients[uid] = gradient
-
 		icon:addToJanitor(function()
 			registeredGradients[uid] = nil
 			if stroke and stroke.Parent then stroke:Destroy() end
@@ -168,27 +120,6 @@ local function applyStroke(icon)
 		icon:addToJanitor(function()
 			if stroke and stroke.Parent then stroke:Destroy() end
 		end)
-	end
-end
-
--- ============================================================
--- STATE
--- ============================================================
-local icons         = {}
-local menuIcon      = nil
-local dropdownIcons = {}
-local isInitialized = false
-
-local freecamState = { isOn = false, debounce = false }
-local freecamIcon  = nil
-
--- ============================================================
--- HELPERS
--- ============================================================
-local function hideOriginalButton(gui, buttonName)
-	if gui then
-		local btn = gui:FindFirstChild(buttonName)
-		if btn then btn.Visible = false end
 	end
 end
 
@@ -212,19 +143,118 @@ local function applyConfig(icon, cfg)
 	end
 end
 
+local function hideOriginalButton(gui, buttonName)
+	if gui then
+		local btn = gui:FindFirstChild(buttonName)
+		if btn then btn.Visible = false end
+	end
+end
+
 -- ============================================================
--- CREATE ICON
+-- STATE
 -- ============================================================
-local function createIcon(name, targetGui, targetFrame)
-	if not targetGui or not targetFrame then return nil end
+local icons         = {}
+local menuIcon      = nil
+local dropdownIcons = {}
+local isInitialized = false
+
+-- ============================================================
+-- INSTANT ICON CREATION (NO YIELDING)
+-- ============================================================
+local function createRawIcon(name)
 	local cfg = getCfg(name)
 	if not cfg.enabled then return nil end
-
 	local icon = Icon.new()
 	applyConfig(icon, cfg)
 	applyStroke(icon)
+	return icon
+end
 
-	icons[name] = { icon = icon, gui = targetGui, frame = targetFrame, isOpen = false, lockSync = false, animate = cfg.animate }
+-- 1. Main Topbar Icons
+local danceIcon   = createRawIcon("Dance")
+local musicIcon   = createRawIcon("Music")
+local gpIcon      = createRawIcon("Gamepass")
+local refreshIcon = createRawIcon("Refresh")
+
+-- 2. Menu Icon
+local menuCfg = getCfg("Menu")
+if menuCfg.enabled then
+	menuIcon = Icon.new()
+	applyConfig(menuIcon, menuCfg)
+	applyStroke(menuIcon)
+	menuIcon:autoDeselect(false)
+end
+
+-- 3. Dropdown Icons (Temporarily unassigned)
+local broadcastIcon = createRawIcon("Broadcast")
+local setIcon       = createRawIcon("Setting")
+local hatIcon       = createRawIcon("MyHat")
+local effectIcon    = createRawIcon("GlobalEffect")
+local freecamIcon   = createRawIcon("FreeCam")
+
+-- Initially disable network-dependent icons until verified
+if broadcastIcon then broadcastIcon:setEnabled(false) end
+if effectIcon then effectIcon:setEnabled(false) end
+
+if menuIcon then
+	local activeMenu = {}
+	-- Masukkan SEMUA icon ke dalam horizontal menu
+	if musicIcon then table.insert(activeMenu, musicIcon) end
+	if gpIcon then table.insert(activeMenu, gpIcon) end
+	if setIcon then table.insert(activeMenu, setIcon) end
+	if freecamIcon then table.insert(activeMenu, freecamIcon) end
+	
+	-- Menu Spesial (Network)
+	if broadcastIcon then table.insert(activeMenu, broadcastIcon) end
+	if hatIcon then table.insert(activeMenu, hatIcon) end
+	if effectIcon then table.insert(activeMenu, effectIcon) end
+	
+	-- Gunakan setMenu agar bergeser ke samping secara horizontal
+	menuIcon:setMenu(activeMenu)
+end
+
+-- ============================================================
+-- ASYNC LOGIC HOOKUPS
+-- ============================================================
+
+local function setupFrameSync(name, icon, frame, closeButtonPath)
+	if not icon or not frame then return end
+	local d = icons[name]
+	local conn = frame:GetPropertyChangedSignal("Visible"):Connect(function()
+		if not isInitialized then return end
+		if not d or d.lockSync then return end
+		if frame.Visible and not d.isOpen then
+			d.lockSync = true
+			icon:select()
+			d.isOpen  = true
+			d.lockSync = false
+		elseif not frame.Visible and d.isOpen then
+			d.lockSync = true
+			icon:deselect()
+			d.isOpen  = false
+			d.lockSync = false
+		end
+	end)
+	icon:addToJanitor(conn)
+
+	if closeButtonPath then
+		local closeBtn = frame
+		for _, part in ipairs(closeButtonPath) do
+			closeBtn = closeBtn and closeBtn:FindFirstChild(part)
+		end
+		if closeBtn then
+			local cc = closeBtn.MouseButton1Click:Connect(function()
+				icon:deselect()
+			end)
+			icon:addToJanitor(cc)
+		end
+	end
+end
+
+local function bindIconLogic(name, icon, gui, frame, closeBtnPath, originalBtnName)
+	if not icon then return end
+	local cfg = getCfg(name)
+	icons[name] = { icon = icon, gui = gui, frame = frame, isOpen = false, lockSync = false, animate = cfg.animate }
 
 	icon:bindEvent("selected", function()
 		playClick()
@@ -248,16 +278,12 @@ local function createIcon(name, targetGui, targetFrame)
 			end
 			d.isOpen = true
 		end
-		if menuIcon then
-			task.wait(0.1)
-			menuIcon:deselect()
-		end
 	end)
 
 	icon:bindEvent("deselected", function()
 		playClick()
 		local d = icons[name]
-		if d and not d.lockSync then
+		if d and d.frame and not d.lockSync then
 			if d.animate then
 				UIAnimator.Close(d.frame)
 			else
@@ -267,212 +293,137 @@ local function createIcon(name, targetGui, targetFrame)
 		end
 	end)
 
-	return icon
-end
-
-local function createToggleIcon(name)
-	local cfg = getCfg(name)
-	if not cfg.enabled then return nil end
-	local icon = Icon.new()
-	applyConfig(icon, cfg)
-	applyStroke(icon)
-	return icon
-end
-
-local function setupFrameSync(name, frame, closeButtonPath)
-	local d = icons[name]
-	if not d or not frame then return end
-
-	local conn = frame:GetPropertyChangedSignal("Visible"):Connect(function()
-		if not isInitialized then return end
-		local dd = icons[name]
-		if not dd or dd.lockSync then return end
-		if frame.Visible and not dd.isOpen then
-			dd.lockSync = true
-			dd.icon:select()
-			dd.isOpen  = true
-			dd.lockSync = false
-		elseif not frame.Visible and dd.isOpen then
-			dd.lockSync = true
-			dd.icon:deselect()
-			dd.isOpen  = false
-			dd.lockSync = false
-		end
-	end)
-	d.icon:addToJanitor(conn)
-
-	if closeButtonPath then
-		local closeBtn = frame
-		for _, part in ipairs(closeButtonPath) do
-			closeBtn = closeBtn and closeBtn:FindFirstChild(part)
-		end
-		if closeBtn then
-			local cc = closeBtn.MouseButton1Click:Connect(function()
-				local dd = icons[name]
-				if dd then dd.icon:deselect() end
-			end)
-			d.icon:addToJanitor(cc)
-		end
+	if gui and originalBtnName then
+		hideOriginalButton(gui, originalBtnName)
 	end
-end
-
--- ============================================================
--- ICON CREATION — STANDALONE (LUAR DROPDOWN)
--- ============================================================
-
-if guis.Emote then
-	local frame = guis.Emote:FindFirstChild("MainFrame")
-	local icon  = createIcon("Dance", guis.Emote, frame)
-	if icon then
-		setupFrameSync("Dance", frame, {"Header", "CloseBtn"})
-		hideOriginalButton(guis.Emote, "Dance")
-	end
-end
-
-if guis.Music then
-	local frame = guis.Music:FindFirstChild("MainFrame")
-	local icon  = createIcon("Music", guis.Music, frame)
-	if icon then
-		setupFrameSync("Music", frame, {"CloseBtn"})
-		hideOriginalButton(guis.Music, "MusicBtn")
-	end
-end
-
-if guis.Gamepass then
-	local frame = guis.Gamepass:FindFirstChild("MainFrame")
-	local icon  = createIcon("Gamepass", guis.Gamepass, frame)
-	if icon then
-		hideOriginalButton(guis.Gamepass, "Shop")
-		local cp = frame and frame:FindFirstChild("Header") and {"Header","CloseBtn"} or {"CloseBtn"}
-		setupFrameSync("Gamepass", frame, cp)
-	end
-end
-
-if guis.Refresh then
-	local frame = guis.Refresh:FindFirstChild("MainFrame")
-	local icon  = createIcon("Refresh", guis.Refresh, frame)
-	if icon then
-		local cp = frame and frame:FindFirstChild("Header") and {"Header","CloseBtn"} or {"CloseBtn"}
-		setupFrameSync("Refresh", frame, cp)
-	end
-end
-
--- ============================================================
--- MENU ICON UTAMA
--- ============================================================
-local menuCfg = getCfg("Menu")
-if menuCfg.enabled then
-	menuIcon = Icon.new()
-	applyConfig(menuIcon, menuCfg)
-	applyStroke(menuIcon)
-	menuIcon:autoDeselect(false)
-end
-
--- ============================================================
--- ICON CREATION — DROPDOWN ITEMS (DALAM MENU)
--- ============================================================
-
-if guis.ServerMessage then
-	local frame = guis.ServerMessage:FindFirstChild("MainFrame")
 	if frame then
+		setupFrameSync(name, icon, frame, closeBtnPath)
+		-- Ensure initial state
+		if frame.Visible then frame.Visible = false end
+	end
+end
+
+-- ============================================================
+-- SPAWN GUI FETCHING
+-- ============================================================
+
+task.spawn(function()
+	local gui = playerGui:WaitForChild("EmoteGui", 5)
+	if gui then
+		local frame = gui:WaitForChild("MainFrame", 5)
+		bindIconLogic("Dance", danceIcon, gui, frame, {"Header", "CloseBtn"}, "Dance")
+	end
+end)
+
+task.spawn(function()
+	local gui = playerGui:WaitForChild("MusicPlayer", 5)
+	if gui then
+		local frame = gui:WaitForChild("MainFrame", 5)
+		bindIconLogic("Music", musicIcon, gui, frame, {"CloseBtn"}, "MusicBtn")
+	end
+end)
+
+task.spawn(function()
+	local gui = playerGui:WaitForChild("GamepassShop", 5)
+	if gui then
+		local frame = gui:WaitForChild("MainFrame", 5)
+		local cp = frame and frame:FindFirstChild("Header") and {"Header","CloseBtn"} or {"CloseBtn"}
+		bindIconLogic("Gamepass", gpIcon, gui, frame, cp, "Shop")
+	end
+end)
+
+task.spawn(function()
+	local gui = playerGui:WaitForChild("RefreshGui", 5)
+	if gui then
+		local frame = gui:WaitForChild("MainFrame", 5)
+		local cp = frame and frame:FindFirstChild("Header") and {"Header","CloseBtn"} or {"CloseBtn"}
+		bindIconLogic("Refresh", refreshIcon, gui, frame, cp)
+	end
+end)
+
+task.spawn(function()
+	local gui = playerGui:WaitForChild("SettingGui", 5)
+	if gui then
+		local frame = gui:WaitForChild("Mainframe", 5)
+		local cp = frame and frame:FindFirstChild("HeaderFrame") and {"HeaderFrame","CloseBtn"} or {"CloseBtn"}
+		bindIconLogic("Setting", setIcon, gui, frame, cp, "SettingBtn")
+	end
+end)
+
+-- Network Dependent Icons
+task.spawn(function()
+	local gui = playerGui:WaitForChild("AdminNotif", 10)
+	if gui then
+		local frame = gui:WaitForChild("MainFrame", 5)
 		local rf = ReplicatedStorage:WaitForChild("Message", 10)
 		local rc = rf and rf:WaitForChild("CheckAccess", 5)
 		if rc then
 			local ok, has = pcall(function() return rc:InvokeServer() end)
-			if ok and has then
-				local icon = createIcon("Broadcast", guis.ServerMessage, frame)
-				if icon then 
-					table.insert(dropdownIcons, icon)
-					setupFrameSync("Broadcast", frame, {"CloseBtn"}) 
-				end
+			if ok and has and broadcastIcon then
+				bindIconLogic("Broadcast", broadcastIcon, gui, frame, {"CloseBtn"})
+				broadcastIcon:setEnabled(true)
 			end
 		end
 	end
-end
+end)
 
-if guis.Teleport then
-	local frame = guis.Teleport:FindFirstChild("MainFrame")
-	local icon  = createIcon("Teleport", guis.Teleport, frame)
-	if icon then
-		table.insert(dropdownIcons, icon)
-		setupFrameSync("Teleport", frame, {"headerframe", "CloseBtn"})
-	end
-end
-
-if guis.Setting then
-	local frame = guis.Setting:FindFirstChild("Mainframe")
-	local icon  = createIcon("Setting", guis.Setting, frame)
-	if icon then
-		table.insert(dropdownIcons, icon)
-		hideOriginalButton(guis.Setting, "SettingBtn")
-		local cp = frame and frame:FindFirstChild("HeaderFrame") and {"HeaderFrame","CloseBtn"} or {"CloseBtn"}
-		setupFrameSync("Setting", frame, cp)
-	end
-end
-
-if guis.MyHat then
-	local frame = guis.MyHat:FindFirstChild("Mainframe")
-	if frame then
-		local ar = ReplicatedStorage:WaitForChild("AccessoryRemotes", 10)
-		if ar then
-			local icon = createIcon("MyHat", guis.MyHat, frame)
-			if icon then
-				table.insert(dropdownIcons, icon)
-				icon:setEnabled(false)
+task.spawn(function()
+	local gui = playerGui:WaitForChild("MyHat", 10)
+	if gui then
+		local frame = gui:WaitForChild("Mainframe", 5)
+		if frame then
+			local ar = ReplicatedStorage:WaitForChild("AccessoryRemotes", 10)
+			if ar and hatIcon then
+				bindIconLogic("MyHat", hatIcon, gui, frame, frame:FindFirstChild("Header") and {"Header","CloseBtn"} or {"CloseBtn"})
+				hatIcon:setEnabled(false)
+				
 				local se = ar:WaitForChild("ShowIcon", 5)
 				if se then
 					local sc = se.OnClientEvent:Connect(function(show)
-						icon:setEnabled(show)
-						if not show then
+						hatIcon:setEnabled(show)
+						if not show and icons["MyHat"] then
 							local d = icons["MyHat"]
-							if d then
-								if d.animate then
-									UIAnimator.Close(d.frame)
-								else
-									d.frame.Visible = false
-								end
+							if d.isOpen then
+								if d.animate then UIAnimator.Close(d.frame) else d.frame.Visible = false end
 								d.isOpen = false
-								icon:deselect()
+								hatIcon:deselect()
 							end
 						end
 					end)
-					icon:addToJanitor(sc)
-				end
-				local cp = frame:FindFirstChild("Header") and {"Header","CloseBtn"} or {"CloseBtn"}
-				setupFrameSync("MyHat", frame, cp)
-			end
-		end
-	end
-end
-
-if guis.GlobalEffect then
-	local frame = guis.GlobalEffect:FindFirstChild("MainFrame")
-	if frame then
-		local rf = ReplicatedStorage:WaitForChild("GlobalEffectRemotes", 5)
-		local rc = rf and rf:WaitForChild("CheckOwner", 5)
-		if rc then
-			local ok, isOwner = pcall(function() return rc:InvokeServer() end)
-			if ok and isOwner then
-				local icon = createIcon("GlobalEffect", guis.GlobalEffect, frame)
-				if icon then
-					table.insert(dropdownIcons, icon)
-					setupFrameSync("GlobalEffect", frame, {"CloseBtn"})
+					hatIcon:addToJanitor(sc)
 				end
 			end
 		end
 	end
-end
+end)
 
-freecamIcon = createToggleIcon("FreeCam")
+task.spawn(function()
+	local gui = playerGui:WaitForChild("GlobalEffectGui", 10)
+	if gui then
+		local frame = gui:WaitForChild("MainFrame", 5)
+		if frame then
+			local rf = ReplicatedStorage:WaitForChild("GlobalEffectRemotes", 5)
+			local rc = rf and rf:WaitForChild("CheckOwner", 5)
+			if rc then
+				local ok, isOwner = pcall(function() return rc:InvokeServer() end)
+				if ok and isOwner and effectIcon then
+					bindIconLogic("GlobalEffect", effectIcon, gui, frame, {"CloseBtn"})
+					effectIcon:setEnabled(true)
+				end
+			end
+		end
+	end
+end)
+
+-- Freecam
 if freecamIcon then
-	table.insert(dropdownIcons, freecamIcon)
+	local freecamState = { isOn = false, debounce = false }
 	freecamIcon:bindEvent("selected", function()
 		if freecamState.debounce then return end
 		freecamState.debounce = true
 		playClick()
 		freecamState.isOn = true
 		if _G.__Freecam_Enable then _G.__Freecam_Enable() end
-		if menuIcon then task.wait(0.1) ; menuIcon:deselect() end
 		task.delay(0.35, function() freecamState.debounce = false end)
 	end)
 	freecamIcon:bindEvent("deselected", function()
@@ -484,118 +435,13 @@ if freecamIcon then
 	end)
 end
 
--- ============================================================
--- SYNCTO LOGIC [DIMASUKKAN KE DALAM MENU]
--- ============================================================
-local syncToIcon = nil
-local syncIconMap = {}
-local leaders = {}
-
-if UpdateLeaderStatus and startSyncRE then
-	syncToIcon = Icon.new()
-	syncToIcon:setLabel("SyncTo")
-
-	table.insert(dropdownIcons, syncToIcon)
-
-	local function rebuildSyncDropdown()
-		for name, ic in pairs(syncIconMap) do
-			pcall(function() ic:destroy() end)
-		end
-		syncIconMap = {}
-
-		local subIcons = {}
-		for name, data in pairs(leaders) do
-			if data.player ~= player then
-				local ic = Icon.new()
-				ic:setLabel(string.format("%s (%d)", name, data.followerCount))
-				ic:bindEvent("selected", function()
-					ic:deselect()
-					local targetPlayer = Players:FindFirstChild(name)
-					if targetPlayer then
-						startSyncRE:FireServer(targetPlayer, true)
-					end
-					if menuIcon then
-						task.wait(0.05)
-						menuIcon:deselect()
-					end
-				end)
-				syncIconMap[name] = ic
-				table.insert(subIcons, ic)
-			end
-		end
-
-		if #subIcons > 0 then
-			syncToIcon:setDropdown(subIcons)
-		else
-			syncToIcon:setDropdown({})
-		end
-	end
-
-	UpdateLeaderStatus.OnClientEvent:Connect(function(targetPlayer, isLeader, followerCount)
-		if not targetPlayer or not targetPlayer.Parent then return end
-		local name = targetPlayer.Name
-		if isLeader and followerCount > 0 then
-			leaders[name] = { player = targetPlayer, followerCount = followerCount }
-		else
-			leaders[name] = nil
-		end
-		rebuildSyncDropdown()
-	end)
-
-	task.spawn(function()
-		task.wait(2)
-		for _, p in ipairs(Players:GetPlayers()) do
-			if p ~= player and p.Character then
-				local isLeader      = p.Character:GetAttribute("IsLeader")
-				local followerCount = p.Character:GetAttribute("FollowerCount") or 0
-				if isLeader and followerCount > 0 then
-					leaders[p.Name] = { player = p, followerCount = followerCount }
-				end
-			end
-		end
-		rebuildSyncDropdown()
-	end)
-
-	Players.PlayerRemoving:Connect(function(leavingPlayer)
-		if leaders[leavingPlayer.Name] then
-			leaders[leavingPlayer.Name] = nil
-			rebuildSyncDropdown()
-		end
-		if syncIconMap[leavingPlayer.Name] then
-			pcall(function() syncIconMap[leavingPlayer.Name]:destroy() end)
-			syncIconMap[leavingPlayer.Name] = nil
-		end
-	end)
-else
-	warn("[SyncTo] Remotes not found – SyncTo feature will not be added to menu.")
-end
 
 -- ============================================================
--- PASANG SEMUA KE DROPDOWN UTAMA
--- ============================================================
-if menuIcon and #dropdownIcons > 0 then
-	menuIcon:setDropdown(dropdownIcons)
-end
-
--- ============================================================
--- INIT
+-- INIT & CLEANUP
 -- ============================================================
 task.wait(CONFIG.InitDelay)
-
-for _, d in pairs(icons) do
-	if d.frame then d.frame.Visible = false end
-	d.isOpen = false
-	d.icon:deselect()
-end
-if menuIcon    then menuIcon:deselect()    end
-if freecamIcon then freecamIcon:deselect() end
-
-task.wait(0.5)
 isInitialized = true
 
--- ============================================================
--- CLEANUP LOCAL PLAYER
--- ============================================================
 Players.PlayerRemoving:Connect(function(removingPlayer)
 	if removingPlayer ~= player then return end
 
@@ -604,11 +450,6 @@ Players.PlayerRemoving:Connect(function(removingPlayer)
 	end
 	if menuIcon    then pcall(function() menuIcon:destroy()    end) end
 	if freecamIcon then pcall(function() freecamIcon:destroy() end) end
-	if syncToIcon  then pcall(function() syncToIcon:destroy()  end) end
 
-	for _, ic in pairs(syncIconMap) do
-		pcall(function() ic:destroy() end)
-	end
-
-	icons = {} ; guis = {} ; dropdownIcons = {} ; syncIconMap = {} ; leaders = {}
+	icons = {}
 end)

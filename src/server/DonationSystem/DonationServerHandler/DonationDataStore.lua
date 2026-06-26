@@ -10,7 +10,7 @@ local dataStore = DataStoreService:GetDataStore(
 )
 
 -- 🔥 ARCHITECT FIX: ORDERED DATA STORE (Khusus untuk Papan Leaderboard 3D)
-local orderedDataStore = DataStoreService:GetOrderedDataStore("DonationBoard_Ordered", "global")
+local orderedDataStore = DataStoreService:GetOrderedDataStore("DonationBoard_Ordered_V2", "global")
 
 local PlayerDataCache = {} 
 
@@ -50,6 +50,11 @@ function DonationDataStore:GetPlayerDonation(userId)
 end
 
 function DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
+	if DonationConfig.IS_STUDIO then
+		debugLog("DATASTORE", "Test di Studio: Mengabaikan penyimpanan DataStore dan Papan Peringkat")
+		return true, true
+	end
+
 	local userIdStr = "Player_" .. tostring(player.UserId)
 	
 	-- 🔥 ARCHITECT FIX: Cache info penting SEBELUM yield (UpdateAsync).
@@ -59,12 +64,14 @@ function DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
 	local safeDisplayName = player.DisplayName
 	
 	local saveSuccess = false
+	local isNewReceipt = true
 	local totalAmount = 0
 
 	-- 1. Simpan ke Database asli (Synchronous agar bisa return sukses/gagal ke ProcessReceipt)
 	for attempt = 1, 3 do
 		local ok, err = pcall(function()
 			dataStore:UpdateAsync(userIdStr, function(current)
+				isNewReceipt = true
 				current = current or {
 					DisplayName = safeDisplayName,
 					["Donated - Studio"] = 0,
@@ -77,6 +84,7 @@ function DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
 				if receiptInfo and receiptInfo.PurchaseId then
 					if current.ProcessedReceipts[receiptInfo.PurchaseId] then
 						totalAmount = (current["Donated - Studio"] or 0) + (current["Donated - Experience"] or 0)
+						isNewReceipt = false
 						return current
 					end
 					current.ProcessedReceipts[receiptInfo.PurchaseId] = os.time()
@@ -128,7 +136,7 @@ function DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
 		end)
 	end
 
-	return saveSuccess
+	return saveSuccess, isNewReceipt
 end
 
 function DonationDataStore:CleanupPlayer(player)

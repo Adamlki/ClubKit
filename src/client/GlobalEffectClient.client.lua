@@ -122,6 +122,19 @@ if GlobalEffectGui then
 				
 				ButtonStates[stateName] = not ButtonStates[stateName]
 				updateButtonUI(stateName, ButtonStates[stateName])
+				
+				if stateName == "Fly" and ButtonStates["Fly"] then
+					if ButtonStates["Floating"] then
+						ButtonStates["Floating"] = false
+						updateButtonUI("Floating", false)
+					end
+				elseif stateName == "Floating" and ButtonStates["Floating"] then
+					if ButtonStates["Fly"] then
+						ButtonStates["Fly"] = false
+						updateButtonUI("Fly", false)
+					end
+				end
+				
 				ToggleEffectEvent:FireServer(stateName, ButtonStates[stateName])
 			end)
 		end
@@ -385,6 +398,7 @@ local function resumeLocalDance()
 	
 	if resumedDanceTrack then
 		resumedDanceTrack:Stop(0.1)
+		resumedDanceTrack:Destroy()
 		resumedDanceTrack = nil
 	end
 	

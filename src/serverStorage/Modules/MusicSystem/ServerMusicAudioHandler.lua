@@ -95,8 +95,8 @@ function ServerMusicAudioHandler:CreateServerSound()
 		eq = Instance.new("EqualizerSoundEffect")
 		eq.Name = "ConcertEQ"
 		eq.LowGain = 10    -- DITURUNKAN: Bass +12 dB terlalu besar & bikin pecah/clipping saat lagu dilambatkan (+4 dB aman)
-		eq.MidGain = -5    -- Dinormalkan ke 0 dB agar gitar tidak mendem/pecah
-		eq.HighGain = -5   -- DITURUNKAN: High +5 dB terlalu tajam, bikin snare/cymbal pecah (+1 dB lebih aman)
+		eq.MidGain = 0    -- Dinormalkan ke 0 dB agar gitar tidak mendem/pecah
+		eq.HighGain = 0   -- DITURUNKAN: High +5 dB terlalu tajam, bikin snare/cymbal pecah (+1 dB lebih aman)
 		eq.Parent = existingSound
 	end
 

@@ -12,13 +12,6 @@ if not LeaderRemotes then
 	LeaderRemotes.Parent = ReplicatedStorage
 end
 
-local UpdateLeaderStatus = LeaderRemotes:FindFirstChild("UpdateLeaderStatus")
-if not UpdateLeaderStatus then
-	UpdateLeaderStatus = Instance.new("RemoteEvent")
-	UpdateLeaderStatus.Name = "UpdateLeaderStatus"
-	UpdateLeaderStatus.Parent = LeaderRemotes
-end
-
 -- Configuration
 local CONFIG = {
 	DEBUG_ENABLED = false,
@@ -38,7 +31,7 @@ task.spawn(function()
 	while task.wait(2) do
 		for plr, data in pairs(pendingLeaderUpdates) do
 			if plr and plr.Parent then
-				UpdateLeaderStatus:FireAllClients(plr, data.isLeader, data.followerCount)
+				-- UpdateLeaderStatus:FireAllClients(plr, data.isLeader, data.followerCount)
 			end
 		end
 		table.clear(pendingLeaderUpdates)
@@ -243,7 +236,7 @@ Players.PlayerRemoving:Connect(function(player)
 	-- ?? NOTE: No manual cache cleanup needed (weak tables auto-cleanup!)
 
 	-- Notify clients
-	UpdateLeaderStatus:FireAllClients(player, false, 0)
+	-- UpdateLeaderStatus:FireAllClients(player, false, 0)
 
 	-- Cleanup connections
 	cleanupPlayerConnections(player)

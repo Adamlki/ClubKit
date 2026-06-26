@@ -165,6 +165,9 @@ function UIManager.new(gui)
 	self:SetupConnections()
 	self:SetupRoleWatcher()
 	self:ResetUI()
+	
+	-- Load albums to populate the initial list
+	self:LoadAlbums({})
 
 	-- Hide frames initially
 	self.mainFrame.Visible = false

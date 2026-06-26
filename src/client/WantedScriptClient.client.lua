@@ -3,7 +3,7 @@ local player = Players.LocalPlayer
 
 -- Mengarahkan path ke part WANTEDPOSTER di Workspace
 -- Pastikan nama part di Workspace benar-benar "WANTEDPOSTER"
-local wantedPoster = workspace:WaitForChild("WANTEDPOSTER")
+local wantedPoster = workspace:WaitForChild("WANTEDPOSTER", math.huge)
 local surfaceGui = wantedPoster:WaitForChild("SurfaceGui")
 
 -- Mencari UI element sesuai dengan struktur di foto

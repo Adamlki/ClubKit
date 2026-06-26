@@ -6,7 +6,10 @@ local GROUP_ID = 192828493
 
 task.delay(60, function() 
 	
-	if player:IsInGroup(GROUP_ID) then return end
+	local success, isInGroup = pcall(function()
+		return player:IsInGroup(GROUP_ID)
+	end)
+	if success and isInGroup then return end
 
 	task.delay(3, function()
 		local AvatarEditorService = game:GetService("AvatarEditorService")
@@ -31,3 +34,15 @@ task.delay(60, function()
 		warn("Prompt failed:", result)
 	end
 end)
+
+-- Dummy listener for UpdateLeaderStatus to prevent Remote Event Queue Exhausted error
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local remotes = ReplicatedStorage:WaitForChild("Remotes", 5)
+if remotes then
+	local updateLeaderStatus = remotes:WaitForChild("UpdateLeaderStatus", 5)
+	if updateLeaderStatus and updateLeaderStatus:IsA("RemoteEvent") then
+		updateLeaderStatus.OnClientEvent:Connect(function()
+			-- do nothing (dummy listener)
+		end)
+	end
+end

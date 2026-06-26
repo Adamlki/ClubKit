@@ -27,9 +27,10 @@ local CHECK_INTERVAL = 10
 local MAX_DONATIONS = 50
 
 -- STATE
-local lastDonationId = nil
+-- STATE
+local processedIds = {}
+local isFirstLoad = true
 local allDonations = {}
-local lastDataCount = 0
 
 local remoteEvent = ReplicatedStorage:FindFirstChild("DonationNotification")
 if not remoteEvent then
@@ -110,88 +111,91 @@ local function updateBoard()
 end
 
 -- ============================================================
--- SEQUENTIAL QUEUE READER
+-- ID-BASED QUEUE READER (FIXED UNTUK GOOGLE SHEETS)
 -- ============================================================
 local function fetchDonationData()
 	local donationArray = SaweriaAPI:GetDonationData()
 	if type(donationArray) ~= "table" then return end
 
-	local newCount = #donationArray
-	if newCount > 0 then
-
-		if lastDonationId == nil then
-			local latestDonation = donationArray[newCount]
-			lastDonationId = latestDonation.id or (tostring(latestDonation.nama) .. "_" .. tostring(latestDonation.amount))
-			lastDataCount = newCount
-
-			table.insert(allDonations, latestDonation)
-			pcall(updateBoard)
-			return
+	if isFirstLoad then
+		-- Load awal: masukkan semua data tanpa memicu notifikasi
+		for i, donation in ipairs(donationArray) do
+			local currentId = donation.id or donation.Id or (tostring(donation.tanggal or donation.Tanggal or i) .. "_" .. tostring(donation.nama or donation.Nama))
+			processedIds[currentId] = true
+			table.insert(allDonations, donation)
 		end
 
-		if newCount > lastDataCount then
-			local broadcastQueue = {}
-			for i = lastDataCount + 1, newCount do
-				local currentDonation = donationArray[i]
-				if not currentDonation then continue end
+		while #allDonations > MAX_DONATIONS do 
+			table.remove(allDonations, 1) 
+		end
 
-				local currentId = currentDonation.id or (tostring(currentDonation.nama) .. "_" .. tostring(currentDonation.amount))
-				lastDonationId = currentId
+		pcall(updateBoard)
+		isFirstLoad = false
+		return
+	end
 
-				table.insert(allDonations, currentDonation)
-				table.insert(broadcastQueue, currentDonation)
-			end
-			
-			lastDataCount = newCount
+	local broadcastQueue = {}
+	local hasNewData = false
 
-			-- 🔴 FIX 2: STRICT CLEANUP & BULK UPDATE
-			while #allDonations > MAX_DONATIONS do 
-				table.remove(allDonations, 1) 
-			end
+	for i, currentDonation in ipairs(donationArray) do
+		-- Kombinasi ID agar unik meskipun kolom Id kosong
+		local currentId = currentDonation.id or currentDonation.Id or (tostring(currentDonation.tanggal or currentDonation.Tanggal or i) .. "_" .. tostring(currentDonation.nama or currentDonation.Nama))
 
-			pcall(updateBoard)
+		if not processedIds[currentId] then
+			processedIds[currentId] = true
+			hasNewData = true
+			table.insert(allDonations, currentDonation)
+			table.insert(broadcastQueue, currentDonation)
+		end
+	end
 
-			-- Broadcast secara sekuensial dengan jeda
-			for _, currentDonation in ipairs(broadcastQueue) do
+	if hasNewData then
+		while #allDonations > MAX_DONATIONS do 
+			table.remove(allDonations, 1) 
+		end
 
-				local rawDonator = tostring(currentDonation.donator or currentDonation.nama or currentDonation.Nama or "Unknown")
-				local rawAmount = tostring(currentDonation.amount or currentDonation.jumlah or currentDonation.Jumlah or "0")
-				local rawMessage = tostring(currentDonation.message or currentDonation.pesan or currentDonation.Pesan or "")
+		pcall(updateBoard)
 
-				local totalAmount = 0
-				for _, donation in ipairs(donationArray) do
-					local dName = tostring(donation.donator or donation.nama or donation.Nama or "Unknown")
-					if dName == rawDonator then
-						local amt = tonumber(donation.amount) or tonumber(donation.jumlah) or tonumber(donation.Jumlah) or 0
-						totalAmount = totalAmount + amt
-					end
+		-- Broadcast secara sekuensial dengan jeda
+		for _, currentDonation in ipairs(broadcastQueue) do
+
+			local rawDonator = tostring(currentDonation.donator or currentDonation.nama or currentDonation.Nama or "Unknown")
+			local rawAmount = tostring(currentDonation.amount or currentDonation.jumlah or currentDonation.Jumlah or "0")
+			local rawMessage = tostring(currentDonation.message or currentDonation.pesan or currentDonation.Pesan or "")
+
+			local totalAmount = 0
+			for _, donation in ipairs(donationArray) do
+				local dName = tostring(donation.donator or donation.nama or donation.Nama or "Unknown")
+				if dName == rawDonator then
+					local amt = tonumber(donation.amount) or tonumber(donation.jumlah) or tonumber(donation.Jumlah) or 0
+					totalAmount = totalAmount + amt
 				end
-
-				local notifData = {
-					donator = rawDonator,
-					amount = rawAmount,
-					total = totalAmount,
-					message = rawMessage,
-					timestamp = os.time()
-				}
-
-				if remoteEvent then remoteEvent:FireAllClients(notifData) end
-				debugPrint("🚀 Mengirim notifikasi: " .. notifData.donator)
-
-				local cleanAmount = rawAmount:gsub("%D", "") 
-				local rpAmount = tonumber(cleanAmount) or 0
-
-				local ServerStorage = game:GetService("ServerStorage")
-				local SaweriaEffectEvent = ServerStorage:FindFirstChild("SaweriaEffectEvent")
-				if not SaweriaEffectEvent then
-					SaweriaEffectEvent = Instance.new("BindableEvent")
-					SaweriaEffectEvent.Name = "SaweriaEffectEvent"
-					SaweriaEffectEvent.Parent = ServerStorage
-				end
-				SaweriaEffectEvent:Fire(rawDonator, rpAmount)
-
-				task.wait(2.5) 
 			end
+
+			local notifData = {
+				donator = rawDonator,
+				amount = rawAmount,
+				total = totalAmount,
+				message = rawMessage,
+				timestamp = os.time()
+			}
+
+			if remoteEvent then remoteEvent:FireAllClients(notifData) end
+			debugPrint("🚀 Mengirim notifikasi: " .. notifData.donator)
+
+			local cleanAmount = rawAmount:gsub("%D", "") 
+			local rpAmount = tonumber(cleanAmount) or 0
+
+			local ServerStorage = game:GetService("ServerStorage")
+			local SaweriaEffectEvent = ServerStorage:FindFirstChild("SaweriaEffectEvent")
+			if not SaweriaEffectEvent then
+				SaweriaEffectEvent = Instance.new("BindableEvent")
+				SaweriaEffectEvent.Name = "SaweriaEffectEvent"
+				SaweriaEffectEvent.Parent = ServerStorage
+			end
+			SaweriaEffectEvent:Fire(rawDonator, rpAmount)
+
+			task.wait(2.5) 
 		end
 	end
 end

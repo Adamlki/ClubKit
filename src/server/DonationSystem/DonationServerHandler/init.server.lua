@@ -325,11 +325,11 @@ ProcessReceiptHandler:Initialize()
 
 -- Callback 1: Simpan ke DataStore (total saja, tanpa history)
 ProcessReceiptHandler:RegisterCallback("SaveToDataStore", function(player, productId, amount, receiptInfo)
-	local ok = DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
+	local ok, isNew = DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
 	if not ok then
 		debugLog("ERROR", "DataStore save gagal untuk:", player.Name)
 	end
-	return ok
+	return ok, isNew
 end)
 
 -- Callback 2: Catat untuk verifikasi keamanan

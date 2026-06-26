@@ -123,22 +123,44 @@ function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 
 	debugLog("RECEIPT", "Player:", player.Name, "| Amount:", amount, "Robux")
 
-	-- Jalankan semua callback yang terdaftar
+	-- PRIORITAS: Jalankan DataStore pertama kali untuk Cek Idempotensi!
+	local dataStoreCallback = registeredCallbacks["SaveToDataStore"]
+	if dataStoreCallback then
+		local ok, success, isNew = pcall(function()
+			return dataStoreCallback(player, productId, amount, receiptInfo)
+		end)
+		
+		if not ok or success ~= true then
+			debugLog("ERROR", "SaveToDataStore gagal. Transaksi ditunda.")
+			return Enum.ProductPurchaseDecision.NotProcessedYet
+		end
+		
+		-- Jika bukan receipt baru (sudah pernah sukses masuk DB), langsung GRANTED!
+		if isNew == false then
+			debugLog("RECEIPT", "Duplicate receipt di DataStore. Mengabaikan efek visual.")
+			markReceiptProcessed(purchaseId)
+			return Enum.ProductPurchaseDecision.PurchaseGranted
+		end
+	end
+
+	-- Jalankan sisa callback visual / broadcast
 	local allSuccess = true
 	for callbackName, callback in pairs(registeredCallbacks) do
+		if callbackName == "SaveToDataStore" then continue end
+
 		local ok, result = pcall(function()
 			return callback(player, productId, amount, receiptInfo)
 		end)
 		if ok and result == true then
-			debugLog("RECEIPT", "Callback OK:", callbackName, "->", tostring(result))
+			debugLog("RECEIPT", "Callback OK:", callbackName)
 		else
-			debugLog("ERROR", "Callback FAILED:", callbackName, "->", tostring(result))
+			debugLog("ERROR", "Callback FAILED:", callbackName)
 			allSuccess = false
 		end
 	end
 
 	if not allSuccess then
-		debugLog("ERROR", "Satu atau lebih callback gagal (misal DataStore). Transaksi ditunda.")
+		debugLog("ERROR", "Satu atau lebih callback gagal. Transaksi ditunda.")
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 

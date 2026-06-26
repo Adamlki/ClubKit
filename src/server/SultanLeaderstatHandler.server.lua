@@ -59,6 +59,9 @@ end)
 -- 2. SAAT PLAYER DONASI: Update Leaderstat secara Real-time
 -- ============================================================
 ProcessReceiptHandler:RegisterCallback("UpdateSultanLeaderstat", function(player, productId, amount, receiptInfo)
+	local RunService = game:GetService("RunService")
+	if RunService:IsStudio() then return true end
+
 	local leaderstats = player:FindFirstChild("leaderstats")
 	if leaderstats then
 		local donationStat = leaderstats:FindFirstChild("Donation")

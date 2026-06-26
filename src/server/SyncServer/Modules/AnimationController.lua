@@ -15,7 +15,7 @@ local module = {}
 -- CONFIG & ANTI-SPAM
 -- ============================================
 local FADE_OUT = 0.5
-local DANCE_WALK_SPEED = 16
+local DANCE_WALK_SPEED = 5
 local ANIMATION_PRIORITY = Enum.AnimationPriority.Action4
 
 local processingRequests = {}
@@ -39,33 +39,6 @@ local function endProcessing(player)
 end
 
 -- ============================================
--- PURE WALKSPEED MANAGEMENT (Attribute Based)
--- ============================================
-local function setDanceWalkSpeed(player)
-	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		if not character:GetAttribute("OriginalWalkSpeed") then
-			character:SetAttribute("OriginalWalkSpeed", humanoid.WalkSpeed)
-		end
-		humanoid.WalkSpeed = DANCE_WALK_SPEED
-	end
-end
-
-local function restoreOriginalWalkSpeed(player)
-	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	local origSpeed = character and character:GetAttribute("OriginalWalkSpeed")
-
-	if humanoid and origSpeed then
-		if humanoid.WalkSpeed == DANCE_WALK_SPEED then
-			humanoid.WalkSpeed = origSpeed
-		end
-		character:SetAttribute("OriginalWalkSpeed", nil)
-	end
-end
-
--- ============================================
 -- EXECUTE ANIMATION
 -- ============================================
 function module.executeAnimation(player, animation, shouldPlay, speed, loadedAnimations, isSpam, clientStartTime)
@@ -86,7 +59,6 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 			character:SetAttribute("Syncing", nil)
 			character:SetAttribute("CurrentDanceID", nil)
 			--AnimatorUtils.stopAllDances(animator, loadedAnimations, FADE_OUT)
-			restoreOriginalWalkSpeed(player)
 			task.delay(FADE_OUT, function() SyncController.updateLeaderStatus(player) end)
 		end
 	end
@@ -100,7 +72,6 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 			character:SetAttribute("DanceStartTime", nil)
 			character:SetAttribute("DanceSpeed", nil)
 		end
-		restoreOriginalWalkSpeed(player)
 		SyncController.stopAllFollowers(player, loadedAnimations)
 		SyncController.updateLeaderStatus(player)
 		endProcessing(player)
@@ -121,6 +92,19 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 			return "blocked"
 		end
 		
+		local carryable = character:FindFirstChild("Carryable")
+		if carryable and carryable.Value == false then
+			local GlobalEffectRemotes = ReplicatedStorage:FindFirstChild("GlobalEffectRemotes")
+			if GlobalEffectRemotes then
+				local NotificationEvent = GlobalEffectRemotes:FindFirstChild("NotificationEvent")
+				if NotificationEvent then
+					NotificationEvent:FireClient(player, "Gagal", "Kamu tidak bisa menari saat sedang digendong/menggendong!", 3)
+				end
+			end
+			endProcessing(player)
+			return "blocked"
+		end
+		
 		character:SetAttribute("Syncing", nil)
 
 		if animation then
@@ -133,16 +117,6 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 		if isSpam then
 			local currentNonce = character:GetAttribute("SpamNonce") or 0
 			character:SetAttribute("SpamNonce", currentNonce + 1)
-		end
-	end
-
-	setDanceWalkSpeed(player)
-
-	-- Lebih bersih dan tidak memakan scope memori baru
-	local leaderName = player.Name
-	for _, p in ipairs(Players:GetPlayers()) do
-		if p.Character and p.Character:GetAttribute("Syncing") == leaderName then
-			setDanceWalkSpeed(p)
 		end
 	end
 

@@ -335,6 +335,7 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 			debugWarn("LAGU ERROR/BANNED TERDETEKSI! Auto-skipping: " .. (displayMusicData.judul or "Unknown"))
 			
 			if self.autoNextCallback then
+				task.wait(1.5)
 				pcall(self.autoNextCallback)
 			end
 		end

@@ -97,6 +97,30 @@ local function onRefreshRequest(player)
 				humanoid:EquipTool(equippedTool)
 			end
 			
+			-- 🔥 FIX DANCE OUT OF SYNC: Toggle atribut tarian agar client merefresh animasi track
+			local currentDance = character:GetAttribute("CurrentDanceID")
+			local syncingTo = character:GetAttribute("Syncing")
+
+			if currentDance and currentDance ~= "" then
+				character:SetAttribute("CurrentDanceID", nil)
+				task.delay(0.1, function()
+					if character and character.Parent then
+						character:SetAttribute("CurrentDanceID", currentDance)
+					end
+				end)
+			elseif syncingTo and syncingTo ~= "" then
+				-- JANGAN set Syncing ke nil agar Frame Block UI tidak putus!
+				-- Cukup perlambat WalkSpeed dan beri notifikasi ke client untuk me-restart animasi
+				task.delay(0.1, function()
+					if character and character.Parent then
+						local syncNotificationRE = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("SyncNotification")
+						if syncNotificationRE then
+							syncNotificationRE:FireClient(player, "sync_success", syncingTo)
+						end
+					end
+				end)
+			end
+			
 			-- BERITAHU SISTEM LAIN (GLOBAL EFFECT) BAHWA REFRESH SUDAH SELESAI
 			character:SetAttribute("RefreshTrigger", os.clock())
 		else

@@ -359,6 +359,17 @@ local function updateEditableFrame(editableFrame, player, titleData)
 			titleFrame.Visible = false
 		end
 	end
+
+	-- 8. Sembunyikan EditableFrame jika kosong (agar tidak meninggalkan celah aneh)
+	if editableFrame then
+		local isAnyVisible = false
+		if topLikesFrame and topLikesFrame.Visible then isAnyVisible = true end
+		if topRobuxFrame and topRobuxFrame.Visible then isAnyVisible = true end
+		if topRupiahFrame and topRupiahFrame.Visible then isAnyVisible = true end
+		if titleFrame and titleFrame.Visible then isAnyVisible = true end
+		
+		editableFrame.Visible = isAnyVisible
+	end
 end
 
 -- ====================================

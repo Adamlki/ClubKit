@@ -25,32 +25,9 @@ local module = {}
 -- ============================================
 local FADE_OUT = 0.5
 local MAX_SYNC_DEPTH = 10
-local DANCE_WALK_SPEED = 16 
+local DANCE_WALK_SPEED = 5 
 
--- PURE WALKSPEED MANAGEMENT
-local function setDanceWalkSpeed(player)
-	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		if not character:GetAttribute("OriginalWalkSpeed") then
-			character:SetAttribute("OriginalWalkSpeed", humanoid.WalkSpeed)
-		end
-		humanoid.WalkSpeed = DANCE_WALK_SPEED
-	end
-end
-
-local function restoreOriginalWalkSpeed(player)
-	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	local origSpeed = character and character:GetAttribute("OriginalWalkSpeed")
-
-	if humanoid and origSpeed then
-		if humanoid.WalkSpeed == DANCE_WALK_SPEED then
-			humanoid.WalkSpeed = origSpeed
-		end
-		character:SetAttribute("OriginalWalkSpeed", nil)
-	end
-end
+-- ============================================
 
 local function waitForCharacterReady(player, timeout)
 	if AnimatorUtils.isCharacterReady(player) then return true end
@@ -170,7 +147,6 @@ function module.stopAllFollowers(leaderPlayer, loadedAnimations)
 			if follower.Character:GetAttribute("Syncing") == leaderName then
 				local animator = AnimatorUtils.getAnimator(follower)
 				--if animator then pcall(AnimatorUtils.stopAllDances, animator, loadedAnimations, FADE_OUT) end
-				restoreOriginalWalkSpeed(follower)
 				stoppedCount += 1
 			end
 		end
@@ -187,7 +163,6 @@ function module.forceUnsyncAllFollowers(leaderPlayer, loadedAnimations)
 			if follower ~= leaderPlayer and follower.Character then
 				if follower.Character:GetAttribute("Syncing") == leaderName then
 					syncNotificationRE:FireClient(follower, "leader_left", leaderName)
-					restoreOriginalWalkSpeed(follower)
 					follower.Character:SetAttribute("Syncing", nil)
 					follower.Character:SetAttribute("IsLeader", nil)
 					follower.Character:SetAttribute("FollowerCount", nil)
@@ -203,7 +178,6 @@ function module.unsyncPlayer(player, loadedAnimations)
 		--pcall(AnimatorUtils.stopAllDances, animator, loadedAnimations, FADE_OUT)
 		-- HAPUS: task.wait(FADE_OUT)
 	end
-	restoreOriginalWalkSpeed(player)
 	if player.Character then
 		player.Character:SetAttribute("Syncing", nil)
 		player.Character:SetAttribute("CurrentDanceID", nil)
@@ -216,7 +190,6 @@ function module.unsyncPlayer(player, loadedAnimations)
 				local oa = AnimatorUtils.getAnimator(otherPlayer)
 				if oa then --pcall(AnimatorUtils.stopAllDances, oa, loadedAnimations, FADE_OUT)
 				end
-				restoreOriginalWalkSpeed(otherPlayer)
 				otherPlayer.Character:SetAttribute("Syncing", nil)
 			end
 		end
@@ -249,6 +222,21 @@ function module.handleSyncRequest(player, targetPlayer, condition, loadedAnimati
 
 	-- 🔥 VALIDASI ASINKRON: Pastikan kedua player belum keluar server saat Yielding 3 detik
 	if not player or not player.Parent or not targetPlayer or not targetPlayer.Parent then return end
+	
+	local char = player.Character
+	if char then
+		local carryable = char:FindFirstChild("Carryable")
+		if carryable and carryable.Value == false then
+			local GlobalEffectRemotes = ReplicatedStorage:FindFirstChild("GlobalEffectRemotes")
+			if GlobalEffectRemotes then
+				local NotificationEvent = GlobalEffectRemotes:FindFirstChild("NotificationEvent")
+				if NotificationEvent then
+					NotificationEvent:FireClient(player, "Gagal", "Kamu tidak bisa sync saat sedang digendong/menggendong!", 3)
+				end
+			end
+			return
+		end
+	end
 
 	if condition and module.isLeader(player) and module.isFollowingPlayer(targetPlayer, player) then
 		syncNotificationRE:FireClient(player, "leader_blocked", targetPlayer.Name)
@@ -280,13 +268,7 @@ function module.handleSyncRequest(player, targetPlayer, condition, loadedAnimati
 				player.Character:SetAttribute("DanceStartTime", nil)
 				player.Character:SetAttribute("Syncing", trueLeaderOfTarget.Name)
 
-				-- FIX: Perlambat follower jika Leadernya saat ini sedang menari
-				local leaderChar = trueLeaderOfTarget.Character
-				if leaderChar and leaderChar:GetAttribute("CurrentDanceID") then
-					setDanceWalkSpeed(player)
-				else
-					restoreOriginalWalkSpeed(player)
-				end
+				-- FIX: Hapus Walkspeed Logic
 			end
 
 			syncNotificationRE:FireClient(player, "sync_success", trueLeaderOfTarget.Name)

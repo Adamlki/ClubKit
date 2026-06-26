@@ -61,6 +61,10 @@ end
 -- ====================================
 function UIPlaylistManager:UpdatePlaylist(musicList)
 	self.currentPlaylist = musicList
+	
+	-- Increment render counter to cancel any ongoing renders
+	self.renderCounter = (self.renderCounter or 0) + 1
+	local currentRender = self.renderCounter
 
 	-- Clear ALL existing items (including "No Results")
 	self:ClearPlaylist()
@@ -73,6 +77,11 @@ function UIPlaylistManager:UpdatePlaylist(musicList)
 
 	-- Create playlist items
 	for index, music in ipairs(musicList) do
+		-- Abort if a new playlist update was requested
+		if self.renderCounter ~= currentRender then
+			return
+		end
+		
 		local itemFrame = self.playlistTemplateFrame:Clone()
 		itemFrame.Name = "PlaylistItem_" .. index
 		itemFrame.Visible = true
@@ -101,6 +110,11 @@ function UIPlaylistManager:UpdatePlaylist(musicList)
 				self.onToggleFavoriteCallback(music.id)
 			end
 		end)
+
+		-- Prevent UI freeze if the playlist is massive
+		if index % 4 == 0 then
+			task.wait()
+		end
 	end
 end
 
@@ -127,9 +141,23 @@ end
 function UIPlaylistManager:UpdateFavorites(favoriteSongs)
 	self.favoriteSongs = favoriteSongs
 
-	-- Refresh current playlist to update favorite buttons
-	if #self.currentPlaylist > 0 then
-		self:UpdatePlaylist(self.currentPlaylist)
+	-- Refresh favorite buttons WITHOUT recreating the entire playlist (prevents massive lag spike)
+	for _, child in ipairs(self.playlist:GetChildren()) do
+		if child:IsA("Frame") and child.Name:match("^PlaylistItem_") then
+			local indexStr = child.Name:match("^PlaylistItem_(%d+)$")
+			local index = indexStr and tonumber(indexStr)
+
+			if index and self.currentPlaylist[index] then
+				local musicId = self.currentPlaylist[index].id
+				local favBtn = child:FindFirstChild("FavouriteBtn")
+				
+				if favBtn then
+					local isFavorite = self:IsMusicFavorite(musicId)
+					favBtn.Text = isFavorite and "❤️" or "♡"
+					favBtn.TextColor3 = isFavorite and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(200, 200, 200)
+				end
+			end
+		end
 	end
 end
 

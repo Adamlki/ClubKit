@@ -142,6 +142,12 @@ function GlobalEffectManager:_handleToggleEffect(player, effectName, isActive)
 	if self.ActiveEffects[effectName] ~= nil then
 		self.ActiveEffects[effectName] = isActive
 		
+		if effectName == "Fly" and isActive then
+			self.ActiveEffects.Floating = false
+		elseif effectName == "Floating" and isActive then
+			self.ActiveEffects.Fly = false
+		end
+		
 		local isNowActive = false
 		for _, state in pairs(self.ActiveEffects) do
 			if state then isNowActive = true end
@@ -352,8 +358,11 @@ function GlobalEffectManager:UpdatePlayerEffects(player)
 				if ForceEndCarryFunc then
 					pcall(function()
 						local dropped = ForceEndCarryFunc:Invoke(player)
-						if dropped and self.NotificationEvent then
-							self.NotificationEvent:FireClient(player, "Global Effect Aktif", "Carry otomatis dilepas karena efek sedang aktif!", 3)
+						if dropped then
+							if self.NotificationEvent then
+								self.NotificationEvent:FireClient(player, "Global Effect Aktif", "Carry otomatis dilepas karena efek sedang aktif!", 3)
+							end
+							task.wait(0.1) -- Beri waktu fisika Roblox untuk update setelah weld hancur
 						end
 					end)
 				end

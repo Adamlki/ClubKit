@@ -17,7 +17,7 @@ DonationConfig.DONATION_FIELD = DonationConfig.IS_TEST_MODE
 -- DATASTORE CONFIGURATION
 -- ============================================
 DonationConfig.DATASTORE = {
-	NAME           = "Donation Board JEKY",
+	NAME           = "Donation Board JEKY_V2",
 	KEY            = "Donations",
 	SCOPE          = "global",
 	RETRY_ATTEMPTS = 3,

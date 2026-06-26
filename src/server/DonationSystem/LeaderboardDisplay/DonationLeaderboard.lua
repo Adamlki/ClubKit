@@ -5,7 +5,7 @@ local DonationLeaderboard = {}
 DonationLeaderboard.__index = DonationLeaderboard
 
 -- Targetkan ke OrderedDataStore yang baru kita buat di DonationDataStore.luau
-local ORDERED_DATASTORE_NAME = "DonationBoard_Ordered"
+local ORDERED_DATASTORE_NAME = "DonationBoard_Ordered_V2"
 local ORDERED_SCOPE = "global"
 local CACHE_LIFETIME = 60 -- detik
 

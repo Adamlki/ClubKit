@@ -182,3 +182,21 @@ task.spawn(function()
 	end
 end)
 
+-- Dummy listener for GLights Color event to prevent Remote Event Queue Exhausted error
+task.spawn(function()
+	local coreScripts = mainFolder:WaitForChild("Scripts", 5)
+	if coreScripts then
+		local core = coreScripts:WaitForChild("Core", 5)
+		if core then
+			local events = core:WaitForChild("Events", 5)
+			if events then
+				local colorEvent = events:WaitForChild("Color", 5)
+				if colorEvent and colorEvent:IsA("RemoteEvent") then
+					colorEvent.OnClientEvent:Connect(function()
+						-- do nothing
+					end)
+				end
+			end
+		end
+	end
+end)

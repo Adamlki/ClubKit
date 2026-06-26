@@ -253,6 +253,7 @@ function MusicActionHandler:HandleControlNext(player, data)
 		local currentSong = self.playbackManager:GetCurrentSong()
 		if currentSong then
 			self.dispatcher:NotifyAll(string.format("%s (%s) skipped: %s", player.DisplayName, role, currentSong.judul or "Unknown"))
+			task.wait(1.5)
 			self.playNextCallback()
 		else
 			self.dispatcher:Notify(player, "No song is currently playing!")

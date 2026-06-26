@@ -110,7 +110,8 @@ function PlayerEffectState:SuspendDance()
 						AnimationId = currentDanceID,
 						TimePosition = track.TimePosition,
 						Weight = track.WeightTarget,
-						Speed = track.Speed
+						Speed = track.Speed,
+						Track = track
 					})
 					track:Stop(0.1)
 				elseif self.RegisteredAnimIds[trackNumericId] then
@@ -126,7 +127,8 @@ function PlayerEffectState:SuspendDance()
 			AnimationId = currentDanceID,
 			TimePosition = 0,
 			Weight = 1,
-			Speed = speedAttr
+			Speed = speedAttr,
+			Track = nil
 		})
 	end
 	
@@ -151,9 +153,13 @@ function PlayerEffectState:ResumeDance()
 		
 		if animator then
 			for _, danceData in ipairs(self.SuspendedDanceTracks) do
-				local anim = Instance.new("Animation")
-				anim.AnimationId = danceData.AnimationId
-				local track = animator:LoadAnimation(anim)
+				local track = danceData.Track
+				if not track then
+					local anim = Instance.new("Animation")
+					anim.AnimationId = danceData.AnimationId
+					track = animator:LoadAnimation(anim)
+				end
+				
 				track:Play()
 				track:AdjustWeight(danceData.Weight)
 				track:AdjustSpeed(danceData.Speed)
@@ -191,6 +197,7 @@ function PlayerEffectState:ApplyFloating()
 	if not humanoid then return end
 	local animator = humanoid:FindFirstChild("Animator") or Instance.new("Animator", humanoid)
 
+	self:RemoveFly()
 	self:ForceUnequipTools()
 	self:StopCustomAnimations()
 	
@@ -240,6 +247,7 @@ function PlayerEffectState:ApplyFly()
 	if not humanoid or not rootPart then return end
 	local animator = humanoid:FindFirstChild("Animator") or Instance.new("Animator", humanoid)
 
+	self:RemoveFloating()
 	self:ForceUnequipTools()
 	self:StopCustomAnimations()
 
@@ -304,7 +312,16 @@ function PlayerEffectState:ApplyFly()
 		alignOri.Name = "GlobalFlyAlignOrientation"
 		alignOri.Mode = Enum.OrientationAlignmentMode.OneAttachment
 		alignOri.Attachment0 = attachment
-		alignOri.CFrame = rootPart.CFrame
+		
+		local lv = rootPart.CFrame.LookVector
+		local horizontalLook = Vector3.new(lv.X, 0, lv.Z)
+		if horizontalLook.Magnitude < 0.001 then
+			horizontalLook = Vector3.new(0, 0, -1)
+		else
+			horizontalLook = horizontalLook.Unit
+		end
+		alignOri.CFrame = CFrame.lookAt(rootPart.Position, rootPart.Position + horizontalLook)
+		
 		alignOri.MaxTorque = 1000000
 		alignOri.Responsiveness = 200
 		alignOri.Parent = rootPart

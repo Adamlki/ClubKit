@@ -36,7 +36,7 @@ local Config = {
 
 	-- Item Settings
 	AccessoryPath = ServerStorage:WaitForChild("Items"):WaitForChild("Crown8bit"),
-	RequiredRole = "VVIP",
+	RequiredRole = "Moderator",
 
 	-- Role Behavior
 	IncludeHigherRoles = true,

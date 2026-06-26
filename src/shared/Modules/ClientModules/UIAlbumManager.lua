@@ -38,7 +38,7 @@ end
 -- ====================================
 -- LOAD ALBUMS
 -- ====================================
-function UIAlbumManager:LoadAlbums(favoriteSongs)
+function UIAlbumManager:LoadAlbums(favoriteSongs, silent)
 	self.favoriteSongs = favoriteSongs or {}
 
 	-- Clear existing albums
@@ -54,7 +54,7 @@ function UIAlbumManager:LoadAlbums(favoriteSongs)
 	local albums = MusicModule:GetAllAlbums(self.favoriteSongs)
 
 	-- Create album buttons
-	for _, albumData in ipairs(albums) do
+	for index, albumData in ipairs(albums) do
 		local albumBtn = self.albumTemplateBtn:Clone()
 		albumBtn.Name = "Album_" .. albumData.name
 		albumBtn.Visible = true
@@ -67,20 +67,25 @@ function UIAlbumManager:LoadAlbums(favoriteSongs)
 		albumBtn.MouseButton1Click:Connect(function()
 			self:SelectAlbum(albumData.name)
 		end)
+		
+		-- 🔥 ANTI-FREEZE: Cicil pembuatan UI Album
+		if index % 3 == 0 then
+			task.wait()
+		end
 	end
 
 	-- Restore previous selection or default to "All Songs"
 	if self.albumButtons[self.currentAlbum] then
-		self:SelectAlbum(self.currentAlbum)
+		self:SelectAlbum(self.currentAlbum, silent)
 	else
-		self:SelectAlbum("All Songs")
+		self:SelectAlbum("All Songs", silent)
 	end
 end
 
 -- ====================================
 -- SELECT ALBUM
 -- ====================================
-function UIAlbumManager:SelectAlbum(albumName)
+function UIAlbumManager:SelectAlbum(albumName, silent)
 	-- Update current album
 	self.currentAlbum = albumName
 
@@ -88,7 +93,7 @@ function UIAlbumManager:SelectAlbum(albumName)
 	self:HighlightAlbum(albumName)
 
 	-- Callback to update playlist
-	if self.onAlbumSelectedCallback then
+	if not silent and self.onAlbumSelectedCallback then
 		self.onAlbumSelectedCallback(albumName)
 	end
 end
@@ -102,15 +107,10 @@ function UIAlbumManager:UpdateFavorites(favoriteSongs)
 	-- Store current selection
 	local previousAlbum = self.currentAlbum
 
-	-- Reload albums to update "My Favorites" count
-	self:LoadAlbums(favoriteSongs)
-
-	-- CRITICAL: Restore previous selection!
-	if previousAlbum and self.albumButtons[previousAlbum] then
-		self:SelectAlbum(previousAlbum)
-	else
-		self:SelectAlbum("All Songs")
-	end
+	-- Reload albums to update "My Favorites" count silently
+	self:LoadAlbums(favoriteSongs, true)
+	
+	-- Note: LoadAlbums will restore the previous selection silently due to the true flag
 end
 
 -- ====================================

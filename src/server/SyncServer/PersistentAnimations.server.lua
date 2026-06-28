@@ -48,6 +48,9 @@ Players.PlayerAdded:Connect(function(player)
 		return favoritedAnimationsStore:GetAsync("Player_" .. player.UserId)
 	end)
 
+	-- Pastikan player belum keluar dari game selama proses loading
+	if not player:IsDescendantOf(Players) then return end
+
 	if success and type(savedData) == "string" then
 		local ok, decodedData = pcall(function()
 			return HttpService:JSONDecode(savedData)
@@ -73,7 +76,10 @@ end)
 -- ============================================
 -- PLAYER REMOVING: Save data ke DataStore
 -- ============================================
+local lastUpdate = {}
+
 Players.PlayerRemoving:Connect(function(player)
+	lastUpdate[player] = nil
 	savePlayerData(player)
 end)
 
@@ -87,18 +93,23 @@ game:BindToClose(function()
 	local totalPlayers = #playerList
 	local completed = 0
 
-	for _, player in ipairs(playerList) do
+	for i, player in ipairs(playerList) do
 		task.spawn(function()
 			savePlayerData(player)
 			completed += 1
 		end)
+		
+		-- Beri nafas ke API Roblox setiap 10 pemain
+		if i % 10 == 0 then
+			task.wait(0.2)
+		end
 	end
 
-	-- Tunggu semua task selesai (max 10 detik)
+	-- Tunggu semua task selesai (dinaikkan ke 15 detik agar aman)
 	local elapsed = 0
-	while completed < totalPlayers and elapsed < 10 do
-		task.wait(0.1)
-		elapsed += 0.1
+	while completed < totalPlayers and elapsed < 15 do
+		task.wait(1)
+		elapsed += 1
 	end
 end)
 
@@ -106,6 +117,20 @@ end)
 -- UPDATE FAVORITES dari client
 -- ============================================
 updateFavoritedAnimationsEvent.OnServerEvent:Connect(function(player, jsonData)
+	-- ANTI-SPAM (Cooldown 2 Detik)
+	local now = os.clock()
+	if lastUpdate[player] and (now - lastUpdate[player]) < 2 then
+		return -- Abaikan jika spam klik terlalu cepat
+	end
+	lastUpdate[player] = now
+
+	-- VALIDASI TIPE & UKURAN (Anti JSON Bomb)
+	if type(jsonData) ~= "string" then return end
+	if string.len(jsonData) > 10000 then -- Batasi maksimal 10.000 karakter
+		warn("[Security] " .. player.Name .. " mencoba mengirim data animasi terlalu besar!")
+		return 
+	end
+
 	local success, decodedData = pcall(function()
 		return HttpService:JSONDecode(jsonData)
 	end)

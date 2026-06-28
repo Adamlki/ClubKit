@@ -1,6 +1,7 @@
 local DataStoreService = game:GetService("DataStoreService")
 local UserService = game:GetService("UserService")
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ORDERED_DATASTORE_NAME = "PlayerLikes_Ordered_v1"
 local MAX_PLAYERS = 30
@@ -8,30 +9,19 @@ local REFRESH_INTERVAL = 60
 
 local OrderedLikesStore = DataStoreService:GetOrderedDataStore(ORDERED_DATASTORE_NAME)
 
+-- Buat RemoteEvent untuk Update Client
+local updateLikeBoardRemote = ReplicatedStorage:FindFirstChild("UpdateLikeBoard")
+if not updateLikeBoardRemote then
+	updateLikeBoardRemote = Instance.new("RemoteEvent")
+	updateLikeBoardRemote.Name = "UpdateLikeBoard"
+	updateLikeBoardRemote.Parent = ReplicatedStorage
+end
+
 -- Cache untuk DisplayName
 local displayNameCache = {}
+local cachedTopLikes = {}
 
 local function updateLeaderboardBoard()
-	-- Cari GUI di workspace
-	-- Sesuai gambar: workspace.JekyLikeBoard.JekyGui.MainFrame.Container
-	local boardModel = workspace:FindFirstChild("JekyLikeBoard")
-	if not boardModel then return false end
-	
-	-- Cari secara mendalam (recursive) untuk mengantisipasi letak JekyGui
-	local jekyGui = boardModel:FindFirstChild("JekyGui", true)
-	if not jekyGui then return false end
-	
-	local mainFrame = jekyGui:FindFirstChild("MainFrame")
-	if not mainFrame then return false end
-	
-	local container = mainFrame:FindFirstChild("Container")
-	if not container then return false end
-	
-	local scrollingContent = container:FindFirstChild("ScrollingContent")
-	local templateFrame = scrollingContent and scrollingContent:FindFirstChild("TemplateFrame")
-	
-	if not scrollingContent or not templateFrame then return false end
-
 	-- Tarik data dari OrderedDataStore
 	local success, pages = pcall(function()
 		return OrderedLikesStore:GetSortedAsync(false, MAX_PLAYERS)
@@ -44,16 +34,6 @@ local function updateLeaderboardBoard()
 
 	local pageSuccess, pageData = pcall(function() return pages:GetCurrentPage() end)
 	if not pageSuccess or not pageData then return false end
-
-	-- Sembunyikan template frame asli agar tidak ikut tampil sebagai baris kosong
-	templateFrame.Visible = false
-
-	-- Bersihkan list sebelumnya, kecuali template dan UIListLayout
-	for _, child in ipairs(scrollingContent:GetChildren()) do
-		if child:IsA("Frame") and child.Name ~= "TemplateFrame" then
-			child:Destroy()
-		end
-	end
 
 	-- Kumpulkan ID yang belum ada di cache untuk di-batch (mencegah limit API)
 	local missingIds = {}
@@ -72,10 +52,10 @@ local function updateLeaderboardBoard()
 
 	-- Request batch ke UserService jika ada ID yang missing
 	if #missingIds > 0 then
-		local success, info = pcall(function()
+		local s, info = pcall(function()
 			return UserService:GetUserInfosByUserIdsAsync(missingIds)
 		end)
-		if success and info then
+		if s and info then
 			for _, userInfo in ipairs(info) do
 				displayNameCache[userInfo.Id] = userInfo.DisplayName
 			end
@@ -90,31 +70,50 @@ local function updateLeaderboardBoard()
 
 		-- Aturan: Jika like = 0, jangan ditampilin
 		if likes > 0 then
-			table.insert(currentLikesData, { UserId = userId, Rank = rank, Likes = likes })
-			
 			local dName = displayNameCache[userId] or ("Player_" .. tostring(userId))
-			
-			local newFrame = templateFrame:Clone()
-			newFrame.Name = "Rank_" .. rank
-			newFrame.Visible = true
-			
-			local rankLabel = newFrame:FindFirstChild("RankLabel")
-			local nameLabel = newFrame:FindFirstChild("NameLabel")
-			local likeLabel = newFrame:FindFirstChild("LikeLabel")
-			
-			if rankLabel then rankLabel.Text = "#" .. rank end
-			if nameLabel then nameLabel.Text = dName end
-			if likeLabel then likeLabel.Text = tostring(likes) end
-			
-			newFrame.Parent = scrollingContent
+			table.insert(currentLikesData, { 
+				UserId = userId, 
+				DisplayName = dName,
+				Rank = rank, 
+				Likes = likes 
+			})
 			rank = rank + 1
 		end
 	end
 
 	_G.LikesLeaderboardData = currentLikesData
+	cachedTopLikes = currentLikesData
+
+	-- HANYA FIRING KE CLIENT, TIDAK ADA RENDER DI SERVER
+	updateLikeBoardRemote:FireAllClients(currentLikesData)
+
+	-- [PERBAIKAN]: Otomatis refresh Overhead semua pemain setiap kali data Leaderboard selesai ditarik.
+	task.spawn(function()
+		local success2, OverheadManager = pcall(function()
+			return require(game:GetService("ServerScriptService").OverheadSystem.OverheadSystemServer.OverheadManager)
+		end)
+		if success2 and OverheadManager then
+			for _, player in ipairs(Players:GetPlayers()) do
+				pcall(function()
+					OverheadManager:UpdateDonaturRank(player)
+				end)
+			end
+		end
+	end)
 
 	return true
 end
+
+-- ============================================
+-- KETIKA CLIENT MEMINTA DATA (Saat Baru Masuk)
+-- ============================================
+updateLikeBoardRemote.OnServerEvent:Connect(function(player)
+	if cachedTopLikes and #cachedTopLikes > 0 then
+		pcall(function()
+			updateLikeBoardRemote:FireClient(player, cachedTopLikes)
+		end)
+	end
+end)
 
 local function startLeaderboardLoop()
 	-- Beri jeda 15 detik di awal agar tidak berbarengan/bentrok dengan Auto-Save LikeManager
@@ -122,24 +121,8 @@ local function startLeaderboardLoop()
 	
 	-- Loop terus menerus
 	while true do
-		local success = updateLeaderboardBoard()
-		
-		-- Animasi Countdown di tulisan LoadingFrame (jika ada)
-		local boardModel = workspace:FindFirstChild("JekyLikeBoard")
-		if boardModel then
-			local loadingText = boardModel:FindFirstChild("LoadingText", true)
-			if loadingText then
-				for i = REFRESH_INTERVAL, 1, -1 do
-					loadingText.Text = "Refreshing in " .. i .. " Second" .. (i > 1 and "s" or "")
-					task.wait(1)
-				end
-			else
-				-- Jika ga ada LoadingText, tunggu saja
-				task.wait(REFRESH_INTERVAL)
-			end
-		else
-			task.wait(REFRESH_INTERVAL)
-		end
+		pcall(updateLeaderboardBoard)
+		task.wait(REFRESH_INTERVAL)
 	end
 end
 

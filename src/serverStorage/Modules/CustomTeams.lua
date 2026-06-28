@@ -455,6 +455,9 @@ function CustomTeams.LoadFromDataStore()
 			end
 			loaded = loaded + 1
 		end)
+		
+		-- Jeda agar DataStore tidak dibombardir
+		task.wait(0.1) 
 	end
 	local t0 = tick()
 	while loaded < #teamList and (tick() - t0) < 10 do task.wait(0.05) end

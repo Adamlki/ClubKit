@@ -79,6 +79,10 @@ changeSpeedRE.OnServerEvent:Connect(function(player, speed)
 end)
 
 startSyncRE.OnServerEvent:Connect(function(player, target, condition)
+	-- Keamanan Anti-Spam (Thread Bombing)
+	if not RemoteEventManager.checkRateLimit(player, "startSync") then return end
+	if typeof(target) ~= "Instance" or not target:IsA("Player") then return end
+
 	SyncController.handleSyncRequest(player, target, condition, loadedAnimations)
 end)
 

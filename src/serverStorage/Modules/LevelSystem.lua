@@ -388,11 +388,14 @@ end)
 game:BindToClose(function()
 	print("[LevelSystem] Server shutting down, saving all player data safely...")
 	local players = Players:GetPlayers()
+	local totalPlayers = #players
+	local completed = 0
 	
 	for i, player in ipairs(players) do
 		task.spawn(function()
 			-- Paksa save mengabaikan cooldown
 			LevelSystem:SavePlayerLevel(player, true) 
+			completed += 1 -- Tandai bahwa pemain ini sudah selesai disave
 		end)
 		
 		-- 🔥 KUNCI ANTI-LAG: Kasih napas ke Roblox API setiap 10 pemain
@@ -400,6 +403,16 @@ game:BindToClose(function()
 			task.wait(0.2)
 		end
 	end
+	
+	-- TAHAN SERVER JANGAN SAMPAI MATI!
+	-- Tunggu sampai semua save selesai (maksimal 25 detik agar tidak force kill oleh Roblox)
+	local elapsed = 0
+	while completed < totalPlayers and elapsed < 25 do
+		task.wait(1)
+		elapsed += 1
+	end
+	
+	print("[LevelSystem] " .. completed .. "/" .. totalPlayers .. " data pemain berhasil diselamatkan sebelum shutdown!")
 end)
 
 return LevelSystem

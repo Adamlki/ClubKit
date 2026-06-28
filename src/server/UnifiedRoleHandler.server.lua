@@ -233,6 +233,20 @@ giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
 				return
 			end
 
+			-- Cegah bawahan menurunkan/mengubah role atasan!
+			local playerRoleName = RoleSystem:GetPlayerRole(player)
+			local giverPriority = RoleSystem.Config.RoleHierarchy[playerRoleName] or 0
+			local targetPriority = RoleSystem.Config.RoleHierarchy[targetCurrentRole] or 0
+			
+			if playerRoleName ~= "Owner" and targetPriority >= giverPriority then
+				giveRoleRemote:FireClient(player, {
+					source  = "AdminPanel",
+					success = false,
+					message = "Kamu tidak bisa mengubah role pemain yang jabatannya setara atau lebih tinggi darimu!",
+				})
+				return
+			end
+
 			-- Cek permission giver
 			local canGive, errorMessage = canGiveRole(player, roleType)
 			if not canGive then

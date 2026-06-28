@@ -209,15 +209,31 @@ task.spawn(function()
 	end
 end)
 
--- Mencegah data loss saat server mati (terutama saat testing di Roblox Studio klik Stop)
+-- Mencegah data loss saat server mati
 game:BindToClose(function()
-	for _, player in ipairs(Players:GetPlayers()) do
+	local players = Players:GetPlayers()
+	local totalPlayers = #players
+	local completed = 0
+
+	for i, player in ipairs(players) do
 		task.spawn(function()
 			LikeManager.SaveTotalLikes(player)
 			LikeManager.SavePlayerCooldowns(player)
+			completed += 1
 		end)
+		
+		-- Beri napas ke API Roblox tiap 10 pemain (Anti-Throttle)
+		if i % 10 == 0 then
+			task.wait(0.2)
+		end
 	end
-	task.wait(2) -- Beri waktu sedikit untuk DataStore memproses save sebelum server benar-benar mati
+	
+	-- Tahan server jangan mati sebelum data diselamatkan (maks 15 detik)
+	local elapsed = 0
+	while completed < totalPlayers and elapsed < 15 do
+		task.wait(1)
+		elapsed += 1
+	end
 end)
 
 return LikeManager

@@ -297,6 +297,14 @@ local function startCarry(carrier, target, style)
 		saveHumanoidState(target.UserId, tHum)
 		applyCarriedState(tHum)
 
+		-- Anti-Glitch jika target mengeluarkan Tool saat digendong
+		local antiWeightConn = tChar.DescendantAdded:Connect(function(descendant)
+			if descendant:IsA("BasePart") then
+				descendant.Massless = true
+				descendant.CanCollide = false
+			end
+		end)
+
 		local offset       = CarryConfig.getStyleOffset(style)
 		local carrierPart  = getAttachmentPart(cChar)
 
@@ -316,9 +324,16 @@ local function startCarry(carrier, target, style)
 		local cleanupDone = false
 		local function cleanup()
 			if cleanupDone then return end
+			
+			-- Pastikan status carry masih aktif sebelum dibersihkan
+			-- Mencegah double-execution jika penggendong keluar dari game
+			if activeCarries[carrier.UserId] ~= target.UserId then return end
+			
 			cleanupDone = true
 
 			task.defer(function()
+				if antiWeightConn then antiWeightConn:Disconnect() end
+				
 				activeCarries[carrier.UserId] = nil
 				activeCarries[target.UserId]  = nil
 
@@ -438,7 +453,6 @@ local function onPlayerAdded(plr)
 			carryable.Value   = true
 			canAskCarry.Value = true
 			restorePhysics(plr.UserId)
-			savedHumanoidStates[plr.UserId] = nil
 		end)
 	end)
 end

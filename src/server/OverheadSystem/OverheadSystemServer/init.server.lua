@@ -9,7 +9,8 @@ local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):W
 -- ====================================
 -- MODULES
 -- ====================================
-local Config             = require(script.Config)
+local OverheadShared     = ReplicatedStorage:WaitForChild("OverheadShared")
+local Config             = require(OverheadShared:WaitForChild("Config"))
 local DebugSystem        = require(script.DebugSystem)
 local OverheadManager    = require(script.OverheadManager)
 local NametagDisabler    = require(script.NametagDisabler)
@@ -42,6 +43,11 @@ NametagDisabler:Init()
 -- CHARACTER EVENTS
 -- ====================================
 local function onCharacterAdded(player, character)
+	-- 🔥 FIX: Tunggu sampai penampilan asli avatar (baju/aksesoris) selesai diload oleh Roblox
+	if not player:HasAppearanceLoaded() then
+		player.CharacterAppearanceLoaded:Wait()
+	end
+
 	-- 🔥 FIX MAGIC NUMBER: Tunggu komponen krusial dimuat oleh Roblox dengan Timeout 10 detik
 	local head = character:WaitForChild("Head", 10)
 	local hrp = character:WaitForChild("HumanoidRootPart", 10)

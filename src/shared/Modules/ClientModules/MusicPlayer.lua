@@ -54,14 +54,20 @@ function MusicPlayer.new()
 	self:SetupChatCommands()
 	self:SetupRoleWatcher() -- ✅ NEW: Watch for role changes
 
-	-- ✅ NEW: Smooth local UI update loop (60 FPS)
-	RunService.RenderStepped:Connect(function()
-		local serverSound = SoundService:FindFirstChild("ServerMusicSound")
-		if serverSound and serverSound.IsPlaying and serverSound.TimeLength > 0 then
-			local current = serverSound.TimePosition
-			local duration = serverSound.TimeLength
-			local progress = math.clamp(current / duration, 0, 1)
-			self.uiManager:UpdateProgress(progress, current, duration)
+	-- OPTIMASI: Throttled UI update loop (1 FPS instead of 60+ FPS) untuk menghemat CPU
+	-- Visual progress bar (Size) sudah ditangani otomatis oleh TweenService di UIControlManager
+	local timeSinceLastUpdate = 0
+	RunService.Heartbeat:Connect(function(dt)
+		timeSinceLastUpdate = timeSinceLastUpdate + dt
+		if timeSinceLastUpdate >= 1 then
+			timeSinceLastUpdate = 0
+			local serverSound = SoundService:FindFirstChild("ServerMusicSound")
+			if serverSound and serverSound.IsPlaying and serverSound.TimeLength > 0 then
+				local current = serverSound.TimePosition
+				local duration = serverSound.TimeLength
+				local progress = math.clamp(current / duration, 0, 1)
+				self.uiManager:UpdateProgress(progress, current, duration)
+			end
 		end
 	end)
 

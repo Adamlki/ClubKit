@@ -8,6 +8,7 @@ function PlayerEffectState.new(player, config, animationRegistry, notificationEv
 	local self = setmetatable({}, PlayerEffectState)
 	
 	self.Player = player
+	self.Character = player.Character -- [TAMBAHKAN INI]: Kunci tubuh aslinya
 	self.Config = config
 	self.AnimationRegistry = animationRegistry
 	self.NotificationEvent = notificationEvent
@@ -110,8 +111,7 @@ function PlayerEffectState:SuspendDance()
 						AnimationId = currentDanceID,
 						TimePosition = track.TimePosition,
 						Weight = track.WeightTarget,
-						Speed = track.Speed,
-						Track = track
+						Speed = track.Speed
 					})
 					track:Stop(0.1)
 				elseif self.RegisteredAnimIds[trackNumericId] then
@@ -127,8 +127,7 @@ function PlayerEffectState:SuspendDance()
 			AnimationId = currentDanceID,
 			TimePosition = 0,
 			Weight = 1,
-			Speed = speedAttr,
-			Track = nil
+			Speed = speedAttr
 		})
 	end
 	
@@ -153,12 +152,10 @@ function PlayerEffectState:ResumeDance()
 		
 		if animator then
 			for _, danceData in ipairs(self.SuspendedDanceTracks) do
-				local track = danceData.Track
-				if not track then
-					local anim = Instance.new("Animation")
-					anim.AnimationId = danceData.AnimationId
-					track = animator:LoadAnimation(anim)
-				end
+				local anim = Instance.new("Animation")
+				anim.AnimationId = danceData.AnimationId
+				local track = animator:LoadAnimation(anim)
+				anim:Destroy() -- Cegah memory leak
 				
 				track:Play()
 				track:AdjustWeight(danceData.Weight)
@@ -195,6 +192,13 @@ function PlayerEffectState:ApplyFloating()
 	if not char then return end
 	local humanoid = char:FindFirstChild("Humanoid")
 	if not humanoid then return end
+	
+	-- Anti-Sangkut di kursi
+	if humanoid.Sit then
+		humanoid.Sit = false
+		task.wait(0.1)
+	end
+	
 	local animator = humanoid:FindFirstChild("Animator") or Instance.new("Animator", humanoid)
 
 	self:RemoveFly()
@@ -223,6 +227,7 @@ function PlayerEffectState:ApplyFloating()
 	local anim = Instance.new("Animation")
 	anim.AnimationId = self.Config.FloatingAnimationId
 	local track = animator:LoadAnimation(anim)
+	anim:Destroy() -- FIX: Cegah Memory Leak!
 	track.Priority = Enum.AnimationPriority.Action4
 	track.Looped = true
 	track:Play()
@@ -245,6 +250,13 @@ function PlayerEffectState:ApplyFly()
 	local humanoid = char:FindFirstChild("Humanoid")
 	local rootPart = char:FindFirstChild("HumanoidRootPart")
 	if not humanoid or not rootPart then return end
+	
+	-- Anti-Sangkut di kursi
+	if humanoid.Sit then
+		humanoid.Sit = false
+		task.wait(0.1) 
+	end
+	
 	local animator = humanoid:FindFirstChild("Animator") or Instance.new("Animator", humanoid)
 
 	self:RemoveFloating()
@@ -253,6 +265,11 @@ function PlayerEffectState:ApplyFly()
 
 	self:SuspendDance()
 	char:SetAttribute("GlobalEffectActive", true)
+	
+	-- [FIX FISIKA SEJATI]: Kunci otoritas fisika ke Server agar tidak goyang (rubberband)
+	if rootPart:CanSetNetworkOwnership() then
+		rootPart:SetNetworkOwner(nil)
+	end
 
 	if not self.ToolBlockConnection then
 		self.ToolBlockConnection = char.ChildAdded:Connect(function(child)
@@ -273,6 +290,7 @@ function PlayerEffectState:ApplyFly()
 	local anim = Instance.new("Animation")
 	anim.AnimationId = self.Config.FlyAnimationId
 	local track = animator:LoadAnimation(anim)
+	anim:Destroy() -- FIX: Cegah Memory Leak!
 	track.Priority = Enum.AnimationPriority.Action4
 	track.Looped = true
 	track:Play()
@@ -351,8 +369,10 @@ function PlayerEffectState:RemoveFly()
 	end
 	
 	if not self.Player or typeof(self.Player) ~= "Instance" or not self.Player.Parent then return end
-	local char = self.Player.Character
-	if char then
+	
+	-- [UBAH INI]: Gunakan self.Character, JANGAN self.Player.Character
+	local char = self.Character 
+	if char and char.Parent then
 		local humanoid = char:FindFirstChild("Humanoid")
 		local rootPart = char:FindFirstChild("HumanoidRootPart")
 		if humanoid then
@@ -363,6 +383,11 @@ function PlayerEffectState:RemoveFly()
 		if rootPart then
 			rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
 			rootPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+			
+			-- Kembalikan hak gerak ke Pemain
+			if rootPart:CanSetNetworkOwnership() then
+				rootPart:SetNetworkOwner(self.Player)
+			end
 		end
 	end
 end
@@ -405,7 +430,7 @@ function PlayerEffectState:ApplyWing()
 			newHandle.Anchored = false
 			newHandle.Parent = item
 
-			for _, part in ipairs(item:GetChildren()) do
+			for _, part in ipairs(item:GetDescendants()) do -- Gunakan GetDescendants
 				if part:IsA("BasePart") and part ~= newHandle then
 					local weld = Instance.new("WeldConstraint")
 					weld.Part0 = newHandle

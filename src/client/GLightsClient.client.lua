@@ -10,60 +10,15 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService      = game:GetService("TweenService")
 
 -- ============================================================
--- SETUP GLIGHT CORE (tidak berubah dari versi lama)
+-- CORE INITIALIZATION DIHAPUS (Bypass Penuh)
 -- ============================================================
-local mainFolder = workspace:WaitForChild("GLights", 15)
-if not mainFolder then
-	warn("[GLights] Folder GLights tidak ditemukan di Workspace!")
-	return
-end
-
-local function waitForEverythingToLoadIn()
-	local folders = { "Custom", "FollowPoints", "Lights", "ResetButtons", "Scripts", "Whitelist" }
-	for _, folderName in folders do
-		mainFolder:WaitForChild(folderName, 10)
-	end
-end
-waitForEverythingToLoadIn()
-
-local coreFolder = mainFolder:WaitForChild("Scripts"):WaitForChild("Core")
-local Core = require(coreFolder:WaitForChild("Main"))
-local cores = {}
-
-local function main()
-	local currentData = coreFolder.Events.GetCurrentData:InvokeServer()
-	for _, data in currentData do
-		task.spawn(function()
-			local core = Core.new(data.Settings, data.ID, data.IndexerIDs)
-			cores[data.ID] = core
-			core.Changer.State = data.State
-			for _, id in cores[data.ID].Indexer.Motors.All do
-				core.Changer:ApplySingleLightState(id)
-			end
-			for _, id in cores[data.ID].Indexer.All do
-				core.Changer:ApplySingleLensState(id)
-			end
-			core.Changer:ApplyGenericState()
-		end)
-	end
-	for _, event in coreFolder.Events:GetChildren() do
-		if event:IsA("RemoteEvent") then
-			local name = event.Name
-			event.OnClientEvent:Connect(function(id, ...)
-				if cores[id] and cores[id].Changer[name] then
-					cores[id].Changer[name](cores[id].Changer, ...)
-				end
-			end)
-		end
-	end
-end
-main()
 
 -- ============================================================
 -- NEON & LAMPU (tag "LampuDJ")
 -- ============================================================
 local daftarNeon  = {} -- [BasePart/MeshPart] = true
 local daftarLampu = {} -- [Light] = originalBrightness
+local daftarBeam  = {} -- [Beam] = true
 
 local function registerNeon(obj)
 	if obj:IsA("BasePart") or obj:IsA("MeshPart") then
@@ -104,6 +59,35 @@ CollectionService:GetInstanceRemovedSignal("ScreenDJ"):Connect(function(obj)
 end)
 
 -- ============================================================
+-- FALLBACK GLIGHTS INITIALIZER (BYPASS CORE.MAIN)
+-- Mencari manual semua lampu GLights tanpa menjalankan mesin Physics Motor
+-- ============================================================
+local function setupFallbackGLights()
+	local lightsFolder = workspace:FindFirstChild("GLights")
+	if not lightsFolder then return end
+	lightsFolder = lightsFolder:FindFirstChild("Lights")
+	if not lightsFolder then return end
+
+	for _, descendant in ipairs(lightsFolder:GetDescendants()) do
+		if descendant:IsA("SpotLight") or descendant:IsA("SurfaceLight") then
+			descendant.Enabled = true
+			daftarLampu[descendant] = descendant.Brightness > 0 and descendant.Brightness or 2
+		elseif descendant:IsA("Beam") then
+			descendant.Enabled = true
+			daftarBeam[descendant] = true
+		elseif descendant:IsA("BasePart") then
+			local name = string.lower(descendant.Name)
+			-- Biasa namanya "Lens", "Neon", atau "Light"
+			if name:find("lens") or name:find("neon") then
+				descendant.Material = Enum.Material.Neon
+				daftarNeon[descendant] = true
+			end
+		end
+	end
+end
+setupFallbackGLights()
+
+-- ============================================================
 -- APPLY WARNA — dipanggil SEKALI saat warna ganti
 -- Efek ganti warna secara INSTAN untuk mengurangi lag drastis.
 -- Tidak menggunakan TweenService agar tidak mengubah ratusan part setiap frame.
@@ -125,6 +109,12 @@ local function setColors(newColor)
 		if lampu.Parent then
 			lampu.Color = newColor
 			lampu.Brightness = (newColor == BLACK) and 0 or origBright
+		end
+	end
+	local beamColorSequence = ColorSequence.new(newColor)
+	for beam in pairs(daftarBeam) do
+		if beam.Parent then
+			beam.Color = beamColorSequence
 		end
 	end
 end
@@ -182,21 +172,4 @@ task.spawn(function()
 	end
 end)
 
--- Dummy listener for GLights Color event to prevent Remote Event Queue Exhausted error
-task.spawn(function()
-	local coreScripts = mainFolder:WaitForChild("Scripts", 5)
-	if coreScripts then
-		local core = coreScripts:WaitForChild("Core", 5)
-		if core then
-			local events = core:WaitForChild("Events", 5)
-			if events then
-				local colorEvent = events:WaitForChild("Color", 5)
-				if colorEvent and colorEvent:IsA("RemoteEvent") then
-					colorEvent.OnClientEvent:Connect(function()
-						-- do nothing
-					end)
-				end
-			end
-		end
-	end
-end)
+-- Dummy listener dihapus karena server tidak lagi mengirim event jika GLights dihapus

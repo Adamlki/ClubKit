@@ -6,15 +6,22 @@ PhysicsService:RegisterCollisionGroup(GROUP_NAME)
 PhysicsService:CollisionGroupSetCollidable(GROUP_NAME, GROUP_NAME, false)
 
 local function optimizePart(part)
-	if part:IsA("BasePart") then
-		part.CollisionGroup = GROUP_NAME
-	end
-	if part:IsA("Accessory") then
-		local handle = part:FindFirstChild("Handle")
-		if handle and handle:IsA("BasePart") then
-			handle.CastShadow = false
-		end
-	end
+    -- 🔥 FIX LAYERED CLOTHING: 
+    -- Pastikan part ini adalah BasePart badannya, BUKAN bagian dari Aksesoris/Baju.
+    if part:IsA("BasePart") and not part:FindFirstAncestorWhichIsA("Accessory") then
+        part.CollisionGroup = GROUP_NAME
+    end
+
+    -- Khusus untuk Accessory, kita cuma matikan shadow supaya game tetap ringan
+    if part:IsA("Accessory") then
+        for _, child in ipairs(part:GetDescendants()) do
+            if child:IsA("BasePart") then
+                child.CastShadow = false
+                -- DILARANG KERAS mengganti child.CollisionGroup di sini!
+                -- Menyentuh CollisionGroup pada aksesoris adalah penyebab utama baju kaku.
+            end
+        end
+    end
 end
 
 -- 🔥 ARCHITECT FIX: Simpan connection per-player agar bisa di-disconnect

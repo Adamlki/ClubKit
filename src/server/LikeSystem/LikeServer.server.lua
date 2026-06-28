@@ -4,6 +4,7 @@ local Players = game:GetService("Players")
 local ServerStorage = game:GetService("ServerStorage")
 
 local LikeManager = require(ServerStorage:WaitForChild("Modules"):WaitForChild("LikeManager"))
+local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 
 -- Create RemoteEvents if they don't exist
 local RemotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
@@ -36,6 +37,9 @@ end
 
 -- Wait for UI to load if needed, but we use RemoteFunction for checking cooldown
 CheckLikeCooldownRemote.OnServerInvoke = function(player, targetUserId)
+	-- [TAMBAHKAN INI]: Pelindung spam agar player tidak mengirim ratusan request cek per detik
+	if not RemoteEventManager.checkRateLimit(player, "CheckLike") then return {cooldownTime = 0, targetLikes = 0} end
+	
 	if type(targetUserId) ~= "number" then return {cooldownTime = 0, targetLikes = 0} end
 	
 	local targetPlayer = Players:GetPlayerByUserId(targetUserId)
@@ -51,6 +55,11 @@ CheckLikeCooldownRemote.OnServerInvoke = function(player, targetUserId)
 end
 
 LikePlayerRemote.OnServerInvoke = function(player, targetUserId)
+	-- Blokir spammer di pintu depan!
+	if not RemoteEventManager.checkRateLimit(player, "LikePlayerInvoke") then
+		return false, "Terlalu cepat! Tunggu sebentar."
+	end
+
 	if type(targetUserId) ~= "number" then
 		return false, "Invalid target."
 	end

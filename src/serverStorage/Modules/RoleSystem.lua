@@ -275,7 +275,8 @@ function RoleSystem:CachePlayerOwnership(player)
 						print(string.format("[RoleSystem] Auto-saving VVIP purchase for user %d", userId))
 					end
 
-					self:GivePassToPlayer(userId, "VVIP", 0)
+					-- Jangan spam DataStore untuk owner asli!
+					-- self:GivePassToPlayer(userId, "VVIP", 0)
 					if player and player.Parent then
 						self:UpdatePlayerRole(player)
 					end
@@ -292,7 +293,8 @@ function RoleSystem:CachePlayerOwnership(player)
 						print(string.format("[RoleSystem] Auto-saving VIP purchase for user %d", userId))
 					end
 
-					self:GivePassToPlayer(userId, "VIP", 0)
+					-- Jangan spam DataStore untuk owner asli!
+					-- self:GivePassToPlayer(userId, "VIP", 0)
 					if player and player.Parent then
 						self:UpdatePlayerRole(player)
 					end
@@ -559,5 +561,11 @@ function RoleSystem:GetStatMultiplier(player, statName) return 1 end
 function RoleSystem:GetAllSpecialItems(player) return {} end
 function RoleSystem:ApplyRoleToPlayer(player) return self:GetPlayerRole(player) end
 function RoleSystem:GiveSpecialItems(player) end
+
+-- ANTI MEMORY LEAK UNTUK CACHE ROLE
+game:GetService("Players").PlayerRemoving:Connect(function(player)
+	-- Variabel playerOwnershipCache ada di scope file ini
+	RoleSystem:InvalidateOwnershipCache(player.UserId)
+end)
 
 return RoleSystem

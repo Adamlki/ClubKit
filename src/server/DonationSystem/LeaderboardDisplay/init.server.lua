@@ -4,9 +4,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players           = game:GetService("Players")
 
 local DonationLeaderboard = require(script.DonationLeaderboard)
-local BoardRenderer       = require(script.BoardRenderer)
 
-local REFRESH_INTERVAL = 60   -- detik antar refresh otomatis
+local REFRESH_INTERVAL = 120   -- detik antar refresh otomatis (dinaikkan ke 120 untuk mencegah rate limit)
 local TOP_ENTRIES      = 100
 
 -- ============================================
@@ -24,16 +23,6 @@ local updateTopBoardRemote = ReplicatedStorage:FindFirstChild("UpdateTopBoard")
 -- INISIALISASI
 -- ============================================
 local leaderboard = DonationLeaderboard.new()
-
-local board = workspace:WaitForChild("EldetoDonationBoard", 10)
-if not board then
-	error("[LeaderboardDisplay] EldetoDonationBoard tidak ditemukan di Workspace!")
-end
-
-local renderer = BoardRenderer.new(board)
-if not renderer then
-	error("[LeaderboardDisplay] BoardRenderer gagal diinisialisasi!")
-end
 
 -- ============================================
 -- MANUAL CONTROL (DIPINDAHKAN KE ATAS)
@@ -59,57 +48,51 @@ _G.LeaderboardControl = {
 -- ============================================
 -- STATE (CACHE) - OPTIMASI UNTUK 100 PLAYER
 -- ============================================
-local cachedTop3 = {}
+local cachedDonors = {}
 
 -- ============================================
 -- HELPER
 -- ============================================
-local function buildTop3(donors)
-	local top3 = {}
-	for i = 1, math.min(3, #donors) do
-		top3[i] = {
+local function buildNetworkData(donors)
+	local data = {}
+	for i = 1, math.min(TOP_ENTRIES, #donors) do
+		data[i] = {
 			UserId      = donors[i].UserId,
 			DisplayName = donors[i].DisplayName,
 			Amount      = donors[i].Amount,
 			Rank        = donors[i].Rank,
 		}
 	end
-	return top3
+	return data
 end
 
 -- ============================================
 -- UPDATE LEADERBOARD (GLOBAL)
 -- ============================================
-local function updateLeaderboard()
-	renderer:ShowLoading("Loading...")
-	task.wait(0.5)
-
+function updateLeaderboard()
 	local ok, donors = pcall(function()
 		return leaderboard:GetTopDonors(TOP_ENTRIES)
 	end)
 
 	if ok and donors then
-		-- Simpan data Top 3 ke dalam Cache
-		cachedTop3 = buildTop3(donors)
+		-- Simpan data ke dalam Cache
+		cachedDonors = buildNetworkData(donors)
 
-		renderer:Render(donors)
-		updateTopBoardRemote:FireAllClients(cachedTop3)
+		-- HANYA FIRING KE CLIENT, TIDAK ADA RENDER DI SERVER
+		updateTopBoardRemote:FireAllClients(cachedDonors)
 	else
 		warn("[LeaderboardDisplay] Gagal fetch data:", donors)
-		renderer:ShowEmpty()
 	end
 end
 
 -- ============================================
--- PLAYER JOIN — KIRIM CACHE SAJA! (SUPER RINGAN)
+-- KETIKA CLIENT MEMINTA DATA (Saat Baru Masuk)
 -- ============================================
-Players.PlayerAdded:Connect(function(player)
-	task.wait(3)  -- Tunggu LocalScript client siap
-
+updateTopBoardRemote.OnServerEvent:Connect(function(player)
 	-- Cukup kirim data yang sudah diingat Server, jangan panggil GetTopDonors lagi!
-	if cachedTop3 and #cachedTop3 > 0 then
+	if cachedDonors and #cachedDonors > 0 then
 		pcall(function()
-			updateTopBoardRemote:FireClient(player, cachedTop3)
+			updateTopBoardRemote:FireClient(player, cachedDonors)
 		end)
 	end
 end)
@@ -121,19 +104,12 @@ task.wait(2)
 updateLeaderboard()
 
 -- ============================================
--- LOOP AUTO-REFRESH DENGAN COUNTDOWN
+-- LOOP AUTO-REFRESH
 -- ============================================
 task.spawn(function()
 	while true do
-		-- Countdown
-		for i = REFRESH_INTERVAL, 1, -1 do
-			pcall(function()
-				renderer:ShowCountdown(i)
-			end)
-			task.wait(1)
-		end
-
+		task.wait(REFRESH_INTERVAL)
 		leaderboard:ClearCache()
 		updateLeaderboard()
 	end
-end)
+end)

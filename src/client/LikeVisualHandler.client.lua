@@ -101,7 +101,7 @@ local function playLoveEffect(senderPlayer, targetPlayer)
 	tweenAnim:Play()
 
 	-- Setelah selesai terbang
-	tweenAnim.Completed:Connect(function()
+	tweenAnim.Completed:Once(function()
 		connection:Disconnect()
 		
 		-- Matikan semua ParticleEmitter agar tidak mengeluarkan hati baru, tapi biarkan hati yang sudah ada menghilang perlahan
@@ -117,12 +117,8 @@ local function playLoveEffect(senderPlayer, targetPlayer)
 				effectPart:Destroy()
 			end
 		end)
-		
 		tweenVal:Destroy()
 	end)
-	
-	Debris:AddItem(effectPart, 5)
-	Debris:AddItem(tweenVal, 5)
 end
 
 -- Dengarkan panggilan dari server

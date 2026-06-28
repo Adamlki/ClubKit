@@ -10,6 +10,7 @@ local ProcessReceiptHandler = {}
 local initialized        = false
 local registeredCallbacks = {}  -- [name] = function
 local processedReceipts  = {}   -- [purchaseId] = {timestamp, processed}
+local activeProcessing   = {}
 
 -- ============================================
 -- HELPER
@@ -106,19 +107,28 @@ function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
 
+	-- Cegah Roblox menjalankan fungsi 2x jika DataStore sedang ngelag
+	if activeProcessing[purchaseId] then
+		debugLog("RECEIPT", "Receipt sedang diproses thread lain, ditunda.")
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	activeProcessing[purchaseId] = true
+
 	-- Cari player — jika tidak ada, Roblox akan mencoba lagi nanti
 	local player = Players:GetPlayerByUserId(userId)
 	if not player then
 		debugLog("ERROR", "Player tidak ditemukan, userId:", userId)
+		activeProcessing[purchaseId] = nil
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
 	-- Cari harga produk dari config
 	local amount = DonationConfig.PRODUCT_PRICES[productId]
 	if not amount then
-		-- Produk tidak dikenal — kembalikan NotProcessedYet agar uang aman (Roblox akan refund setelah 3 hari)
-		warn("[RECEIPT] Unknown productId:", productId, "- returning NotProcessedYet")
-		return Enum.ProductPurchaseDecision.NotProcessedYet
+		-- Jangan return NotProcessedYet! Buang receipt agar antrean Roblox tidak nyangkut permanen.
+		warn("[RECEIPT] Unknown productId:", productId, "- clearing invalid receipt to prevent deadlock!")
+		activeProcessing[purchaseId] = nil
+		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
 
 	debugLog("RECEIPT", "Player:", player.Name, "| Amount:", amount, "Robux")
@@ -132,6 +142,7 @@ function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 		
 		if not ok or success ~= true then
 			debugLog("ERROR", "SaveToDataStore gagal. Transaksi ditunda.")
+			activeProcessing[purchaseId] = nil
 			return Enum.ProductPurchaseDecision.NotProcessedYet
 		end
 		
@@ -139,6 +150,7 @@ function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 		if isNew == false then
 			debugLog("RECEIPT", "Duplicate receipt di DataStore. Mengabaikan efek visual.")
 			markReceiptProcessed(purchaseId)
+			activeProcessing[purchaseId] = nil
 			return Enum.ProductPurchaseDecision.PurchaseGranted
 		end
 	end
@@ -161,11 +173,13 @@ function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 
 	if not allSuccess then
 		debugLog("ERROR", "Satu atau lebih callback gagal. Transaksi ditunda.")
+		activeProcessing[purchaseId] = nil
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
 	-- Tandai sudah diproses (setelah semua callback selesai)
 	markReceiptProcessed(purchaseId)
+	activeProcessing[purchaseId] = nil -- Lepas kunci thread
 
 	debugLog("RECEIPT", "Receipt selesai diproses")
 	return Enum.ProductPurchaseDecision.PurchaseGranted

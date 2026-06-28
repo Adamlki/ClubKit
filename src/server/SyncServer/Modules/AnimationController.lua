@@ -20,18 +20,18 @@ local ANIMATION_PRIORITY = Enum.AnimationPriority.Action4
 
 local processingRequests = {}
 local lastRequestTime = {}
-local MIN_REQUEST_INTERVAL = 0.03
+local MIN_REQUEST_INTERVAL = 0.05 -- 50ms (Agar spam dance dari leader langsung tersinkron ke followers 0 delay)
 
 local function canProcessRequest(player)
 	if processingRequests[player] then return false end
 	local lastTime = lastRequestTime[player] or 0
-	if (tick() - lastTime) < MIN_REQUEST_INTERVAL then return false end
+	if (os.clock() - lastTime) < MIN_REQUEST_INTERVAL then return false end
 	return true
 end
 
 local function startProcessing(player)
 	processingRequests[player] = true
-	lastRequestTime[player] = tick()
+	lastRequestTime[player] = os.clock()
 end
 
 local function endProcessing(player)
@@ -128,8 +128,15 @@ end
 -- ADJUST ANIMATION SPEED (PURE MATH TIME-WARP FIX)
 -- ============================================
 function module.adjustAnimationSpeed(player, speed, loadedAnimations)
+	-- Perlindungan Spam/DDoS
+	if not canProcessRequest(player) then return "rate_limited" end
+	startProcessing(player)
+
 	local character = player.Character
-	if not character or character:GetAttribute("Syncing") then return "syncing" end
+	if not character or character:GetAttribute("Syncing") then 
+		endProcessing(player) -- Jangan lupa dilepas!
+		return "syncing" 
+	end
 
 	speed = math.clamp(tonumber(speed) or 1, 0.1, 3)
 
@@ -143,12 +150,15 @@ function module.adjustAnimationSpeed(player, speed, loadedAnimations)
 	local animator = AnimatorUtils.getAnimator(player)
 	if animator then
 		local track = AnimatorUtils.getPlayingDanceTrack(animator, loadedAnimations)
-		if track then pcall(function() track:AdjustSpeed(speed) end) end
+		if track then
+			track:AdjustSpeed(speed)
+		end
 	end
 
 	character:SetAttribute("DanceSpeed", speed)
 	character:SetAttribute("DanceStartTime", compensatedStartTime)
 
+	endProcessing(player)
 	return "speed_changed"
 end
 

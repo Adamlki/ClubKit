@@ -104,6 +104,9 @@ function GlobalEffectManager:_setupRemotes()
 	end)
 	
 	self.ToggleFollowEvent.OnServerEvent:Connect(function(player, isFollowing)
+		-- SECURITY FIX (Anti-Type Spoofing)
+		if type(isFollowing) ~= "boolean" then return end
+		
 		player:SetAttribute("FollowGlobalEffect", isFollowing)
 		self:UpdatePlayerEffects(player)
 		

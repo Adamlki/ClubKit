@@ -260,12 +260,16 @@ local function fetchPlayerInfo(userId, callerPlayer)
 	end)
 
 	local startTime = os.clock()
-	while completedTasks < 4 and (os.clock() - startTime) < 2 do
+	while completedTasks < 4 and (os.clock() - startTime) < 6 do
 		task.wait(0.1)
 	end
 
-	-- Simpan raw ke cache sebelum filter
-	setCached(userId, rawDescription, friendsCount, followersCount, followingCount)
+	-- JANGAN simpan data ke cache jika gagal/timeout!
+	if completedTasks == 4 then
+		setCached(userId, rawDescription, friendsCount, followersCount, followingCount)
+	else
+		warn("[GetPlayerInfo] Roproxy Timeout untuk user:", userId)
+	end
 
 	return {
 		description    = filterBio(rawDescription, userId, callerPlayer),
@@ -341,3 +345,26 @@ getPlayerInfoRF.OnServerInvoke = function(callerPlayer, targetUserId)
 		return { description = "", friendsCount = 0, followersCount = 0, followingCount = 0 }
 	end
 end
+
+-- ============================================
+-- GARBAGE COLLECTOR (ANTI RAM LEAK)
+-- ============================================
+-- Membersihkan data cache dari pemain OFFLINE yang tidak terjangkau oleh PlayerRemoving
+task.spawn(function()
+	while true do
+		task.wait(300) -- Berpatroli setiap 5 menit
+		local now = tick()
+		local deletedCount = 0
+		
+		for uid, entry in pairs(cache) do
+			if now - entry.timestamp > CACHE_TTL then
+				cache[uid] = nil
+				deletedCount += 1
+			end
+		end
+		
+		if deletedCount > 0 then
+			-- print("[GetPlayerInfo] Garbage Collector membersihkan " .. deletedCount .. " cache offline.")
+		end
+	end
+end)

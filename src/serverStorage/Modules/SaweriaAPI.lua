@@ -28,12 +28,7 @@ function SaweriaAPI:GetDonationData()
 		return cachedData
 	end
 	
-	-- 2. DEBOUNCE (ANTI RACE-CONDITION)
-	-- Mencegah 10 pemain yang memanggil bersamaan memicu 10 request API sekaligus
 	if isFetching then
-		while isFetching do
-			task.wait(0.1)
-		end
 		return cachedData
 	end
 

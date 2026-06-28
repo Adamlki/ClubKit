@@ -21,7 +21,7 @@ globalEvent.OnServerEvent:Connect(function(player, toolName, isShooting)
 
 	-- KEAMANAN: Pastikan pemain benar-benar memegang Tool tersebut
 	local tool = player.Character and player.Character:FindFirstChild(toolName)
-	if not tool then return end
+	if not tool or not tool:IsA("Tool") then return end
 
 	-- ROUTING: Broadcast ke klien lain beserta nama senjatanya
 	for _, otherPlayer in ipairs(Players:GetPlayers()) do

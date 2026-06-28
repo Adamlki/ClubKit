@@ -37,6 +37,7 @@ function DonationLeaderboard.new()
 	self.orderedStore = DataStoreService:GetOrderedDataStore(ORDERED_DATASTORE_NAME, ORDERED_SCOPE)
 	self.cachedData = nil
 	self.lastFetch = 0
+	self.isFetching = false -- GEMBOK ANTI-BOMB
 
 	return self
 end
@@ -49,6 +50,14 @@ function DonationLeaderboard:GetTopDonors(maxEntries)
 		return self.cachedData
 	end
 
+	-- Jika script lain sedang mengambil data, tunggu sampai selesai
+	if self.isFetching then
+		while self.isFetching do task.wait(0.1) end
+		return self.cachedData or {}
+	end
+
+	self.isFetching = true -- Kunci pintu masuk
+
 	-- Tarik langsung dari OrderedDataStore dengan cepat! (false = descending / terbesar di atas)
 	local success, pages = pcall(function()
 		return self.orderedStore:GetSortedAsync(false, maxEntries)
@@ -56,6 +65,7 @@ function DonationLeaderboard:GetTopDonors(maxEntries)
 
 	if not success or not pages then
 		warn("[Leaderboard] Gagal menarik data dari OrderedDataStore")
+		self.isFetching = false -- Jangan lupa buka kunci jika gagal
 		return self.cachedData or {}
 	end
 
@@ -81,6 +91,7 @@ function DonationLeaderboard:GetTopDonors(maxEntries)
 
 	self.cachedData = donors
 	self.lastFetch = os.clock()
+	self.isFetching = false -- Buka kunci setelah selesai
 	return donors
 end
 

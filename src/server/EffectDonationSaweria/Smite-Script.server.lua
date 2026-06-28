@@ -34,16 +34,18 @@ SaweriaEffectEvent.Event:Connect(function(donorData, amount)
 
 		if userIdCache[donorName] then
 			userId = userIdCache[donorName]
+			table.insert(effectQueue, {donorName = donorName, amount = amount, userId = userId})
+			processQueue()
 		else
-			local success, id = pcall(function() return Players:GetUserIdFromNameAsync(donorName) end)
-			if success and id then 
-				userId = id 
-				userIdCache[donorName] = id 
-			end
+			task.spawn(function()
+				local success, id = pcall(function() return Players:GetUserIdFromNameAsync(donorName) end)
+				if success and id then 
+					userId = id 
+					userIdCache[donorName] = id 
+				end
+				table.insert(effectQueue, {donorName = donorName, amount = amount, userId = userId})
+				processQueue()
+			end)
 		end
-
-		-- Masukkan ke antrean, JANGAN LANGSUNG DITEMBAK!
-		table.insert(effectQueue, {donorName = donorName, amount = amount, userId = userId})
-		processQueue()
 	end
 end)

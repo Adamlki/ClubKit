@@ -1,3 +1,5 @@
+local TweenService = game:GetService("TweenService")
+
 local UIControlManager = {}
 UIControlManager.__index = UIControlManager
 
@@ -20,6 +22,7 @@ function UIControlManager.new(components)
 
 	self.isDraggingVolume = false
 	self.volumeValue = 0.5
+	self.progressTween = nil -- ✅ NEW: Tween reference
 
 	-- ✅ NEW: Duration tracking
 	self.currentDuration = 0
@@ -202,15 +205,45 @@ function UIControlManager:SetVolume(volumePercent)
 end
 
 -- ====================================
--- PROGRESS UPDATE (ENHANCED WITH DURATION INFO)
+-- PROGRESS UPDATE (ENHANCED DENGAN TWEEN SERVICE)
 -- ====================================
 function UIControlManager:UpdateProgress(progress, currentTime, totalTime)
-	-- Update track bar (read-only)
-	self.trackBar.Size = UDim2.new(progress, 0, 1, 0)
+	-- OPTIMASI TWEEN: Hanya tween panjang bar jika perlu, biarkan TweenService menangani visual
+	if not totalTime or totalTime <= 0 or progress == 0 then
+		if self.progressTween then
+			self.progressTween:Cancel()
+			self.progressTween = nil
+		end
+		self.trackBar.Size = UDim2.new(progress, 0, 1, 0)
+	else
+		-- Cek jika terdapat drift (tertinggal jauh) misal karena lag jaringan
+		if self.progressTween then
+			local currentTweenSize = self.trackBar.Size.X.Scale
+			if math.abs(currentTweenSize - progress) > 0.05 then
+				self.progressTween:Cancel()
+				self.progressTween = nil
+			end
+		end
 
-	-- ✅ ENHANCED: Format time label with duration info
-	local timeText = self:FormatTimeWithInfo(currentTime, totalTime)
-	self.timeLabel.Text = timeText
+		if not self.progressTween and currentTime < totalTime then
+			self.trackBar.Size = UDim2.new(progress, 0, 1, 0)
+			local timeRemaining = totalTime - currentTime
+			if timeRemaining > 0 then
+				local tweenInfo = TweenInfo.new(timeRemaining, Enum.EasingStyle.Linear)
+				self.progressTween = TweenService:Create(self.trackBar, tweenInfo, {Size = UDim2.new(1, 0, 1, 0)})
+				self.progressTween:Play()
+			end
+		end
+	end
+
+	-- OPTIMASI: Hanya update teks waktu jika detik berganti
+	local currentSec = math.floor(currentTime or 0)
+	if self.lastCurrentSec ~= currentSec then
+		self.lastCurrentSec = currentSec
+		-- ✅ ENHANCED: Format time label with duration info
+		local timeText = self:FormatTimeWithInfo(currentTime, totalTime)
+		self.timeLabel.Text = timeText
+	end
 end
 
 function UIControlManager:UpdateSongDuration(duration, metadataDuration, wasDetected)

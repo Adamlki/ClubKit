@@ -3,135 +3,287 @@ local Players = game:GetService("Players")
 
 local remotefolder = ReplicatedStorage:WaitForChild("Remotes")
 local refreshEvent = remotefolder:FindFirstChild("RefreshCharacterEvent")
+
 if not refreshEvent then
 	refreshEvent = Instance.new("RemoteEvent")
 	refreshEvent.Name = "RefreshCharacterEvent"
 	refreshEvent.Parent = remotefolder
 end
 
--- ==========================================
--- SISTEM ANTI-SPAM & PENGAMAN SERVER
--- ==========================================
+-- ================================
+-- 🔥 CONFIG
+-- ================================
+local COOLDOWN_TIME = 8
+local MAX_WAIT_TIME = 6
+
+-- ================================
+-- 🔥 STATE
+-- ================================
 local playerCooldowns = {}
-local COOLDOWN_TIME = 5 -- Player hanya bisa /re setiap 5 detik
+local queue = {}
+local isProcessing = false
 
-local function onRefreshRequest(player)
-	-- 1. CEK COOLDOWN
-	local lastRefreshTime = playerCooldowns[player.UserId]
-	if lastRefreshTime and (os.clock() - lastRefreshTime) < COOLDOWN_TIME then
-		return 
-	end
-
-	playerCooldowns[player.UserId] = os.clock()
-
-	local character = player.Character
-	if not character then return end
-
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	local rootPart = character:FindFirstChild("HumanoidRootPart")
-	if not humanoid or not rootPart then return end
-
-	-- 2. KUNCI POSISI & AMANKAN TOOL
-	local currentCFrame = rootPart.CFrame
-
-	-- 🔥 ARCHITECT FIX: Cek apakah ada Tool yang sedang dipegang
-	local equippedTool = character:FindFirstChildOfClass("Tool")
-	if equippedTool then
-		-- Pindahkan Tool secara paksa ke Backpack agar aman dari proses ApplyDescription
-		humanoid:UnequipTools()
-	end
-
-	local userId = player.UserId
-	local success, description = pcall(function()
-		return Players:GetHumanoidDescriptionFromUserId(userId)
-	end)
-
-	-- 🔥 FATAL CRASH FIX: Pastikan karakter dan part masih ada sesudah tertahan (Yield) oleh API Web
-	if not player or not player.Parent or not character or not character.Parent then return end
-	if not humanoid or not humanoid.Parent or not rootPart or not rootPart.Parent then return end
-
-	if success and description then
-		local head = character:FindFirstChild("Head")
-		local savedBillboards = {}
-
-		if head then
-			for _, child in ipairs(head:GetChildren()) do
-				if child:IsA("BillboardGui") and child.Name ~= "OverheadGui" then
-					local clone = child:Clone()
-					table.insert(savedBillboards, {
-						name = child.Name,
-						billboard = clone
-					})
+-- ================================
+-- 🔥 HELPER: WAIT CLOTHING READY
+-- ================================
+local function waitForClothing(character)
+	local t = 0
+	
+	while t < MAX_WAIT_TIME do
+		task.wait(0.2)
+		t += 0.2
+		
+		if not character or not character.Parent then return end
+		
+		local ready = true
+		
+		for _, v in ipairs(character:GetChildren()) do
+			if v:IsA("Accessory") then
+				local handle = v:FindFirstChild("Handle")
+				if handle and #handle:GetChildren() == 0 then
+					ready = false
+					break
 				end
 			end
 		end
-
-		local applySuccess, err = pcall(function()
-			humanoid:ApplyDescription(description)
-		end)
-
-		if applySuccess then
-			-- KEMBALIKAN POSISI SECARA INSTAN
-			rootPart.CFrame = currentCFrame
-
-			-- Beri jeda sepersekian detik agar engine selesai merakit joint/rig baru
-			task.wait(0.2)
-
-			-- Restore Billboards
-			local newHead = character:FindFirstChild("Head")
-			if newHead then
-				for _, data in ipairs(savedBillboards) do
-					local existing = newHead:FindFirstChild(data.name)
-					if existing then
-						existing:Destroy()
-					end
-
-					local restored = data.billboard:Clone()
-					restored.Adornee = newHead
-					restored.Parent = newHead
-				end
-			end
-
-			-- 🔥 ARCHITECT FIX: Kembalikan Tool ke tangan pemain secara otomatis
-			if equippedTool and equippedTool.Parent == player.Backpack then
-				humanoid:EquipTool(equippedTool)
-			end
-			
-			-- 🔥 FIX DANCE OUT OF SYNC: Toggle atribut tarian agar client merefresh animasi track
-			local currentDance = character:GetAttribute("CurrentDanceID")
-			local syncingTo = character:GetAttribute("Syncing")
-
-			if currentDance and currentDance ~= "" then
-				character:SetAttribute("CurrentDanceID", nil)
-				task.delay(0.1, function()
-					if character and character.Parent then
-						character:SetAttribute("CurrentDanceID", currentDance)
-					end
-				end)
-			elseif syncingTo and syncingTo ~= "" then
-				-- JANGAN set Syncing ke nil agar Frame Block UI tidak putus!
-				-- Cukup perlambat WalkSpeed dan beri notifikasi ke client untuk me-restart animasi
-				task.delay(0.1, function()
-					if character and character.Parent then
-						local syncNotificationRE = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("SyncNotification")
-						if syncNotificationRE then
-							syncNotificationRE:FireClient(player, "sync_success", syncingTo)
-						end
-					end
-				end)
-			end
-			
-			-- BERITAHU SISTEM LAIN (GLOBAL EFFECT) BAHWA REFRESH SUDAH SELESAI
-			character:SetAttribute("RefreshTrigger", os.clock())
-		else
-			warn("[Refresh System] Gagal ApplyDescription: " .. tostring(err))
-		end
+		
+		if ready then break end
 	end
 end
 
-refreshEvent.OnServerEvent:Connect(onRefreshRequest)
+-- ================================
+-- 🔥 CORE REFRESH FUNCTION
+-- ================================
+local function processPlayer(player)
+	local character = player.Character
+	if not character then return end
+	
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local rootPart = character:FindFirstChild("HumanoidRootPart")
+	
+	if not humanoid or not rootPart then return end
+	
+	-- ❌ BLOCK kondisi tertentu
+	local carryable = character:FindFirstChild("Carryable")
+	if (carryable and carryable.Value == false) or character:GetAttribute("GlobalEffectAirborne") then
+		return
+	end
+	
+	-- simpan posisi
+	local currentCFrame = rootPart.CFrame
+	
+	-- simpan tool
+	local equippedTool = character:FindFirstChildOfClass("Tool")
+	if equippedTool then
+		humanoid:UnequipTools()
+	end
+	
+	-- ambil description
+	local success, description = pcall(function()
+		return Players:GetHumanoidDescriptionFromUserId(player.UserId)
+	end)
+	
+	if not success or not description then return end
+	
+	-- safety check
+	if humanoid.Health <= 0 then return end
+	
+	-- simpan billboard
+	local head = character:FindFirstChild("Head")
+	local savedBillboards = {}
+	
+	if head then
+		for _, child in ipairs(head:GetChildren()) do
+			if child:IsA("BillboardGui") and child.Name ~= "OverheadGui" then
+				table.insert(savedBillboards, {
+					name = child.Name,
+					obj = child:Clone()
+				})
+			end
+		end
+	end
+	
+	-- 🔥 1. FREEZE KARAKTER SEMENTARA
+	-- Simpan kecepatan asli
+	local origSpeed = humanoid.WalkSpeed
+	local origJump = humanoid.UseJumpPower and humanoid.JumpPower or humanoid.JumpHeight
+	
+	humanoid.WalkSpeed = 0
+	if humanoid.UseJumpPower then
+		humanoid.JumpPower = 0
+	else
+		humanoid.JumpHeight = 0
+	end
+	
+	-- 🛡️ FAILSAFE ANTI STUCK: Garansi 100% pasti bisa jalan lagi apapun yang terjadi
+	task.delay(10, function()
+		if humanoid and humanoid.Parent and humanoid.Health > 0 and humanoid.WalkSpeed == 0 then
+			humanoid.WalkSpeed = origSpeed
+			if humanoid.UseJumpPower then humanoid.JumpPower = origJump else humanoid.JumpHeight = origJump end
+		end
+	end)
+	
+	-- 🔥 REMOVE OLD CLOTHING
+	for _, item in ipairs(character:GetChildren()) do
+		if item:IsA("Accessory") or item:IsA("Clothing") or item:IsA("BodyColors") or item:IsA("ShirtGraphic") then
+			item:Destroy()
+		end
+	end
+	
+	task.wait(0.2) -- kasih napas engine
+	
+	-- 🔥 2. OPTIONAL (PALING KUAT) — RE-APPLY 2x
+	local applySuccess = pcall(function()
+		humanoid:ApplyDescriptionReset(description)
+	end)
+	
+	if not applySuccess then 
+		-- Restore speed if failed
+		humanoid.WalkSpeed = origSpeed
+		if humanoid.UseJumpPower then humanoid.JumpPower = origJump else humanoid.JumpHeight = origJump end
+		return 
+	end
+	
+	task.wait(0.5)
+	
+	-- Safety check setelah yield
+	if not humanoid or humanoid.Parent == nil or humanoid.Health <= 0 then return end
+	
+	pcall(function()
+		humanoid:ApplyDescription(description) -- Double apply fix
+	end)
+	
+	-- 🔥 WAIT SAMPAI BENERAN KE-LOAD
+	waitForClothing(character)
+	
+	-- 🔥 3. TAMBAH DELAY FINAL (PENTING BANGET)
+	task.wait(1)
+	
+	-- Safety check setelah yield lama
+	if not humanoid or humanoid.Parent == nil or humanoid.Health <= 0 then return end
+	
+	-- 🔥 4. PAKSA REBUILD RIG (Pro Fix)
+	pcall(function()
+		humanoid:BuildRigFromAttachments()
+	end)
+	
+	-- 🔥 5. FORCE “RELOAD” ACCESSORY (Trigger Physics Ulang)
+	for _, v in ipairs(character:GetChildren()) do
+		if v:IsA("Accessory") then
+			local handle = v:FindFirstChild("Handle")
+			if handle then
+				handle.Anchored = true
+				task.wait()
+				handle.Anchored = false
+			end
+		end
+	end
+	
+	-- 🔥 BALIKIN POSISI
+	if rootPart and rootPart.Parent then
+		rootPart.CFrame = currentCFrame
+	end
+	
+	-- 🔥 UNFREEZE KARAKTER
+	humanoid.WalkSpeed = origSpeed
+	if humanoid.UseJumpPower then
+		humanoid.JumpPower = origJump
+	else
+		humanoid.JumpHeight = origJump
+	end
+	
+	-- 🔥 RESTORE BILLBOARD
+	local newHead = character:FindFirstChild("Head")
+	if newHead then
+		for _, data in ipairs(savedBillboards) do
+			local existing = newHead:FindFirstChild(data.name)
+			if existing then existing:Destroy() end
+			
+			local clone = data.obj:Clone()
+			clone.Adornee = newHead
+			clone.Parent = newHead
+		end
+	end
+	
+	-- 🔥 EQUIP TOOL BALIK
+	if equippedTool and equippedTool.Parent == player.Backpack then
+		humanoid:EquipTool(equippedTool)
+	end
+	
+	-- 🔥 TRIGGER SYNC FIX
+	local currentDance = character:GetAttribute("CurrentDanceID")
+	local syncingTo = character:GetAttribute("Syncing")
 
--- 3. BERSIHKAN MEMORY SAAT PLAYER KELUAR
+	if currentDance and currentDance ~= "" then
+		character:SetAttribute("CurrentDanceID", nil)
+		task.delay(0.1, function()
+			if character and character.Parent then
+				character:SetAttribute("CurrentDanceID", currentDance)
+			end
+		end)
+	elseif syncingTo and syncingTo ~= "" then
+		task.delay(0.1, function()
+			if character and character.Parent then
+				local syncNotificationRE = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("SyncNotification")
+				if syncNotificationRE then
+					syncNotificationRE:FireClient(player, "sync_success", syncingTo)
+				end
+			end
+		end)
+	end
+	
+	character:SetAttribute("RefreshTrigger", os.clock())
+end
+
+-- ================================
+-- 🔥 QUEUE SYSTEM
+-- ================================
+local function processQueue()
+	if isProcessing then return end
+	isProcessing = true
+	
+	while #queue > 0 do
+		local player = table.remove(queue, 1)
+		
+		if player and player.Parent then
+			processPlayer(player)
+			
+			-- 🔥 DELAY ANTAR PLAYER (ANTI LAG)
+			task.wait(0.5)
+		end
+	end
+	
+	isProcessing = false
+end
+
+-- ================================
+-- 🔥 EVENT HANDLER
+-- ================================
+refreshEvent.OnServerEvent:Connect(function(player)
+	local last = playerCooldowns[player.UserId]
+	
+	if last and (os.clock() - last) < COOLDOWN_TIME then
+		return
+	end
+	
+	playerCooldowns[player.UserId] = os.clock()
+	
+	-- masukin ke queue
+	table.insert(queue, player)
+	
+	-- jalankan queue
+	task.spawn(processQueue)
+end)
+
+-- ================================
+-- 🔥 CLEANUP
+-- ================================
 Players.PlayerRemoving:Connect(function(player)
 	playerCooldowns[player.UserId] = nil
+	-- Cleanup antrian
+	for i = #queue, 1, -1 do
+		if queue[i] == player then
+			table.remove(queue, i)
+		end
+	end
 end)

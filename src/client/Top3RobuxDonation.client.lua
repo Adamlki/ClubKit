@@ -202,8 +202,9 @@ local function onUpdate(top3Data)
 	end
 
 	-- 2. Rakit avatar baru di belakang layar (jika ada yang Cache Miss)
-	for rank, data in pairs(top3Data) do
-		if not activeStatues[rank] then
+	for rank = 1, 3 do
+		local data = top3Data[rank]
+		if data and not activeStatues[rank] then
 			task.spawn(function()
 				local userId = data.resolvedUserId
 				local name = data.name or data.DisplayName or data.Name or data.nama or data.donator or "Unknown"

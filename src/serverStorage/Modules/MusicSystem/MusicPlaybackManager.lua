@@ -156,18 +156,14 @@ end
 -- More efficient than RunService.Heartbeat
 -- ====================================
 function MusicPlaybackManager:StartProgressBroadcast(remotes)
-	-- Stop any existing loop
-	self.progressLoopRunning = false
-	task.wait(0.1) -- Wait for previous loop to stop
-
-	self.progressLoopRunning = true
+	self.broadcastToken = (self.broadcastToken or 0) + 1
+	local currentToken = self.broadcastToken
 
 	task.spawn(function()
-		while self.progressLoopRunning and self.isPlaying do
+		while self.isPlaying and self.broadcastToken == currentToken do
 			task.wait(CONFIG.PROGRESS_BROADCAST_INTERVAL)
 
-			-- Double check we're still playing
-			if self.progressLoopRunning and self.isPlaying then
+			if self.isPlaying and self.broadcastToken == currentToken then
 				self:UpdateProgress(remotes)
 			end
 		end
@@ -175,8 +171,7 @@ function MusicPlaybackManager:StartProgressBroadcast(remotes)
 end
 
 function MusicPlaybackManager:StopProgressBroadcast()
-	-- Simply set flag to false, loop will stop naturally
-	self.progressLoopRunning = false
+	self.broadcastToken = (self.broadcastToken or 0) + 1
 end
 
 -- ====================================

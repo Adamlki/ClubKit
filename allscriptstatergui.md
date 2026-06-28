@@ -6306,7 +6306,7 @@ LikeBtn.MouseButton1Click:Connect(function()
 	local originalSize = LoveImage.Size
 	local tweenClick = TweenService:Create(LoveImage, TweenInfo.new(0.1, Enum.EasingStyle.Sine), {Size = UDim2.new(originalSize.X.Scale * 0.8, originalSize.X.Offset, originalSize.Y.Scale * 0.8, originalSize.Y.Offset)})
 	tweenClick:Play()
-	tweenClick.Completed:Connect(function()
+	tweenClick.Completed:Once(function()
 		TweenService:Create(LoveImage, TweenInfo.new(0.2, Enum.EasingStyle.Bounce), {Size = originalSize}):Play()
 	end)
 
@@ -6488,14 +6488,12 @@ function PlayerHideSystem:SetupPlayerMonitoring(targetPlayer)
 	end
 
 	trackConnection(targetPlayer.CharacterAdded:Connect(function(character)
-		task.wait(0.5)
 		if hiddenPlayers[targetPlayer] then
 			self:ApplyHideState(targetPlayer, character, true)
 		end
 
 		trackConnection(character.ChildAdded:Connect(function(child)
 			if not hiddenPlayers[targetPlayer] then return end
-			task.wait(0.1)
 			if child:IsA("Tool") or (child:IsA("Model") and HideUtils:IsAuraModel(child)) then
 				self:HideObject(child, true)
 			end
@@ -6504,7 +6502,6 @@ function PlayerHideSystem:SetupPlayerMonitoring(targetPlayer)
 		if targetPlayer.Backpack then
 			trackConnection(targetPlayer.Backpack.ChildAdded:Connect(function(child)
 				if child:IsA("Tool") and hiddenPlayers[targetPlayer] then
-					task.wait(0.1)
 					self:HideObject(child, true)
 				end
 			end))
@@ -6515,7 +6512,6 @@ function PlayerHideSystem:SetupPlayerMonitoring(targetPlayer)
 			trackConnection(head.ChildAdded:Connect(function(child)
 				if child.Name == "OverheadGui" and child:IsA("BillboardGui") then
 					if hiddenPlayers[targetPlayer] then
-						task.wait(0.1)
 						child.Enabled = false
 					end
 				end
@@ -7352,14 +7348,18 @@ local function event(donator, reciever, amount)
 					Volume = 1
 				}):Play();
 				task.wait(v31);
-				v33.Transparency = 1;
-				v33.Orientation = Vector3.new(0, 0, 0);
-				v33.Glow.Range = v33.Glow.Range * 1.5;
-				v33.Glow.Brightness = v33.Glow.Brightness * 3;
-				l__TweenService__1:Create(v33.Glow, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
-					Brightness = 0, 
-					Range = v33.Glow.Range / 2
-				}):Play();
+				if v33 and v33.Parent then
+					v33.Transparency = 1;
+					v33.Orientation = Vector3.new(0, 0, 0);
+				end
+				if v33.Glow and v33.Glow.Parent then
+					v33.Glow.Range = v33.Glow.Range * 1.5;
+					v33.Glow.Brightness = v33.Glow.Brightness * 3;
+					l__TweenService__1:Create(v33.Glow, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
+						Brightness = 0, 
+						Range = v33.Glow.Range / 2
+					}):Play();
+				end
 				for v36, v37 in pairs(v33:GetDescendants()) do
 					if v37:IsA("ParticleEmitter") then
 						if string.find(v37.Name, "Meteor_") ~= nil then
@@ -7466,12 +7466,6 @@ local function event(donator, reciever, amount)
 		local ticksound = l__Sounds__20.Tick:Clone()
 		ticksound.Parent = workspace
 		ticksound.Playing = true
-		l__Lighting__4.ClockTime = 10
-		l__Lighting__4.FogColor = Color3.fromRGB(144, 228, 248)
-		task.wait(1)
-		l__Lighting__4.ClockTime = 0
-		l__Lighting__4.FogColor = Color3.fromRGB(0,0,0)
-		task.wait(1)
 		l__Lighting__4.ClockTime = 10
 		l__Lighting__4.FogColor = Color3.fromRGB(144, 228, 248)
 		task.wait(1)
@@ -8203,68 +8197,64 @@ end;
 local u3 = require(script.CameraShaker);
 local u4 = Vector3.new(-106, 2.938, -442.5);
 local function u5(p3, p4)
-	local l__Humanoid__H = p4:FindFirstChildOfClass("Humanoid")
-	if not l__Humanoid__H then return end
+	task.spawn(function()
+		local l__Humanoid__H = p4:FindFirstChildOfClass("Humanoid")
+		if not l__Humanoid__H then return end
 
-	local success, v8 = pcall(function()
-		return game.Players:GetHumanoidDescriptionFromUserId(p3)
-	end)
-
-	if success and v8 then
-		v8.DepthScale = 53
-		v8.HeadScale = 53 
-		v8.HeightScale = 53
-		v8.WidthScale = 53
-
-		l__Humanoid__H.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
-		l__Humanoid__H.AutomaticScalingEnabled = true
-
-		local applySuccess = pcall(function()
-			l__Humanoid__H:ApplyDescription(v8)
+		local success, v8 = pcall(function()
+			return game.Players:GetHumanoidDescriptionFromUserId(p3)
 		end)
 
-		if not applySuccess then
-			warn("[Studio] Gagal menerapkan HumanoidDescription")
-		end
+		if success and v8 then
+			v8.DepthScale = 53
+			v8.HeadScale = 53 
+			v8.HeightScale = 53
+			v8.WidthScale = 53
 
-		task.wait(0.5)
+			l__Humanoid__H.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+			l__Humanoid__H.AutomaticScalingEnabled = true
 
-		-- 🔥 FIX RAKSASA TELANJANG (Hapus Baju 3D yang Buggy & Kasih Baju 2D)
-		local hasShirt = p4:FindFirstChildOfClass("Shirt")
-		local hasPants = p4:FindFirstChildOfClass("Pants")
+			local applySuccess = pcall(function()
+				l__Humanoid__H:ApplyDescription(v8)
+			end)
 
-		for _, obj in ipairs(p4:GetDescendants()) do
-			if obj:IsA("WrapLayer") then
-				-- Hapus aksesoris Baju 3D karena pasti hilang/error saat di-scale 53x
-				local accessory = obj:FindFirstAncestorOfClass("Accessory")
-				if accessory then
-					accessory:Destroy()
+			if not applySuccess then
+				warn("[Studio] Gagal menerapkan HumanoidDescription")
+			end
+
+			task.wait(0.5)
+
+			-- 🔥 FIX RAKSASA TELANJANG (Hapus Baju 3D yang Buggy & Kasih Baju 2D)
+			local hasShirt = p4:FindFirstChildOfClass("Shirt")
+			local hasPants = p4:FindFirstChildOfClass("Pants")
+
+			for _, obj in ipairs(p4:GetDescendants()) do
+				if obj:IsA("WrapLayer") then
+					-- Hapus aksesoris Baju 3D karena pasti hilang/error saat di-scale 53x
+					local accessory = obj:FindFirstAncestorOfClass("Accessory")
+					if accessory then
+						accessory:Destroy()
+					end
 				end
 			end
-		end
 
-		-- Jika pemain hanya pakai baju 3D (tidak punya baju 2D), pakaikan baju default agar tidak telanjang
-		if not hasShirt then
-			local defaultShirt = Instance.new("Shirt")
-			defaultShirt.ShirtTemplate = "rbxassetid://144075659" -- Baju Classic Hitam
-			defaultShirt.Parent = p4
-		end
-		if not hasPants then
-			local defaultPants = Instance.new("Pants")
-			defaultPants.PantsTemplate = "rbxassetid://144076529" -- Celana Classic Hitam
-			defaultPants.Parent = p4
-		end
+			-- Jika pemain hanya pakai baju 3D (tidak punya baju 2D), pakaikan baju default agar tidak telanjang
+			if not hasShirt then
+				local defaultShirt = Instance.new("Shirt")
+				defaultShirt.ShirtTemplate = "rbxassetid://144075659" -- Baju Classic Hitam
+				defaultShirt.Parent = p4
+			end
+			if not hasPants then
+				local defaultPants = Instance.new("Pants")
+				defaultPants.PantsTemplate = "rbxassetid://144076529" -- Celana Classic Hitam
+				defaultPants.Parent = p4
+			end
 
-	else
+		else
 
-		warn("[Studio] Gagal mengambil deskripsi avatar untuk ID:", p3)
-	end
-
-	for _, v10 in ipairs(p4:GetDescendants()) do
-		if (v10:IsA("BasePart") or v10:IsA("Decal")) and v10.Name ~= "HumanoidRootPart" then
-			v10.Transparency = 0.99 
+			warn("[Studio] Gagal mengambil deskripsi avatar untuk ID:", p3)
 		end
-	end
+	end)
 end
 
 local u6 = math.random(-180, 180);
@@ -8428,14 +8418,18 @@ local function u7(modelTemplate, p5, p6, p7, p8)
 					Volume = 0.1
 				}):Play();
 				task.wait(v31);
-				v33.Transparency = 1;
-				v33.Orientation = Vector3.new(0, 0, 0);
-				v33.Glow.Range = v33.Glow.Range * 1.5;
-				v33.Glow.Brightness = v33.Glow.Brightness * 3;
-				l__TweenService__1:Create(v33.Glow, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
-					Brightness = 0, 
-					Range = v33.Glow.Range / 2
-				}):Play();
+				if v33 and v33.Parent then
+					v33.Transparency = 1;
+					v33.Orientation = Vector3.new(0, 0, 0);
+				end
+				if v33.Glow and v33.Glow.Parent then
+					v33.Glow.Range = v33.Glow.Range * 1.5;
+					v33.Glow.Brightness = v33.Glow.Brightness * 3;
+					l__TweenService__1:Create(v33.Glow, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 0), {
+						Brightness = 0, 
+						Range = v33.Glow.Range / 2
+					}):Play();
+				end
 				for v36, v37 in pairs(v33:GetDescendants()) do
 					if v37:IsA("ParticleEmitter") then
 						if string.find(v37.Name, "Meteor_") ~= nil then
@@ -8480,23 +8474,29 @@ local function u7(modelTemplate, p5, p6, p7, p8)
 			end;
 		end;
 		task.wait(90);
-		l__TweenService__1:Create(l__Sounds__20.FireLoop, TweenInfo.new(30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
-			Volume = 0, 
-			PlaybackSpeed = 0.5
-		}):Play();
+		if l__Sounds__20.FireLoop and l__Sounds__20.FireLoop.Parent then
+			l__TweenService__1:Create(l__Sounds__20.FireLoop, TweenInfo.new(30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+				Volume = 0, 
+				PlaybackSpeed = 0.5
+			}):Play();
+		end
 		u8 = false;
 		for v44, v45 in pairs(v38:GetChildren()) do
 			if v45:IsA("ParticleEmitter") then
-				l__TweenService__1:Create(v45, TweenInfo.new(60, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
-					Rate = 0
-				}):Play();
+				if v45 and v45.Parent then
+					l__TweenService__1:Create(v45, TweenInfo.new(60, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+						Rate = 0
+					}):Play();
+				end
 			end;
 		end;
 		for v46, v47 in pairs(v39:GetChildren()) do
 			if v47:IsA("ParticleEmitter") then
-				l__TweenService__1:Create(v47, TweenInfo.new(30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
-					Rate = 0
-				}):Play();
+				if v47 and v47.Parent then
+					l__TweenService__1:Create(v47, TweenInfo.new(30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0), {
+						Rate = 0
+					}):Play();
+				end
 			end;
 		end;
 		task.wait(60);
@@ -9185,7 +9185,7 @@ function HideUISystem:SetVisible(isHiding)
 		if not self.childAddedConn then
 			self.childAddedConn = playerGui.ChildAdded:Connect(function(childGui)
 				if childGui:IsA("ScreenGui") and childGui ~= gui then
-					task.wait() -- Tunggu properti terisi penuh oleh Roblox
+					-- task.wait() dihapus agar UI tidak flicker
 					if childGui.Enabled then
 						self.hiddenGuis[childGui] = true
 						childGui.Enabled = false

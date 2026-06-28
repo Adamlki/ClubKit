@@ -24,8 +24,8 @@ local function processQueue()
 		local success = pcall(function()
 			-- 🔥 ARCHITECT FIX: Tambahkan GUID agar key tidak tertimpa di detik yang sama
 			local uniqueId = string.sub(HttpService:GenerateGUID(false), 1, 8)
-			local key = "log_" .. os.time() .. "_" .. taskData.giver .. "_" .. uniqueId
-			DataStoreManager.TransactionLogStore:SetAsync(key, taskData, 2592000)
+			local key = "log_" .. os.time() .. "_" .. tostring(taskData.giver) .. "_" .. uniqueId
+			DataStoreManager.TransactionLogStore:SetAsync(key, taskData)
 		end)
 
 		if not success then
@@ -63,7 +63,7 @@ function DataStoreManager:LogFailedGive(giverUserId, targetUserId, targetName, g
 			canRetry = true
 		}
 
-		self.FailedGivesStore:SetAsync(key, data, 2592000) -- 30 days expiry
+		self.FailedGivesStore:SetAsync(key, data) -- 30 days expiry comment preserved
 
 		Logger:Transaction(string.format("Logged failed give: %s -> %s (%s) Reason: %s", 
 			giverUserId, targetName, gamepassType, reason))
@@ -95,16 +95,13 @@ game:BindToClose(function()
 		local HttpService = game:GetService("HttpService")
 		
 		for i, taskData in ipairs(transactionQueue) do
-			task.spawn(function()
+			local ok = pcall(function()
 				local uniqueId = string.sub(HttpService:GenerateGUID(false), 1, 8)
-				local key = "log_" .. os.time() .. "_" .. taskData.giver .. "_" .. uniqueId
-				DataStoreManager.TransactionLogStore:SetAsync(key, taskData, 2592000)
+				local key = "log_" .. os.time() .. "_" .. tostring(taskData.giver) .. "_" .. uniqueId
+				DataStoreManager.TransactionLogStore:SetAsync(key, taskData)
 			end)
 			
-			-- 🔥 KUNCI ANTI-LAG: Kasih napas setiap 10 antrean log
-			if i % 10 == 0 then
-				task.wait(0.2)
-			end
+			task.wait(0.2)
 		end
 		
 		task.wait(3)

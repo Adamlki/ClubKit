@@ -62,19 +62,35 @@ local function getSaweriaRank(playerName, displayName)
 	-- Mengambil data dari BindableFunction yang akan kita buat di TopSaweria
 	local getSaweriaData = ServerStorage:FindFirstChild("GetTopSaweriaFunc")
 	if getSaweriaData then
-		local success, topSaweria = pcall(function()
-			return getSaweriaData:Invoke()
-		end)
-
-		if success and type(topSaweria) == "table" then
-			for rank, donor in ipairs(topSaweria) do
-				if rank > SETTINGS.BatasTopSaweria then break end
-				-- Cek kecocokan nama (Username atau DisplayName)
-				if string.lower(donor.name) == string.lower(playerName) or string.lower(donor.name) == string.lower(displayName) then
-					return rank
+		local rankFound = nil
+		local isCompleted = false
+		
+		-- Jalankan secara terpisah agar tidak bisa menyandera script utama
+		task.spawn(function()
+			local success, topSaweria = pcall(function()
+				return getSaweriaData:Invoke()
+			end)
+			if success and type(topSaweria) == "table" then
+				for rank, donor in ipairs(topSaweria) do
+					if rank > SETTINGS.BatasTopSaweria then break end
+					-- Cek kecocokan nama (Username atau DisplayName)
+					if string.lower(donor.name) == string.lower(playerName) or string.lower(donor.name) == string.lower(displayName) then
+						rankFound = rank
+						break
+					end
 				end
 			end
+			isCompleted = true
+		end)
+		
+		-- Beri waktu maksimal 2 detik. Jika Saweria lag, tinggalkan saja!
+		local timeout = 0
+		while not isCompleted and timeout < 2 do
+			task.wait(0.1)
+			timeout += 0.1
 		end
+		
+		return rankFound
 	end
 	return nil
 end

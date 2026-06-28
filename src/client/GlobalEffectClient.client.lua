@@ -390,10 +390,12 @@ local function resumeLocalDance()
 	-- Cari objek Animation asli dari ReplicatedStorage agar namanya sesuai (misal "Spongebob")
 	-- dan dapat dideteksi serta dihentikan oleh menu tarian client saat "Stop Dance"
 	local anim = findEmoteAnimationInstance(currentDanceID)
+	local isTempAnim = false
 	if not anim then
 		-- Fallback jika tidak ditemukan
 		anim = Instance.new("Animation")
 		anim.AnimationId = currentDanceID
+		isTempAnim = true
 	end
 	
 	if resumedDanceTrack then
@@ -406,6 +408,7 @@ local function resumeLocalDance()
 	stopAllExceptGlobalEffects()
 	
 	local track = animator:LoadAnimation(anim)
+	if isTempAnim then anim:Destroy() end -- FIX: Cegah memori HP/PC pemain bocor
 	track.Priority = Enum.AnimationPriority.Action4
 	track.Looped = true
 	

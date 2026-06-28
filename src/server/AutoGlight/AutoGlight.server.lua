@@ -5,7 +5,8 @@
 local SoundService      = game:GetService("SoundService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local glightsFolder = game.Workspace:WaitForChild("GLights")
+local glightsFolder = game.Workspace:FindFirstChild("GLights")
+if not glightsFolder then return end
 local Panel = require(glightsFolder:WaitForChild("Scripts"):WaitForChild("Panels"):WaitForChild("Panel"))
 local sound = SoundService:WaitForChild("ServerMusicSound", 30)
 if not sound then return end
@@ -74,16 +75,18 @@ local function setStagePhase(phase)
 	currentStagePhase = phase
 	local cfg = PHASE_CONFIGS[phase]
 	if not cfg then return end
-	safeRun("Heads", "Gobo", 0, "All")
-	safeRun("Heads", "MotorSpeed", cfg.odd,  "Odd")
-	safeRun("Heads", "MotorSpeed", cfg.even, "Even")
+	-- OPTIMASI: Matikan eksekusi motor GLights yang berat
+	-- safeRun("Heads", "Gobo", 0, "All")
+	-- safeRun("Heads", "MotorSpeed", cfg.odd,  "Odd")
+	-- safeRun("Heads", "MotorSpeed", cfg.even, "Even")
 end
 
 -- ============================================================
 -- APPLY WARNA
 -- ============================================================
 local function applyColor(color)
-	safeRun("Heads", "Color", color, "All")
+	-- OPTIMASI: Client merender warna kelap-kelip secara independen (0 Lag)
+	-- safeRun("Heads", "Color", color, "All")
 	-- colorSyncRE:FireAllClients(color, true) -- Dihapus karena Client sudah memakai 100% Local Beat Detection
 	lastColorTime = os.clock()
 end
@@ -97,20 +100,22 @@ end
 -- START / STOP
 -- ============================================================
 local function startAutoMove()
-	safeRun("Heads", "FadeOn", "All")
-	safeRun("Heads", "Color", CHASE_RAINBOW[1], "All")
-	safeRun("Heads", "Cue", "Position.Circle", true, "Odd")
-	safeRun("Heads", "Cue", "Position.Circle", true, "Even")
+	-- OPTIMASI: Motor dimatikan sepenuhnya
+	-- safeRun("Heads", "FadeOn", "All")
+	-- safeRun("Heads", "Color", CHASE_RAINBOW[1], "All")
+	-- safeRun("Heads", "Cue", "Position.Circle", true, "Odd")
+	-- safeRun("Heads", "Cue", "Position.Circle", true, "Even")
 	currentStagePhase = 0
 	setStagePhase(1)
 end
 
 local function stopAutoMove()
-	safeRun("Heads", "Cue", "Position.Circle", false, "Odd")
-	safeRun("Heads", "Cue", "Position.Circle", false, "Even")
-	safeRun("Heads", "Pan", 0, "All")
-	safeRun("Heads", "Tilt", 0, "All")
-	safeRun("Heads", "FadeOff", "All")
+	-- OPTIMASI: Motor dimatikan sepenuhnya
+	-- safeRun("Heads", "Cue", "Position.Circle", false, "Odd")
+	-- safeRun("Heads", "Cue", "Position.Circle", false, "Even")
+	-- safeRun("Heads", "Pan", 0, "All")
+	-- safeRun("Heads", "Tilt", 0, "All")
+	-- safeRun("Heads", "FadeOff", "All")
 	-- colorSyncRE:FireAllClients(nil, false) -- Dihapus karena tidak ada listener di client
 end
 

@@ -1,0 +1,2137 @@
+<USER_REQUEST>
+dancenya delay ges, terus klo aku ubah dance  ABC cepet yang sync kadang blom ikut ganti atau tiba" diem ngga sync 0 delay, pov leader spam, tpi pov sync delay setengah detik itu
+
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local remotes = ReplicatedStorage:WaitForChild("Remotes")
+
+local updateFavoritedAnimationsEventRE = remotes:WaitForChild("updateFavoritedAnimationsEvent")
+local startSyncRE = remotes:WaitForChild("startSync")
+local changeSpeedRE = remotes:WaitForChild("changeSpeed")
+local syncNotificationRE = remotes:WaitForChild("SyncNotification")
+local animationStartRE = remotes:WaitForChild("animationStart")
+
+local emotesFolder = ReplicatedStorage:WaitForChild("Emotes")
+local Modules = ReplicatedStorage:WaitForChild("Modules")
+local AnimationPreloader = require(Modules:WaitForChild("AnimationPreloader"))
+local AnimatorUtils = require(Modules:WaitForChild("AnimatorUtils"))
+AnimatorUtils.AnimationPreloader = AnimationPreloader
+
+-- 🔥 INTEGRASI MODULE ANIMASI
+local UIAnimator = require(ReplicatedStorage:WaitForChild("UIAnimator"))
+
+-- ============================================
+-- GLOBAL CONNECTION TRACKER (ANTI MEMORY LEAK)
+-- ============================================
+local isScriptActive = true
+local scriptConnections = {}
+
+local function trackConnection(conn)
+	table.insert(scriptConnections, conn)
+	return conn
+end
+
+-- ============================================
+-- GUI ELEMENTS
+-- ============================================
+local gui = script.Parent
+local mainframe = gui:WaitForChild("MainFrame")
+local preloadLabel = Instance.new("TextLabel")
+preloadLabel.Name = "PreloadStatus"
+preloadLabel.Size = UDim2.new(1, 0, 1, 0)
+preloadLabel.Position = UDim2.new(0, 0, 0, 0)
+preloadLabel.AnchorPoint = Vector2.new(0, 0)
+preloadLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+preloadLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+preloadLabel.Text = "Preloading animations..."
+preloadLabel.TextSize = 14
+preloadLabel.Font = Enum.Font.Montserrat
+preloadLabel.Visible = false
+preloadLabel.Parent = mainframe
+
+local containerframe = mainframe:WaitForChild("Container")
+local controlframe = mainframe:WaitForChild("Control")
+local unsyncframe = mainframe:WaitForChild("UnsyncFrame")
+local containerlist = containerframe:WaitForChild("ContainerList")
+local templateframe = containerlist:WaitForChild("Template")
+local danceBtn = controlframe:WaitForChild("Dance")
+local favoriteBtn = controlframe:WaitForChild("Favorite")
+local poseBtn = controlframe:WaitForChild("Pose")
+local unsyncBtn = unsyncframe:WaitForChild("UnsyncBtn")
+local dancelabel = unsyncframe:WaitForChild("DanceLabel")
+local searchBox = mainframe:WaitForChild("SearchBox")
+local notifframe = gui:WaitForChild("NotificationFrame")
+local notiflabel = notifframe:WaitForChild("NotificationText")
+
+local speedFrame = mainframe:FindFirstChild("SpeedFrame")
+local speedBar = speedFrame and speedFrame:FindFirstChild("speedBar")
+local speedSlider = speedBar and speedBar:FindFirstChild("speedPosition")
+local speedButton = speedSlider and speedSlider:FindFirstChild("Button")
+local speedtext = speedFrame and speedFrame:FindFirstChild("TextLabel")
+
+-- ============================================
+-- VARIABLES & CONSTANTS
+-- ============================================
+local SPEED_MIN = 0.5
+local SPEED_MAX = 3.0
+local SPEED_DEFAULT = 1.0
+local FADE_TIME = 0.5
+
+local notificationQueue = {}
+local isShowingNotification = false
+
+local allButtons = {}
+local emoteIdCache = {}
+local favoritedAnimations = {}
+
+local currentAnimation = nil
+local currentCategory = "Dance"
+local searchQuery = ""
+local currentSpeed = SPEED_DEFAULT
+
+local inputLock = false
+local pendingRequest = false
+local isSyncing = false
+local currentLeaderName = nil
+local localSyncTrack = nil
+local localAnimTrack = nil
+local syncUpdateConnection = nil
+
+local savedLocalEmoteData = nil
+local animationStarted -- Forward Declaration
+
+local lastEmoteClickTime = 0 
+
+-- ============================================
+-- CORE ANIMATION & STATE CONTROL
+-- ============================================
+local function setAnimateEnabled(character, enabled)
+	if not character then return end
+	character:SetAttribute("AnimateDisabled", not enabled)
+end
+
+local function killGhostAnimation(animator, fade)
+	local f = fade or FADE_TIME
+	pcall(function()
+		if not animator or not animator.Parent then return end
+		if animator.Parent.Parent ~= player.Character then return end 
+
+		for _, t in ipairs(animator:GetPlayingAnimationTracks()) do
+			if t.Animation and emoteIdCache[t.Animation.AnimationId] then
+				t:AdjustSpeed(1) 
+				t:Stop(f)
+			end
+		end
+	end)
+end
+
+local function suppressNativeAnimations(animator, fade)
+end
+
+local function freezeHumanoidForPose(character, freeze)
+	if not character then return end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
+
+	if freeze then
+		humanoid:ChangeState(Enum.HumanoidStateType.None)
+	else
+		if humanoid:GetState() == Enum.HumanoidStateType.None then
+			humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+		end
+	end
+end
+
+local function isCurrentAnimPose()
+	if not currentAnimation then return false end
+	for _, data in ipairs(allButtons) do
+		if data.button == currentAnimation and data.category == "Pose" then
+			return true
+		end
+	end
+	return false
+end
+
+local function restoreCharacterAnimations(character)
+	if character ~= player.Character then return end
+
+	if not character then return end
+	setAnimateEnabled(character, true)
+	freezeHumanoidForPose(character, false)
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+
+	if animator then
+		pcall(function()
+			for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+				if track.Animation and not emoteIdCache[track.Animation.AnimationId] then
+					track:AdjustSpeed(1)
+					track:AdjustWeight(1)
+				end
+			end
+		end)
+	end
+
+	if humanoid then
+		task.defer(function()
+			if character:GetAttribute("AnimateDisabled") then return end
+			pcall(function()
+				local state = humanoid:GetState()
+				if state == Enum.HumanoidStateType.None then return end
+				humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+				task.defer(function()
+					pcall(function() humanoid:ChangeState(state) end)
+				end)
+			end)
+		end)
+	end
+end
+
+-- ============================================
+-- GUI HELPER FUNCTIONS
+-- ============================================
+local function showNotification(message, duration, bgColor)
+	table.insert(notificationQueue, { message = message, duration = duration or 3, bgColor = bgColor or Color3.fromRGB(50, 150, 255) })
+
+	if not isShowingNotification then
+		task.spawn(function()
+			while #notificationQueue > 0 and isScriptActive do
+				isShowingNotification = true
+				local notif = table.remove(notificationQueue, 1)
+				notiflabel.Text = notif.message
+				notifframe.BackgroundColor3 = notif.bgColor
+
+				notifframe.Position = UDim2.new(0.5, 0, 0.1, 0)
+				UIAnimator.Open(notifframe)
+				task.wait(notif.duration)
+				UIAnimator.Close(notifframe)
+				task.wait(0.3)
+			end
+			isShowingNotification = false
+		end)
+	end
+end
+
+trackConnection(syncNotificationRE.OnClientEvent:Connect(function(notifType, leaderName)
+	if notifType == "sync_success" then
+		local leaderPlayer = Players:FindFirstChild(leaderName)
+		local displayName = leaderPlayer and leaderPlayer.DisplayName or leaderName
+		showNotification("Coordinate dance are apply to " .. displayName, 2.5, Color3.fromRGB(0, 0, 0))
+	elseif notifType == "unsync_success" then
+		showNotification("Unsynced", 2, Color3.fromRGB(0, 0, 0))
+	elseif notifType == "leader_left" then
+		showNotification("LEAD " .. leaderName .. " meninggalkan server", 4, Color3.fromRGB(200, 30, 30))
+		if player.Character then
+			restoreCharacterAnimations(player.Character)
+			if localSyncTrack then 
+				localSyncTrack:Stop(0.5) 
+				localSyncTrack = nil 
+			end
+		end
+	elseif notifType == "leader_blocked" then
+		showNotification("You are a Dance Leader!\nCannot sync to followers", 3, Color3.fromRGB(0, 0, 0))
+	elseif notifType == "circular_blocked" then
+		showNotification("Cannot create circular coordinate dance", 2.5, Color3.fromRGB(0, 0, 0))
+	end
+end))
+
+local previousAnimation = nil
+local function updateButtonVisuals()
+	if previousAnimation then
+		local prevTemplateBtn = previousAnimation:FindFirstChild("TemplateBtn")
+		if prevTemplateBtn then
+			prevTemplateBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		end
+	end
+
+	if currentAnimation then
+		local currentTemplateBtn = currentAnimation:FindFirstChild("TemplateBtn")
+		if currentTemplateBtn then
+			currentTemplateBtn.TextColor3 = Color3.fromRGB(255, 0, 0)
+		end
+	end
+
+	previousAnimation = currentAnimation
+end
+
+local function loadSavedFavorites()
+	local stringVal = player:WaitForChild("SavedFavoritedAnimations", 15)
+	local savedData = stringVal and stringVal.Value or nil
+
+	if savedData and typeof(savedData) == "string" then
+		local ok, decoded = pcall(HttpService.JSONDecode, HttpService, savedData)
+		favoritedAnimations = (ok and typeof(decoded) == "table") and decoded or {}
+	else
+		favoritedAnimations = {}
+	end
+end
+
+local favoritesLoaded = false
+task.spawn(function() loadSavedFavorites() favoritesLoaded = true end)
+
+local function saveFavoritedAnimations() 
+	updateFavoritedAnimationsEventRE:FireServer(HttpService:JSONEncode(favoritedAnimations)) 
+end
+
+local function findAnimById(danceId)
+	for _, anim in ipairs(emotesFolder:GetChildren()) do
+		if anim:IsA("Animation") and anim.AnimationId == danceId then return anim end
+	end
+	local poseFolder = emotesFolder:FindFirstChild("Pose")
+	if poseFolder then
+		for _, anim in ipairs(poseFolder:GetChildren()) do
+			if anim:IsA("Animation") and anim.AnimationId == danceId then return anim end
+		end
+	end
+	return nil
+end
+
+-- ============================================
+-- THE UNIVERSAL HIVE MIND (Observer Tunggal)
+-- ============================================
+local globalSyncListeners = setmetatable({}, { __mode = "k" })
+
+local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
+	if char ~= player.Character then return end 
+
+	local animator = char:FindFirstChild("Humanoid") and char.Humanoid:FindFirstChild("Animator")
+	if not animator then return end
+
+	local applyTicket = (char:GetAttribute("ApplyTicket") or 0) + 1
+	char:SetAttribute("ApplyTicket", applyTicket)
+	local actualFade = isSpam and 0 or FADE_TIME
+
+	if dancelabel then
+		if danceId and emoteIdCache[danceId] then
+			dancelabel.Text = " " .. emoteIdCache[danceId]
+		else
+			local displayName = leaderName or "Leader"
+			local lp = Players:FindFirstChild(leaderName or "")
+			if lp then displayName = lp.DisplayName end
+			dancelabel.Text = " " .. displayName .. "'s Dance"
+		end
+	end
+
+	if not danceId then
+		if localSyncTrack then
+			localSyncTrack:Stop(actualFade)
+			localSyncTrack = nil
+		end
+
+		killGhostAnimation(animator, actualFade)
+		restoreCharacterAnimations(char)
+
+		if not isSyncing then
+			if savedLocalEmoteData then
+				local saved = savedLocalEmoteData
+				savedLocalEmoteData = nil
+				task.delay(0.1, function()
+					if isScriptActive then animationStarted(saved.animation, saved.button) end
+				end)
+			end
+		end
+		return
+	end
+
+	local targetAnim = findAnimById(danceId)
+	if not targetAnim then return end
+
+	if localAnimTrack then
+		localAnimTrack:Stop(actualFade)
+		localAnimTrack = nil
+	end
+
+	setAnimateEnabled(char, false)
+	killGhostAnimation(animator, actualFade)
+
+	local track = AnimatorUtils.getOrCreateTrack(animator, targetAnim)
+	if not track then setAnimateEnabled(char, true) return end
+
+	if localSyncTrack then localSyncTrack:Stop(actualFade) end
+	localSyncTrack = track
+
+	track.Priority = Enum.AnimationPriority.Action3
+	track:Play(actualFade, 1, 0)
+
+	local capturedTicket = applyTicket
+	task.spawn(function()
+		local timeout = os.clock() + 5
+		while track and track.Length == 0 and os.clock() < timeout do 
+			if not isScriptActive then return end
+			RunService.RenderStepped:Wait() 
+		end
+		if char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
+
+		if startTime and track.Length > 0 then
+			local finalTime = workspace:GetServerTimeNow()
+			local exactPos = ((finalTime - startTime) * speed) % track.Length
+			track.TimePosition = exactPos
+		end
+
+		track:AdjustSpeed(speed) 
+
+		task.delay(actualFade + 0.05, function()
+			if not isScriptActive or char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
+			suppressNativeAnimations(animator, 0)
+		end)
+	end)
+end
+
+local function monitorPlayerCharacter(targetPlayer)
+	local function onCharacterAdded(char)
+		if globalSyncListeners[char] then return end
+		globalSyncListeners[char] = true
+
+		local humanoid = char:WaitForChild("Humanoid", 10)
+		if not humanoid then return end
+
+		local animator = humanoid:WaitForChild("Animator", 10)
+		if not animator then return end
+
+		local function forceSnapCharacterDance(track)
+			if not track or track.Length == 0 then return end
+			-- [Sama seperti fungsi aslinya]
+			local startTime = char:GetAttribute("DanceStartTime")
+			local speed = char:GetAttribute("DanceSpeed") or 1
+			local currentDanceId = char:GetAttribute("CurrentDanceID")
+			local syncingTo = char:GetAttribute("Syncing")
+
+			if syncingTo == player.Name then return end 
+
+			if currentDanceId and track.Animation and track.Animation.AnimationId ~= currentDanceId then return end
+
+			if syncingTo and syncingTo ~= "" then
+				local leader = Players:FindFirstChild(syncingTo)
+				if leader and leader.Character then
+					startTime = leader.Character:GetAttribute("DanceStartTime") or startTime
+					speed = leader.Character:GetAttribute("DanceSpeed") or speed
+				end
+			end
+
+			if startTime then
+				local elapsed = workspace:GetServerTimeNow() - startTime
+				local exactPos = (elapsed * speed) % track.Length
+				if exactPos > 0 and math.abs(track.TimePosition - exactPos) > 0.03 then
+					pcall(function() track.TimePosition = exactPos end)
+				end
+			end
+		end
+
+		animator.AnimationPlayed:Connect(function(track)
+			if char:GetAttribute("AnimateDisabled") then
+				if not (track.Animation and emoteIdCache[track.Animation.AnimationId]) then
+					local prio = track.Priority
+					if prio == Enum.AnimationPriority.Core or prio == Enum.AnimationPriority.Idle or prio == Enum.AnimationPriority.Movement or prio == Enum.AnimationPriority.Action3 then
+						track:AdjustWeight(0.001)
+					end
+				end
+			end
+
+			if char ~= player.Character and track.Animation and emoteIdCache[track.Animation.AnimationId] then
+				task.spawn(function()
+					local timeout = os.clock() + 5
+					while track and track.Length == 0 and os.clock() < timeout do 
+						if not isScriptActive then return end
+						RunService.RenderStepped:Wait() 
+					end
+					forceSnapCharacterDance(track)
+				end)
+			end
+		end)
+
+		local function onAttributeChanged()
+			if char == player.Character then return end
+			for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+				if track.Animation and emoteIdCache[track.Animation.AnimationId] then
+					forceSnapCharacterDance(track)
+				end
+			end
+		end
+
+		char:GetAttributeChangedSignal("DanceStartTime"):Connect(onAttributeChanged)
+		char:GetAttributeChangedSignal("CurrentDanceID"):Connect(onAttributeChanged)
+		char:GetAttributeChangedSignal("DanceSpeed"):Connect(onAttributeChanged)
+		char:GetAttributeChangedSignal("Syncing"):Connect(onAttributeChanged)
+		char:GetAttributeChangedSignal("AnimateDisabled"):Connect(function()
+			if char:GetAttribute("AnimateDisabled") then
+				for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+					if track.Animation and emoteIdCache[track.Animation.AnimationId] then continue end
+					local prio = track.Priority
+					if prio == Enum.AnimationPriority.Core or prio == Enum.AnimationPriority.Idle or prio == Enum.AnimationPriority.Movement or prio == Enum.AnimationPriority.Action3 then
+						if track.WeightCurrent > 0.01 then track:AdjustWeight(0.001) end
+					end
+				end
+			end
+		end)
+
+		local function syncToLeader()
+			local leaderName = char:GetAttribute("Syncing")
+			if leaderName and leaderName ~= "" then
+				local leaderPlayer = Players:FindFirstChild(leaderName)
+				local leaderChar = leaderPlayer and leaderPlayer.Character
+				if leaderChar then
+					local danceId = leaderChar:GetAttribute("CurrentDanceID")
+					local speed = leaderChar:GetAttribute("DanceSpeed") or 1
+					local startTime = leaderChar:GetAttribute("DanceStartTime")
+					applyDance(char, danceId, speed, startTime, leaderName, false)
+				else
+					applyDance(char, nil, 1, nil, leaderName, false)
+				end
+			else
+				applyDance(char, nil, 1, nil, nil, false)
+			end
+		end
+
+		local function broadcastLeaderState(isSpamTrigger)
+			local danceId = char:GetAttribute("CurrentDanceID")
+			local speed = char:GetAttribute("DanceSpeed") or 1
+			local startTime = char:GetAttribute("DanceStartTime")
+
+			if char == player.Character then return end
+			for _, p in ipairs(Players:GetPlayers()) do
+				if p.Character and p.Character:GetAttribute("Syncing") == char.Name then
+					applyDance(p.Character, danceId, speed, startTime, char.Name, isSpamTrigger)
+				end
+			end
+		end
+
+		char:GetAttributeChangedSignal("Syncing"):Connect(syncToLeader)
+		char:GetAttributeChangedSignal("CurrentDanceID"):Connect(function() broadcastLeaderState(false) end)
+		char:GetAttributeChangedSignal("DanceSpeed"):Connect(function() broadcastLeaderState(false) end)
+		char:GetAttributeChangedSignal("SpamNonce"):Connect(function() broadcastLeaderState(true) end)
+
+		task.spawn(function()
+			if char:GetAttribute("Syncing") and char:GetAttribute("Syncing") ~= "" then
+				syncToLeader()
+			elseif char:GetAttribute("CurrentDanceID") then
+				broadcastLeaderState(false)
+			end
+		end)
+	end
+	if targetPlayer.Character then onCharacterAdded(targetPlayer.Character) end
+	-- 🔥 KONEKSI GLOBAL (Pemain Masuk): Lacak untuk dibersihkan
+	trackConnection(targetPlayer.CharacterAdded:Connect(onCharacterAdded))
+end
+
+for _, p in ipairs(Players:GetPlayers()) do monitorPlayerCharacter(p) end
+-- 🔥 KONEKSI GLOBAL (Pemain Baru): Lacak untuk dibersihkan
+trackConnection(Players.PlayerAdded:Connect(monitorPlayerCharacter))
+
+-- ============================================
+-- GUI & SYNC MANAGEMENT
+-- ============================================
+local function updateUnsyncFrame()
+	if not player.Character then 
+		if unsyncframe.Visible then UIAnimator.Close(unsyncframe) end
+		return 
+	end
+
+	local syncTarget = player.Character:GetAttribute("Syncing")
+	if syncTarget and syncTarget ~= "" then
+		isSyncing = true
+		currentLeaderName = syncTarget
+		local leaderPlayer = Players:FindFirstChild(syncTarget)
+		unsyncBtn.Text = "Synced to " .. (leaderPlayer and leaderPlayer.DisplayName or syncTarget) .. "\nTap to Unsync"
+
+		if not unsyncframe.Visible then
+			UIAnimator.Open(unsyncframe)
+		end
+	else
+		if unsyncframe.Visible then
+			UIAnimator.Close(unsyncframe)
+		end
+
+		isSyncing = false
+		currentLeaderName = nil
+		if localSyncTrack then 
+			localSyncTrack:Stop(FADE_TIME) 
+			localSyncTrack = nil 
+		end
+		if player.Character then
+			restoreCharacterAnimations(player.Character)
+		end
+	end
+end
+
+unsyncBtn.MouseButton1Click:Connect(function()
+	if inputLock or pendingRequest or not isSyncing or not currentLeaderName then return end
+	inputLock = true
+	local leaderPlayer = Players:FindFirstChild(currentLeaderName)
+	if not leaderPlayer then
+		if player.Character then player.Character:SetAttribute("Syncing", nil) end
+		updateUnsyncFrame() inputLock = false return
+	end
+	if localSyncTrack then 
+		localSyncTrack:Stop(FADE_TIME) 
+		localSyncTrack = nil 
+	end
+	startSyncRE:FireServer(leaderPlayer, false)
+	local clickSound = ReplicatedStorage:FindFirstChild("Sounds") and ReplicatedStorage.Sounds:FindFirstChild("minimal-pop-click-ui")
+	if clickSound then clickSound:Play() end
+	task.wait(0.1)
+	updateUnsyncFrame()
+	task.delay(0.3, function() inputLock = false end)
+end)
+
+local function setupSyncMonitoring()
+	if syncUpdateConnection then syncUpdateConnection:Disconnect() syncUpdateConnection = nil end
+	if not player.Character then player.CharacterAdded:Wait() end
+	updateUnsyncFrame()
+
+	syncUpdateConnection = player.Character:GetAttributeChangedSignal("Syncing"):Connect(function()
+		updateUnsyncFrame()
+		if isSyncing then
+			if not savedLocalEmoteData and currentAnimation and localAnimTrack then
+				local savedAnim = nil
+				for _, data in ipairs(allButtons) do
+					if data.button == currentAnimation then
+						savedAnim = data.animation
+						break
+					end
+				end
+				if savedAnim then
+					savedLocalEmoteData = {
+						animation = savedAnim,
+						button = currentAnimation,
+						speed = currentSpeed,
+					}
+				end
+			end
+		end
+	end)
+end
+setupSyncMonitoring()
+-- 🔥 KONEKSI GLOBAL: Lacak
+trackConnection(player.CharacterAdded:Connect(function() task.wait(1) if isScriptActive then setupSyncMonitoring() end end))
+
+-- ============================================
+-- ANIMATION STARTED (Leader / Solo)
+-- ============================================
+function animationStarted(animation, button)
+	if inputLock or pendingRequest then return end
+	inputLock = true
+	task.delay(0.01, function() inputLock = false end)
+
+	local currentTime = os.clock()
+	local character = player.Character
+	local animator = character and character:FindFirstChild("Humanoid") and character.Humanoid:FindFirstChild("Animator")
+
+	if currentAnimation == button then
+		local timeSinceLastClick = currentTime - lastEmoteClickTime
+		if timeSinceLastClick < 0.7 then
+			lastEmoteClickTime = os.clock()
+			if animator then
+				local isPose = isCurrentAnimPose()
+				local char = character
+				setAnimateEnabled(character, false)
+				if localAnimTrack then 
+					localAnimTrack:Stop(0) 
+				end
+				localAnimTrack = AnimatorUtils.getOrCreateTrack(animator, animation)
+				if localAnimTrack then
+					localAnimTrack.Priority = Enum.AnimationPriority.Action3
+					localAnimTrack:Play(0, 1, currentSpeed)
+					local capturedTicket = (char:GetAttribute("ApplyTicket") or 0)
+					task.spawn(function()
+						task.wait(0.05)
+						if not isScriptActive or char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
+						freezeHumanoidForPose(char, isPose)
+					end)
+				end
+			end
+			animationStartRE:FireServer(animation.AnimationId, true, currentSpeed, 0, true, workspace:GetServerTimeNow())
+		else
+			currentAnimation = nil
+			lastEmoteClickTime = 0
+			updateButtonVisuals()
+			savedLocalEmoteData = nil
+			if animator and localAnimTrack then
+				localAnimTrack:Stop(FADE_TIME)
+				localAnimTrack = nil
+			end
+			restoreCharacterAnimations(character)
+			animationStartRE:FireServer(animation.AnimationId, false, currentSpeed, 0, false, workspace:GetServerTimeNow())
+		end
+	else
+		if character then
+			restoreCharacterAnimations(character)
+		end
+		savedLocalEmoteData = nil
+		currentAnimation = button
+		lastEmoteClickTime = os.clock()
+		updateButtonVisuals()
+		if animator then
+			local isPose = isCurrentAnimPose()
+			local char = character
+			setAnimateEnabled(character, false)
+			if localAnimTrack then 
+				localAnimTrack:Stop(FADE_TIME) 
+			end
+			localAnimTrack = AnimatorUtils.getOrCreateTrack(animator, animation)
+			if localAnimTrack then
+				localAnimTrack.Priority = Enum.AnimationPriority.Action3
+				localAnimTrack:Play(FADE_TIME, 1, currentSpeed)
+				local capturedTicket = (char:GetAttribute("ApplyTicket") or 0)
+				task.spawn(function()
+					task.wait(FADE_TIME + 0.05)
+					if not isScriptActive or char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
+					freezeHumanoidForPose(char, isPose)
+				end)
+			end
+		end
+		animationStartRE:FireServer(animation.AnimationId, true, currentSpeed, FADE_TIME, false, workspace:GetServerTimeNow())
+	end
+end
+
+-- ============================================
+-- GUI & BUTTON BUILDER
+-- ============================================
+
+local updateDisplay 
+
+local function toggleFavorite(animation, button, favoriteIcon)
+	favoritedAnimations[animation.Name] = not favoritedAnimations[animation.Name]
+	favoriteIcon.TextColor3 = favoritedAnimations[animation.Name] and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(100, 100, 100)
+	saveFavoritedAnimations()
+	if currentCategory == "Favorite" then updateDisplay() end
+end
+
+local function createEmoteButton(animation, category)
+	local newButton = templateframe:Clone()
+	newButton.Name = animation.Name
+	newButton.Visible = true
+	local templateBtn = newButton:FindFirstChild("TemplateBtn")
+	local favoriteIcon = newButton:FindFirstChild("FavoriteBtn")
+	local originalColor = Color3.fromRGB(255, 255, 255)
+
+	if templateBtn then
+		originalColor = templateBtn.BackgroundColor3
+		templateBtn.Text = animation.Name
+	end
+
+	if favoriteIcon then
+		favoriteIcon.TextColor3 = favoritedAnimations[animation.Name] and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(100, 100, 100)
+		favoriteIcon.MouseButton1Click:Connect(function()
+			if inputLock then return end
+			inputLock = true
+			toggleFavorite(animation, newButton, favoriteIcon)
+			task.delay(0.2, function() inputLock = false end)
+		end)
+	end
+
+	if templateBtn then
+		templateBtn.MouseButton1Click:Connect(function()
+			animationStarted(animation, newButton)
+			local clickSound = ReplicatedStorage:FindFirstChild("Sounds") and ReplicatedStorage.Sounds:FindFirstChild("minimal-pop-click-ui")
+			if clickSound then clickSound:Play() end
+		end)
+	end
+
+	newButton.Parent = containerlist
+	table.insert(allButtons, { button = newButton, animation = animation, category = category, name = animation.Name, originalColor = originalColor })
+	return newButton
+end
+
+function updateDisplay()
+	pcall(function()
+		containerlist.CanvasPosition = Vector2.new(0, 0)
+		for _, data in ipairs(allButtons) do
+			local shouldShow = (currentCategory == "Favorite") and (favoritedAnimations[data.name] == true) or (currentCategory == data.category)
+			if shouldShow and searchQuery ~= "" then 
+				shouldShow = string.find(string.lower(data.name), string.lower(searchQuery)) ~= nil 
+			end
+			data.button.Visible = shouldShow
+		end
+		updateButtonVisuals()
+	end)
+end
+
+local function setActiveCategory(category)
+	currentCategory = category
+	danceBtn.BackgroundColor3 = (category == "Dance") and Color3.fromRGB(50, 150, 255) or Color3.fromRGB(70, 70, 70)
+	poseBtn.BackgroundColor3 = (category == "Pose") and Color3.fromRGB(50, 150, 255) or Color3.fromRGB(70, 70, 70)
+	favoriteBtn.BackgroundColor3 = (category == "Favorite") and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(70, 70, 70)
+	updateDisplay()
+end
+
+danceBtn.MouseButton1Click:Connect(function() setActiveCategory("Dance") end)
+poseBtn.MouseButton1Click:Connect(function() setActiveCategory("Pose") end)
+favoriteBtn.MouseButton1Click:Connect(function() setActiveCategory("Favorite") end)
+searchBox:GetPropertyChangedSignal("Text"):Connect(function() searchQuery = searchBox.Text updateDisplay() end)
+
+-- ============================================
+-- SPEED SLIDER (MOBILE & MULTI-TOUCH FIX)
+-- ============================================
+if speedSlider and speedBar and speedtext and speedButton then
+	local isDraggingSpeed = false
+	local activeInput = nil
+	local speedSendDebounce = false
+	local lastSentSpeed = SPEED_DEFAULT
+	speedSlider.AnchorPoint = Vector2.new(0.5, 0.5)
+
+	local function scaleToSpeed(scale) return math.floor((SPEED_MIN + scale * (SPEED_MAX - SPEED_MIN)) * 100 + 0.5) / 100 end
+	local function speedToScale(speed) return (speed - SPEED_MIN) / (SPEED_MAX - SPEED_MIN) end
+
+	local function sendSpeedToServer(speed)
+		if speed == lastSentSpeed or speedSendDebounce then return end
+		speedSendDebounce = true
+		lastSentSpeed = speed
+		changeSpeedRE:FireServer(speed)
+		task.delay(0.05, function()
+			speedSendDebounce = false
+			if currentSpeed ~= lastSentSpeed then changeSpeedRE:FireServer(currentSpeed) lastSentSpeed = currentSpeed end
+		end)
+	end
+
+	local targetScale = speedToScale(SPEED_DEFAULT)
+	local currentScale = targetScale
+
+	local function updateSlider(input)
+		local posX = input.Position.X
+		targetScale = math.clamp((posX - speedBar.AbsolutePosition.X) / speedBar.AbsoluteSize.X, 0, 1)
+	end
+
+	speedBar.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if isSyncing then showNotification("Cannot change speed while syncing", 2, Color3.fromRGB(0, 0, 0)) return end
+			isDraggingSpeed = true
+			activeInput = input
+			updateSlider(input)
+		end
+	end)
+
+	speedButton.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if isSyncing then showNotification("Cannot change speed while syncing", 2, Color3.fromRGB(0, 0, 0)) return end
+			isDraggingSpeed = true
+			activeInput = input
+		end
+	end)
+
+	-- 🔥 KONEKSI GLOBAL: Lacak UserInputService
+	trackConnection(UserInputService.InputChanged:Connect(function(input)
+		if isDraggingSpeed and input == activeInput then
+			updateSlider(input)
+		end
+	end))
+
+	trackConnection(UserInputService.InputEnded:Connect(function(input) 
+		if input == activeInput then
+			isDraggingSpeed = false 
+			activeInput = nil
+		end
+	end))
+
+	-- 🔥 KONEKSI GLOBAL: Lacak RenderStepped
+	trackConnection(RunService.RenderStepped:Connect(function(dt)
+		if math.abs(currentScale - targetScale) > 0.001 then
+			currentScale = currentScale + (targetScale - currentScale) * (12 * dt)
+			speedSlider.Position = UDim2.fromScale(currentScale, 0.5)
+			local newSpeed = scaleToSpeed(currentScale)
+			if newSpeed ~= currentSpeed then
+				currentSpeed = newSpeed
+				speedtext.Text = string.format("%.1fx", math.floor(currentSpeed * 10 + 0.5) / 10)
+				if not isSyncing then
+					sendSpeedToServer(currentSpeed)
+					if localAnimTrack then
+						localAnimTrack:AdjustSpeed(currentSpeed)
+					end
+				end
+			end
+		else
+			currentScale = targetScale
+		end
+	end))
+
+	speedSlider.Position = UDim2.fromScale(targetScale, 0.5)
+	speedtext.Text = string.format("%.1fx", SPEED_DEFAULT)
+end
+
+
+-- ============================================
+-- PRELOAD & LOAD ANIMATIONS
+-- ============================================
+task.spawn(function()
+	while #emotesFolder:GetChildren() == 0 and isScriptActive do task.wait(0.1) end
+	if not isScriptActive then return end
+
+	preloadLabel.Visible = true
+	if not player.Character then player.CharacterAdded:Wait() end
+	task.wait(2)
+	local success = AnimationPreloader.preloadAnimations(emotesFolder)
+	preloadLabel.Text = success and "Animations ready!" or "Preload failed"
+	preloadLabel.BackgroundTransparency = 0
+	task.wait(success and 1.5 or 3)
+	preloadLabel.Visible = false
+end)
+
+task.spawn(function()
+	while #emotesFolder:GetChildren() == 0 and isScriptActive do task.wait(0.1) end
+	if not isScriptActive then return end
+	repeat task.wait(0.1) until favoritesLoaded or not isScriptActive
+	if not isScriptActive then return end
+
+	for _, anim in ipairs(emotesFolder:GetChildren()) do
+		if anim:IsA("Animation") then createEmoteButton(anim, "Dance") emoteIdCache[anim.AnimationId] = anim.Name end
+	end
+	local poseFolder = emotesFolder:FindFirstChild("Pose")
+	if poseFolder then
+		for _, anim in ipairs(poseFolder:GetChildren()) do
+			if anim:IsA("Animation") then createEmoteButton(anim, "Pose") emoteIdCache[anim.AnimationId] = anim.Name end
+		end
+	end
+	table.sort(allButtons, function(a, b) return a.name < b.name end)
+	for i, data in ipairs(allButtons) do data.button.LayoutOrder = i end
+	setActiveCategory("Dance")
+end)
+
+-- ============================================
+-- ANTI-DRIFT BACKGROUND SYNC (OPTIMIZED + SMOOTH LERP)
+-- ============================================
+task.spawn(function()
+	while isScriptActive do -- 🔥 TAMBAHKAN CEK IS_SCRIPT_ACTIVE DI SINI
+		task.wait(0.2)
+		if not isScriptActive then break end -- Putuskan loop jika script mati
+
+		local myChar = player.Character
+		local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+		if not myHrp then continue end
+
+		local myReferenceTrack = localSyncTrack or localAnimTrack
+
+		for _, p in ipairs(Players:GetPlayers()) do
+			local char = p.Character
+			if char and char ~= myChar then
+				local targetHrp = char:FindFirstChild("HumanoidRootPart")
+
+				if not targetHrp or (myHrp.Position - targetHrp.Position).Magnitude > 100 then 
+					continue 
+				end
+
+				local animator = char:FindFirstChild("Humanoid") and char.Humanoid:FindFirstChild("Animator")
+				if animator then
+					local syncingTo = char:GetAttribute("Syncing")
+
+					if syncingTo == player.Name then
+						if myReferenceTrack and myReferenceTrack.IsPlaying then
+							for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+								if track.Animation and track.Animation.AnimationId == myReferenceTrack.Animation.AnimationId then
+									local exactPos = myReferenceTrack.TimePosition
+									local diff = exactPos - track.TimePosition
+
+									if track.Length > 0 then
+										if diff > track.Length / 2 then diff = diff - track.Length end
+										if diff < -track.Length / 2 then diff = diff + track.Length end
+
+										if math.abs(diff) > 0.4 then
+											track.TimePosition = exactPos
+										elseif math.abs(diff) > 0.03 then
+											local catchUpSpeed = currentSpeed + (diff * 2.5)
+											track:AdjustSpeed(catchUpSpeed)
+										else
+											track:AdjustSpeed(currentSpeed)
+										end
+									end
+								end
+							end
+						end
+						continue 
+					end
+
+					local startTime = char:GetAttribute("DanceStartTime")
+					local speed = char:GetAttribute("DanceSpeed") or 1
+					local currentDanceId = char:GetAttribute("CurrentDanceID")
+
+					if syncingTo and syncingTo ~= "" then
+						local leader = Players:FindFirstChild(syncingTo)
+						if leader and leader.Character then
+							startTime = leader.Character:GetAttribute("DanceStartTime") or startTime
+							speed = leader.Character:GetAttribute("DanceSpeed") or speed
+							currentDanceId = leader.Character:GetAttribute("CurrentDanceID") or currentDanceId
+						end
+					end
+
+					if startTime and currentDanceId then
+						for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+							if track.Animation and track.Animation.AnimationId == currentDanceId then
+								local elapsed = workspace:GetServerTimeNow() - startTime
+								local exactPos = (elapsed * speed) % track.Length
+
+								if exactPos > 0 and track.Length > 0 then
+									local diff = exactPos - track.TimePosition
+
+									if diff > track.Length / 2 then diff = diff - track.Length end
+									if diff < -track.Length / 2 then diff = diff + track.Length end
+
+									if math.abs(diff) > 0.4 then
+										track.TimePosition = exactPos
+									elseif math.abs(diff) > 0.03 then
+										local catchUpSpeed = speed + (diff * 2.5)
+										track:AdjustSpeed(catchUpSpeed)
+									else
+										track:AdjustSpeed(speed)
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+end)
+
+
+-- ============================================
+-- THE ZOMBIE CLEANER
+-- ============================================
+-- 🔥 KONEKSI GLOBAL: Lacak
+trackConnection(player.CharacterAdded:Connect(function(newCharacter)
+	task.spawn(function()
+		local animScript = newCharacter:WaitForChild("Animate", 2)
+		if animScript and animScript:IsA("LocalScript") then
+			animScript.Disabled = false
+		end
+	end)
+
+	if localSyncTrack then
+		local oldTrack = localSyncTrack
+		pcall(function() oldTrack:Stop() oldTrack:Destroy() end)
+		localSyncTrack = nil
+	end
+
+	if localAnimTrack then
+		local oldTrack = localAnimTrack
+		pcall(function() oldTrack:Stop() oldTrack:Destroy() end)
+		localAnimTrack = nil
+	end
+
+	isSyncing = false
+	currentLeaderName = nil
+	currentSpeed = 1
+	currentAnimation = nil
+	lastEmoteClickTime = 0
+	savedLocalEmoteData = nil
+	updateButtonVisuals()
+end))
+
+script.Destroying:Connect(function()
+	isScriptActive = false -- 🔥 MATIKAN SEMUA INFINITE LOOP
+
+	-- 🔥 BERSIHKAN SEMUA KONEKSI GLOBAL YANG TERSISA
+	for _, conn in ipairs(scriptConnections) do
+		if conn and conn.Connected then
+			conn:Disconnect()
+		end
+	end
+	table.clear(scriptConnections)
+
+	if syncUpdateConnection then syncUpdateConnection:Disconnect() end
+	if localSyncTrack then localSyncTrack:Stop(0) end
+	if localAnimTrack then localAnimTrack:Stop(0) end
+	if player.Character then
+		restoreCharacterAnimations(player.Character)
+	end
+end)
+
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-28T08:57:58+07:00.
+
+The user's current state is as follows:
+Other open documents:
+- d:\PROJECT ROBLOX\ClubKit\src\client\GLightsClient.client.lua (LANGUAGE_LUA)
+- d:\PROJECT ROBLOX\ClubKit\src\server\Refresh.server.lua (LANGUAGE_LUA)
+- d:\PROJECT ROBLOX\ClubKit\src\server\LikeSystem\LikeLeaderboard.server.lua (LANGUAGE_LUA)
+- d:\PROJECT ROBLOX\ClubKit\src\server\OverheadSystem\OverheadSystemServer\init.server.lua (LANGUAGE_LUA)
+- d:\PROJECT ROBLOX\ClubKit\src\server\RankItemGiver.server.lua (LANGUAGE_LUA)
+</ADDITIONAL_METADATA>
+<USER_SETTINGS_CHANGE>
+The user changed setting `Model Selection` from None to Gemini 3.1 Pro (High). No need to comment on this change if the user doesn't ask about it. If reporting what model you are, please use a human readable name instead of the exact string.
+</USER_SETTINGS_CHANGE><USER_REQUEST>
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local remotes = ReplicatedStorage:WaitForChild("Remotes")
+
+local updateFavoritedAnimationsEventRE = remotes:WaitForChild("updateFavoritedAnimationsEvent")
+local startSyncRE = remotes:WaitForChild("startSync")
+local changeSpeedRE = remotes:WaitForChild("changeSpeed")
+local syncNotificationRE = remotes:WaitForChild("SyncNotification")
+local animationStartRE = remotes:WaitForChild("animationStart")
+
+local emotesFolder = ReplicatedStorage:WaitForChild("Emotes")
+local Modules = ReplicatedStorage:WaitForChild("Modules")
+local AnimationPreloader = require(Modules:WaitForChild("AnimationPreloader"))
+local AnimatorUtils = require(Modules:WaitForChild("AnimatorUtils"))
+AnimatorUtils.AnimationPreloader = AnimationPreloader
+
+-- 🔥 INTEGRASI MODULE ANIMASI
+local UIAnimator = require(ReplicatedStorage:WaitForChild("UIAnimator"))
+
+-- ============================================
+-- GLOBAL CONNECTION TRACKER (ANTI MEMORY LEAK)
+-- ============================================
+local isScriptActive = true
+local scriptConnections = {}
+
+local function trackConnection(conn)
+	table.insert(scriptConnections, conn)
+	return conn
+end
+
+-- ============================================
+-- GUI ELEMENTS
+-- ============================================
+local gui = script.Parent
+local mainframe = gui:WaitForChild("MainFrame")
+local preloadLabel = Instance.new("TextLabel")
+preloadLabel.Name = "PreloadStatus"
+preloadLabel.Size = UDim2.new(1, 0, 1, 0)
+preloadLabel.Position = UDim2.new(0, 0, 0, 0)
+preloadLabel.AnchorPoint = Vector2.new(0, 0)
+preloadLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+preloadLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+preloadLabel.Text = "Preloading animations..."
+preloadLabel.TextSize = 14
+preloadLabel.Font = Enum.Font.Montserrat
+preloadLabel.Visible = false
+preloadLabel.Parent = mainframe
+
+local containerframe = mainframe:WaitForChild("Container")
+local controlframe = mainframe:WaitForChild("Control")
+local unsyncframe = mainframe:WaitForChild("UnsyncFrame")
+local containerlist = containerframe:WaitForChild("ContainerList")
+local templateframe = containerlist:WaitForChild("Template")
+local danceBtn = controlframe:WaitForChild("Dance")
+local favoriteBtn = controlframe:WaitForChild("Favorite")
+local poseBtn = controlframe:WaitForChild("Pose")
+local unsyncBtn = unsyncframe:WaitForChild("UnsyncBtn")
+local dancelabel = unsyncframe:WaitForChild("DanceLabel")
+local searchBox = mainframe:WaitForChild("SearchBox")
+local notifframe = gui:WaitForChild("NotificationFrame")
+local notiflabel = notifframe:WaitForChild("NotificationText")
+
+local speedFrame = mainframe:FindFirstChild("SpeedFrame")
+local speedBar = speedFrame and speedFrame:FindFirstChild("speedBar")
+local speedSlider = speedBar and speedBar:FindFirstChild("speedPosition")
+local speedButton = speedSlider and speedSlider:FindFirstChild("Button")
+local speedtext = speedFrame and speedFrame:FindFirstChild("TextLabel")
+
+-- ============================================
+-- VARIABLES & CONSTANTS
+-- ============================================
+local SPEED_MIN = 0.5
+local SPEED_MAX = 3.0
+local SPEED_DEFAULT = 1.0
+local FADE_TIME = 0.5
+
+local notificationQueue = {}
+local isShowingNotification = false
+
+local allButtons = {}
+local emoteIdCache = {}
+local favoritedAnimations = {}
+
+local currentAnimation = nil
+local currentCategory = "Dance"
+local searchQuery = ""
+local currentSpeed = SPEED_DEFAULT
+
+local inputLock = false
+local pendingRequest = false
+local isSyncing = false
+local currentLeaderName = nil
+local localSyncTrack = nil
+local localAnimTrack = nil
+local syncUpdateConnection = nil
+
+local savedLocalEmoteData = nil
+local animationStarted -- Forward Declaration
+
+local lastEmoteClickTime = 0 
+
+-- ============================================
+-- CORE ANIMATION & STATE CONTROL
+-- ============================================
+local function setAnimateEnabled(character, enabled)
+	if not character then return end
+	character:SetAttribute("AnimateDisabled", not enabled)
+end
+
+local function killGhostAnimation(animator, fade)
+	local f = fade or FADE_TIME
+	pcall(function()
+		if not animator or not animator.Parent then return end
+		if animator.Parent.Parent ~= player.Character then return end 
+
+		for _, t in ipairs(animator:GetPlayingAnimationTracks()) do
+			if t.Animation and emoteIdCache[t.Animation.AnimationId] then
+				t:AdjustSpeed(1) 
+				t:Stop(f)
+			end
+		end
+	end)
+end
+
+local function suppressNativeAnimations(animator, fade)
+end
+
+local function freezeHumanoidForPose(character, freeze)
+	if not character then return end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
+
+	if freeze then
+		humanoid:ChangeState(Enum.HumanoidStateType.None)
+	else
+		if humanoid:GetState() == Enum.HumanoidStateType.None then
+			humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+		end
+	end
+end
+
+local function isCurrentAnimPose()
+	if not currentAnimation then return false end
+	for _, data in ipairs(allButtons) do
+		if data.button == currentAnimation and data.category == "Pose" then
+			return true
+		end
+	end
+	return false
+end
+
+local function restoreCharacterAnimations(character)
+	if character ~= player.Character then return end
+
+	if not character then return end
+	setAnimateEnabled(character, true)
+	freezeHumanoidForPose(character, false)
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+
+	if animator then
+		pcall(function()
+			for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+				if track.Animation and not emoteIdCache[track.Animation.AnimationId] then
+					track:AdjustSpeed(1)
+					track:AdjustWeight(1)
+				end
+			end
+		end)
+	end
+
+	if humanoid then
+		task.defer(function()
+			if character:GetAttribute("AnimateDisabled") then return end
+			pcall(function()
+				local state = humanoid:GetState()
+				if state == Enum.HumanoidStateType.None then return end
+				humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+				task.defer(function()
+					pcall(function() humanoid:ChangeState(state) end)
+				end)
+			end)
+		end)
+	end
+end
+
+-- ============================================
+-- GUI HELPER FUNCTIONS
+-- ============================================
+local function showNotification(message, duration, bgColor)
+	table.insert(notificationQueue, { message = message, duration = duration or 3, bgColor = bgColor or Color3.fromRGB(50, 150, 255) })
+
+	if not isShowingNotification then
+		task.spawn(function()
+			while #notificationQueue > 0 and isScriptActive do
+				isShowingNotification = true
+				local notif = table.remove(notificationQueue, 1)
+				notiflabel.Text = notif.message
+				notifframe.BackgroundColor3 = notif.bgColor
+
+				notifframe.Position = UDim2.new(0.5, 0, 0.1, 0)
+				UIAnimator.Open(notifframe)
+				task.wait(notif.duration)
+				UIAnimator.Close(notifframe)
+				task.wait(0.3)
+			end
+			isShowingNotification = false
+		end)
+	end
+end
+
+trackConnection(syncNotificationRE.OnClientEvent:Connect(function(notifType, leaderName)
+	if notifType == "sync_success" then
+		local leaderPlayer = Players:FindFirstChild(leaderName)
+		local displayName = leaderPlayer and leaderPlayer.DisplayName or leaderName
+		showNotification("Coordinate dance are apply to " .. displayName, 2.5, Color3.fromRGB(0, 0, 0))
+	elseif notifType == "unsync_success" then
+		showNotification("Unsynced", 2, Color3.fromRGB(0, 0, 0))
+	elseif notifType == "leader_left" then
+		showNotification("LEAD " .. leaderName .. " meninggalkan server", 4, Color3.fromRGB(200, 30, 30))
+		if player.Character then
+			restoreCharacterAnimations(player.Character)
+			if localSyncTrack then 
+				localSyncTrack:Stop(0.5) 
+				localSyncTrack = nil 
+			end
+		end
+	elseif notifType == "leader_blocked" then
+		showNotification("You are a Dance Leader!\nCannot sync to followers", 3, Color3.fromRGB(0, 0, 0))
+	elseif notifType == "circular_blocked" then
+		showNotification("Cannot create circular coordinate dance", 2.5, Color3.fromRGB(0, 0, 0))
+	end
+end))
+
+local previousAnimation = nil
+local function updateButtonVisuals()
+	if previousAnimation then
+		local prevTemplateBtn = previousAnimation:FindFirstChild("TemplateBtn")
+		if prevTemplateBtn then
+			prevTemplateBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		end
+	end
+
+	if currentAnimation then
+		local currentTemplateBtn = currentAnimation:FindFirstChild("TemplateBtn")
+		if currentTemplateBtn then
+			currentTemplateBtn.TextColor3 = Color3.fromRGB(255, 0, 0)
+		end
+	end
+
+	previousAnimation = currentAnimation
+end
+
+local function loadSavedFavorites()
+	local stringVal = player:WaitForChild("SavedFavoritedAnimations", 15)
+	local savedData = stringVal and stringVal.Value or nil
+
+	if savedData and typeof(savedData) == "string" then
+		local ok, decoded = pcall(HttpService.JSONDecode, HttpService, savedData)
+		favoritedAnimations = (ok and typeof(decoded) == "table") and decoded or {}
+	else
+		favoritedAnimations = {}
+	end
+end
+
+local favoritesLoaded = false
+task.spawn(function() loadSavedFavorites() favoritesLoaded = true end)
+
+local function saveFavoritedAnimations() 
+	updateFavoritedAnimationsEventRE:FireServer(HttpService:JSONEncode(favoritedAnimations)) 
+end
+
+local function findAnimById(danceId)
+	for _, anim in ipairs(emotesFolder:GetChildren()) do
+		if anim:IsA("Animation") and anim.AnimationId == danceId then return anim end
+	end
+	local poseFolder = emotesFolder:FindFirstChild("Pose")
+	if poseFolder then
+		for _, anim in ipairs(poseFolder:GetChildren()) do
+			if anim:IsA("Animation") and anim.AnimationId == danceId then return anim end
+		end
+	end
+	return nil
+end
+
+-- ============================================
+-- THE UNIVERSAL HIVE MIND (Observer Tunggal)
+-- ============================================
+local globalSyncListeners = setmetatable({}, { __mode = "k" })
+
+local lastApplyDanceTime = 0 -- Tambahan variabel untuk deteksi spam ganti dance (Follower POV)
+
+local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
+	if char ~= player.Character then return end 
+
+	-- [FIX] Deteksi spam ganti dance untuk follower
+	local currentTime = os.clock()
+	if danceId and not isSpam then
+		if (currentTime - lastApplyDanceTime) < 0.7 then
+			isSpam = true
+		end
+		lastApplyDanceTime = currentTime
+	end
+
+	local animator = char:FindFirstChild("Humanoid") and char.Humanoid:FindFirstChild("Animator")
+	if not animator then return end
+
+	local applyTicket = (char:GetAttribute("ApplyTicket") or 0) + 1
+	char:SetAttribute("ApplyTicket", applyTicket)
+	local actualFade = isSpam and 0 or FADE_TIME
+
+	if dancelabel then
+		if danceId and emoteIdCache[danceId] then
+			dancelabel.Text = " " .. emoteIdCache[danceId]
+		else
+			local displayName = leaderName or "Leader"
+			local lp = Players:FindFirstChild(leaderName or "")
+			if lp then displayName = lp.DisplayName end
+			dancelabel.Text = " " .. displayName .. "'s Dance"
+		end
+	end
+
+	if not danceId then
+		if localSyncTrack then
+			localSyncTrack:Stop(actualFade)
+			localSyncTrack = nil
+		end
+
+		killGhostAnimation(animator, actualFade)
+		restoreCharacterAnimations(char)
+
+		if not isSyncing then
+			if savedLocalEmoteData then
+				local saved = savedLocalEmoteData
+				savedLocalEmoteData = nil
+				task.delay(0.1, function()
+					if isScriptActive then animationStarted(saved.animation, saved.button) end
+				end)
+			end
+		end
+		return
+	end
+
+	local targetAnim = findAnimById(danceId)
+	if not targetAnim then return end
+
+	if localAnimTrack then
+		localAnimTrack:Stop(actualFade)
+		localAnimTrack = nil
+	end
+
+	setAnimateEnabled(char, false)
+	killGhostAnimation(animator, actualFade)
+
+	local track = AnimatorUtils.getOrCreateTrack(animator, targetAnim)
+	if not track then setAnimateEnabled(char, true) return end
+
+	if localSyncTrack then localSyncTrack:Stop(actualFade) end
+	localSyncTrack = track
+
+	track.Priority = Enum.AnimationPriority.Action3
+	-- [FIX] Mainkan di target speed, bukan 0. Ini mencegah stuck diam!
+	track:Play(actualFade, 1, speed) 
+
+	local capturedTicket = applyTicket
+	task.spawn(function()
+		local timeout = os.clock() + 5
+		while track and track.Length == 0 and os.clock() < timeout do 
+			if not isScriptActive then return end
+			RunService.RenderStepped:Wait() 
+		end
+		if char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
+
+		if startTime and track.Length > 0 then
+			local finalTime = workspace:GetServerTimeNow()
+			local exactPos = ((finalTime - startTime) * speed) % track.Length
+			-- Update TimePosition hanya jika perbedaannya kentara
+			if exactPos > 0 and math.abs(track.TimePosition - exactPos) > 0.03 then
+				pcall(function() track.TimePosition = exactPos end)
+			end
+		end
+
+		track:AdjustSpeed(speed) 
+
+		task.delay(actualFade + 0.05, function()
+			if not isScriptActive or char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
+			suppressNativeAnimations(animator, 0)
+		end)
+	end)
+end
+
+
+local function monitorPlayerCharacter(targetPlayer)
+	local function onCharacterAdded(char)
+		if globalSyncListeners[char] then return end
+		globalSyncListeners[char] = true
+
+		local humanoid = char:WaitForChild("Humanoid", 10)
+		if not humanoid then return end
+
+		local animator = humanoid:WaitForChild("Animator", 10)
+		if not animator then return end
+
+		local function forceSnapCharacterDance(track)
+			if not track or track.Length == 0 then return end
+			-- [Sama seperti fungsi aslinya]
+			local startTime = char:GetAttribute("DanceStartTime")
+			local speed = char:GetAttribute("DanceSpeed") or 1
+			local currentDanceId = char:GetAttribute("CurrentDanceID")
+			local syncingTo = char:GetAttribute("Syncing")
+
+			if syncingTo == player.Name then return end 
+
+			if currentDanceId and track.Animation and track.Animation.AnimationId ~= currentDanceId then return end
+
+			if syncingTo and syncingTo ~= "" then
+				local leader = Players:FindFirstChild(syncingTo)
+				if leader and leader.Character then
+					startTime = leader.Character:GetAttribute("DanceStartTime") or startTime
+					speed = leader.Character:GetAttribute("DanceSpeed") or speed
+				end
+			end
+
+			if startTime then
+				local elapsed = workspace:GetServerTimeNow() - startTime
+				local exactPos = (elapsed * speed) % track.Length
+				if exactPos > 0 and math.abs(track.TimePosition - exactPos) > 0.03 then
+					pcall(function() track.TimePosition = exactPos end)
+				end
+			end
+		end
+
+		animator.AnimationPlayed:Connect(function(track)
+			if char:GetAttribute("AnimateDisabled") then
+				if not (track.Animation and emoteIdCache[track.Animation.AnimationId]) then
+					local prio = track.Priority
+					if prio == Enum.AnimationPriority.Core or prio == Enum.AnimationPriority.Idle or prio == Enum.AnimationPriority.Movement or prio == Enum.AnimationPriority.Action3 then
+						track:AdjustWeight(0.001)
+					end
+				end
+			end
+
+			if char ~= player.Character and track.Animation and emoteIdCache[track.Animation.AnimationId] then
+				task.spawn(function()
+					local timeout = os.clock() + 5
+					while track and track.Length == 0 and os.clock() < timeout do 
+						if not isScriptActive then return end
+						RunService.RenderStepped:Wait() 
+					end
+					forceSnapCharacterDance(track)
+				end)
+			end
+		end)
+
+		local function onAttributeChanged()
+			if char == player.Character then return end
+			for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+				if track.Animation and emoteIdCache[track.Animation.AnimationId] then
+					forceSnapCharacterDance(track)
+				end
+			end
+		end
+
+		char:GetAttributeChangedSignal("DanceStartTime"):Connect(onAttributeChanged)
+		char:GetAttributeChangedSignal("CurrentDanceID"):Connect(onAttributeChanged)
+		char:GetAttributeChangedSignal("DanceSpeed"):Connect(onAttributeChanged)
+		char:GetAttributeChangedSignal("Syncing"):Connect(onAttributeChanged)
+		char:GetAttributeChangedSignal("AnimateDisabled"):Connect(function()
+			if char:GetAttribute("AnimateDisabled") then
+				for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+					if track.Animation and emoteIdCache[track.Animation.AnimationId] then continue end
+					local prio = track.Priority
+					if prio == Enum.AnimationPriority.Core or prio == Enum.AnimationPriority.Idle or prio == Enum.AnimationPriority.Movement or prio == Enum.AnimationPriority.Action3 then
+						if track.WeightCurrent > 0.01 then track:AdjustWeight(0.001) end
+					end
+				end
+			end
+		end)
+
+		local function syncToLeader()
+			local leaderName = char:GetAttribute("Syncing")
+			if leaderName and leaderName ~= "" then
+				local leaderPlayer = Players:FindFirstChild(leaderName)
+				local leaderChar = leaderPlayer and leaderPlayer.Character
+				if leaderChar then
+					local danceId = leaderChar:GetAttribute("CurrentDanceID")
+					local speed = leaderChar:GetAttribute("DanceSpeed") or 1
+					local startTime = leaderChar:GetAttribute("DanceStartTime")
+					applyDance(char, danceId, speed, startTime, leaderName, false)
+				else
+					applyDance(char, nil, 1, nil, leaderName, false)
+				end
+			else
+				applyDance(char, nil, 1, nil, nil, false)
+			end
+		end
+
+		local function broadcastLeaderState(isSpamTrigger)
+			local danceId = char:GetAttribute("CurrentDanceID")
+			local speed = char:GetAttribute("DanceSpeed") or 1
+			local startTime = char:GetAttribute("DanceStartTime")
+
+			if char == player.Character then return end
+			for _, p in ipairs(Players:GetPlayers()) do
+				if p.Character and p.Character:GetAttribute("Syncing") == char.Name then
+					applyDance(p.Character, danceId, speed, startTime, char.Name, isSpamTrigger)
+				end
+			end
+		end
+
+		char:GetAttributeChangedSignal("Syncing"):Connect(syncToLeader)
+		char:GetAttributeChangedSignal("CurrentDanceID"):Connect(function() broadcastLeaderState(false) end)
+		char:GetAttributeChangedSignal("DanceSpeed"):Connect(function() broadcastLeaderState(false) end)
+		char:GetAttributeChangedSignal("SpamNonce"):Connect(function() broadcastLeaderState(true) end)
+
+		task.spawn(function()
+			if char:GetAttribute("Syncing") and char:GetAttribute("Syncing") ~= "" then
+				syncToLeader()
+			elseif char:GetAttribute("CurrentDanceID") then
+				broadcastLeaderState(false)
+			end
+		end)
+	end
+	if targetPlayer.Character then onCharacterAdded(targetPlayer.Character) end
+	-- 🔥 KONEKSI GLOBAL (Pemain Masuk): Lacak untuk dibersihkan
+	trackConnection(targetPlayer.CharacterAdded:Connect(onCharacterAdded))
+end
+
+for _, p in ipairs(Players:GetPlayers()) do monitorPlayerCharacter(p) end
+-- 🔥 KONEKSI GLOBAL (Pemain Baru): Lacak untuk dibersihkan
+trackConnection(Players.PlayerAdded:Connect(monitorPlayerCharacter))
+
+-- ============================================
+-- GUI & SYNC MANAGEMENT
+-- ============================================
+local function updateUnsyncFrame()
+	if not player.Character then 
+		if unsyncframe.Visible then UIAnimator.Close(unsyncframe) end
+		return 
+	end
+
+	local syncTarget = player.Character:GetAttribute("Syncing")
+	if syncTarget and syncTarget ~= "" then
+		isSyncing = true
+		currentLeaderName = syncTarget
+		local leaderPlayer = Players:FindFirstChild(syncTarget)
+		unsyncBtn.Text = "Synced to " .. (leaderPlayer and leaderPlayer.DisplayName or syncTarget) .. "\nTap to Unsync"
+
+		if not unsyncframe.Visible then
+			UIAnimator.Open(unsyncframe)
+		end
+	else
+		if unsyncframe.Visible then
+			UIAnimator.Close(unsyncframe)
+		end
+
+		isSyncing = false
+		currentLeaderName = nil
+		if localSyncTrack then 
+			localSyncTrack:Stop(FADE_TIME) 
+			localSyncTrack = nil 
+		end
+		if player.Character then
+			restoreCharacterAnimations(player.Character)
+		end
+	end
+end
+
+unsyncBtn.MouseButton1Click:Connect(function()
+	if inputLock or pendingRequest or not isSyncing or not currentLeaderName then return end
+	inputLock = true
+	local leaderPlayer = Players:FindFirstChild(currentLeaderName)
+	if not leaderPlayer then
+		if player.Character then player.Character:SetAttribute("Syncing", nil) end
+		updateUnsyncFrame() inputLock = false return
+	end
+	if localSyncTrack then 
+		localSyncTrack:Stop(FADE_TIME) 
+		localSyncTrack = nil 
+	end
+	startSyncRE:FireServer(leaderPlayer, false)
+	local clickSound = ReplicatedStorage:FindFirstChild("Sounds") and ReplicatedStorage.Sounds:FindFirstChild("minimal-pop-click-ui")
+	if clickSound then clickSound:Play() end
+	task.wait(0.1)
+	updateUnsyncFrame()
+	task.delay(0.3, function() inputLock = false end)
+end)
+
+local function setupSyncMonitoring()
+	if syncUpdateConnection then syncUpdateConnection:Disconnect() syncUpdateConnection = nil end
+	if not player.Character then player.CharacterAdded:Wait() end
+	updateUnsyncFrame()
+
+	syncUpdateConnection = player.Character:GetAttributeChangedSignal("Syncing"):Connect(function()
+		updateUnsyncFrame()
+		if isSyncing then
+			if not savedLocalEmoteData and currentAnimation and localAnimTrack then
+				local savedAnim = nil
+				for _, data in ipairs(allButtons) do
+					if data.button == currentAnimation then
+						savedAnim = data.animation
+						break
+					end
+				end
+				if savedAnim then
+					savedLocalEmoteData = {
+						animation = savedAnim,
+						button = currentAnimation,
+						speed = currentSpeed,
+					}
+				end
+			end
+		end
+	end)
+end
+setupSyncMonitoring()
+-- 🔥 KONEKSI GLOBAL: Lacak
+trackConnection(player.CharacterAdded:Connect(function() task.wait(1) if isScriptActive then setupSyncMonitoring() end end))
+
+-- ============================================
+-- ANIMATION STARTED (Leader / Solo)
+-- ============================================
+function animationStarted(animation, button)
+	if inputLock or pendingRequest then return end
+	inputLock = true
+	task.delay(0.01, function() inputLock = false end)
+
+	local currentTime = os.clock()
+	local character = player.Character
+	local animator = character and character:FindFirstChild("Humanoid") and character.Humanoid:FindFirstChild("Animator")
+
+	-- [FIX] Cek rentang klik untuk semua aksi agar spam dance ABC beda bisa dikenali
+	local timeSinceLastClick = currentTime - lastEmoteClickTime
+	local isSpamming = (timeSinceLastClick < 0.7)
+
+	if currentAnimation == button then
+		if isSpamming then
+			lastEmoteClickTime = os.clock()
+			if animator then
+				local isPose = isCurrentAnimPose()
+				local char = character
+				setAnimateEnabled(character, false)
+				if localAnimTrack then 
+					localAnimTrack:Stop(0) 
+				end
+				localAnimTrack = AnimatorUtils.getOrCreateTrack(animator, animation)
+				if localAnimTrack then
+					localAnimTrack.Priority = Enum.AnimationPriority.Action3
+					localAnimTrack:Play(0, 1, currentSpeed)
+					local capturedTicket = (char:GetAttribute("ApplyTicket") or 0)
+					task.spawn(function()
+						task.wait(0.05)
+						if not isScriptActive or char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
+						freezeHumanoidForPose(char, isPose)
+					end)
+				end
+			end
+			animationStartRE:FireServer(animation.AnimationId, true, currentSpeed, 0, true, workspace:GetServerTimeNow())
+		else
+			currentAnimation = nil
+			lastEmoteClickTime = 0
+			updateButtonVisuals()
+			savedLocalEmoteData = nil
+			if animator and localAnimTrack then
+				localAnimTrack:Stop(FADE_TIME)
+				localAnimTrack = nil
+			end
+			restoreCharacterAnimations(character)
+			animationStartRE:FireServer(animation.AnimationId, false, currentSpeed, 0, false, workspace:GetServerTimeNow())
+		end
+	else
+		if character then
+			restoreCharacterAnimations(character)
+		end
+		savedLocalEmoteData = nil
+		currentAnimation = button
+		lastEmoteClickTime = os.clock()
+		updateButtonVisuals()
+
+		-- [FIX] Hapus delay fade jika leader spam ganti dance yang beda (ABC)
+		local actualFade = isSpamming and 0 or FADE_TIME
+
+		if animator then
+			local isPose = isCurrentAnimPose()
+			local char = character
+			setAnimateEnabled(character, false)
+			if localAnimTrack then 
+				localAnimTrack:Stop(actualFade) 
+			end
+			localAnimTrack = AnimatorUtils.getOrCreateTrack(animator, animation)
+			if localAnimTrack then
+				localAnimTrack.Priority = Enum.AnimationPriority.Action3
+				localAnimTrack:Play(actualFade, 1, currentSpeed)
+				local capturedTicket = (char:GetAttribute("ApplyTicket") or 0)
+				task.spawn(function()
+					task.wait(actualFade + 0.05)
+					if not isScriptActive or char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
+					freezeHumanoidForPose(char, isPose)
+				end)
+			end
+		end
+		animationStartRE:FireServer(animation.AnimationId, true, currentSpeed, actualFade, false, workspace:GetServerTimeNow())
+	end
+end
+
+
+-- ============================================
+-- GUI & BUTTON BUILDER
+-- ============================================
+
+local updateDisplay 
+
+local function toggleFavorite(animation, button, favoriteIcon)
+	favoritedAnimations[animation.Name] = not favoritedAnimations[animation.Name]
+	favoriteIcon.TextColor3 = favoritedAnimations[animation.Name] and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(100, 100, 100)
+	saveFavoritedAnimations()
+	if currentCategory == "Favorite" then updateDisplay() end
+end
+
+local function createEmoteButton(animation, category)
+	local newButton = templateframe:Clone()
+	newButton.Name = animation.Name
+	newButton.Visible = true
+	local templateBtn = newButton:FindFirstChild("TemplateBtn")
+	local favoriteIcon = newButton:FindFirstChild("FavoriteBtn")
+	local originalColor = Color3.fromRGB(255, 255, 255)
+
+	if templateBtn then
+		originalColor = templateBtn.BackgroundColor3
+		templateBtn.Text = animation.Name
+	end
+
+	if favoriteIcon then
+		favoriteIcon.TextColor3 = favoritedAnimations[animation.Name] and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(100, 100, 100)
+		favoriteIcon.MouseButton1Click:Connect(function()
+			if inputLock then return end
+			inputLock = true
+			toggleFavorite(animation, newButton, favoriteIcon)
+			task.delay(0.2, function() inputLock = false end)
+		end)
+	end
+
+	if templateBtn then
+		templateBtn.MouseButton1Click:Connect(function()
+			animationStarted(animation, newButton)
+			local clickSound = ReplicatedStorage:FindFirstChild("Sounds") and ReplicatedStorage.Sounds:FindFirstChild("minimal-pop-click-ui")
+			if clickSound then clickSound:Play() end
+		end)
+	end
+
+	newButton.Parent = containerlist
+	table.insert(allButtons, { button = newButton, animation = animation, category = category, name = animation.Name, originalColor = originalColor })
+	return newButton
+end
+
+function updateDisplay()
+	pcall(function()
+		containerlist.CanvasPosition = Vector2.new(0, 0)
+		for _, data in ipairs(allButtons) do
+			local shouldShow = (currentCategory == "Favorite") and (favoritedAnimations[data.name] == true) or (currentCategory == data.category)
+			if shouldShow and searchQuery ~= "" then 
+				shouldShow = string.find(string.lower(data.name), string.lower(searchQuery)) ~= nil 
+			end
+			data.button.Visible = shouldShow
+		end
+		updateButtonVisuals()
+	end)
+end
+
+local function setActiveCategory(category)
+	currentCategory = category
+	danceBtn.BackgroundColor3 = (category == "Dance") and Color3.fromRGB(50, 150, 255) or Color3.fromRGB(70, 70, 70)
+	poseBtn.BackgroundColor3 = (category == "Pose") and Color3.fromRGB(50, 150, 255) or Color3.fromRGB(70, 70, 70)
+	favoriteBtn.BackgroundColor3 = (category == "Favorite") and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(70, 70, 70)
+	updateDisplay()
+end
+
+danceBtn.MouseButton1Click:Connect(function() setActiveCategory("Dance") end)
+poseBtn.MouseButton1Click:Connect(function() setActiveCategory("Pose") end)
+favoriteBtn.MouseButton1Click:Connect(function() setActiveCategory("Favorite") end)
+searchBox:GetPropertyChangedSignal("Text"):Connect(function() searchQuery = searchBox.Text updateDisplay() end)
+
+-- ============================================
+-- SPEED SLIDER (MOBILE & MULTI-TOUCH FIX)
+-- ============================================
+if speedSlider and speedBar and speedtext and speedButton then
+	local isDraggingSpeed = false
+	local activeInput = nil
+	local speedSendDebounce = false
+	local lastSentSpeed = SPEED_DEFAULT
+	speedSlider.AnchorPoint = Vector2.new(0.5, 0.5)
+
+	local function scaleToSpeed(scale) return math.floor((SPEED_MIN + scale * (SPEED_MAX - SPEED_MIN)) * 100 + 0.5) / 100 end
+	local function speedToScale(speed) return (speed - SPEED_MIN) / (SPEED_MAX - SPEED_MIN) end
+
+	local function sendSpeedToServer(speed)
+		if speed == lastSentSpeed or speedSendDebounce then return end
+		speedSendDebounce = true
+		lastSentSpeed = speed
+		changeSpeedRE:FireServer(speed)
+		task.delay(0.05, function()
+			speedSendDebounce = false
+			if currentSpeed ~= lastSentSpeed then changeSpeedRE:FireServer(currentSpeed) lastSentSpeed = currentSpeed end
+		end)
+	end
+
+	local targetScale = speedToScale(SPEED_DEFAULT)
+	local currentScale = targetScale
+
+	local function updateSlider(input)
+		local posX = input.Position.X
+		targetScale = math.clamp((posX - speedBar.AbsolutePosition.X) / speedBar.AbsoluteSize.X, 0, 1)
+	end
+
+	speedBar.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if isSyncing then showNotification("Cannot change speed while syncing", 2, Color3.fromRGB(0, 0, 0)) return end
+			isDraggingSpeed = true
+			activeInput = input
+			updateSlider(input)
+		end
+	end)
+
+	speedButton.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if isSyncing then showNotification("Cannot change speed while syncing", 2, Color3.fromRGB(0, 0, 0)) return end
+			isDraggingSpeed = true
+			activeInput = input
+		end
+	end)
+
+	-- 🔥 KONEKSI GLOBAL: Lacak UserInputService
+	trackConnection(UserInputService.InputChanged:Connect(function(input)
+		if isDraggingSpeed and input == activeInput then
+			updateSlider(input)
+		end
+	end))
+
+	trackConnection(UserInputService.InputEnded:Connect(function(input) 
+		if input == activeInput then
+			isDraggingSpeed = false 
+			activeInput = nil
+		end
+	end))
+
+	-- 🔥 KONEKSI GLOBAL: Lacak RenderStepped
+	trackConnection(RunService.RenderStepped:Connect(function(dt)
+		if math.abs(currentScale - targetScale) > 0.001 then
+			currentScale = currentScale + (targetScale - currentScale) * (12 * dt)
+			speedSlider.Position = UDim2.fromScale(currentScale, 0.5)
+			local newSpeed = scaleToSpeed(currentScale)
+			if newSpeed ~= currentSpeed then
+				currentSpeed = newSpeed
+				speedtext.Text = string.format("%.1fx", math.floor(currentSpeed * 10 + 0.5) / 10)
+				if not isSyncing then
+					sendSpeedToServer(currentSpeed)
+					if localAnimTrack then
+						localAnimTrack:AdjustSpeed(currentSpeed)
+					end
+				end
+			end
+		else
+			currentScale = targetScale
+		end
+	end))
+
+	speedSlider.Position = UDim2.fromScale(targetScale, 0.5)
+	speedtext.Text = string.format("%.1fx", SPEED_DEFAULT)
+end
+
+
+-- ============================================
+-- PRELOAD & LOAD ANIMATIONS
+-- ============================================
+task.spawn(function()
+	while #emotesFolder:GetChildren() == 0 and isScriptActive do task.wait(0.1) end
+	if not isScriptActive then return end
+
+	preloadLabel.Visible = true
+	if not player.Character then player.CharacterAdded:Wait() end
+	task.wait(2)
+	local success = AnimationPreloader.preloadAnimations(emotesFolder)
+	preloadLabel.Text = success and "Animations ready!" or "Preload failed"
+	preloadLabel.BackgroundTransparency = 0
+	task.wait(success and 1.5 or 3)
+	preloadLabel.Visible = false
+end)
+
+task.spawn(function()
+	while #emotesFolder:GetChildren() == 0 and isScriptActive do task.wait(0.1) end
+	if not isScriptActive then return end
+	repeat task.wait(0.1) until favoritesLoaded or not isScriptActive
+	if not isScriptActive then return end
+
+	for _, anim in ipairs(emotesFolder:GetChildren()) do
+		if anim:IsA("Animation") then createEmoteButton(anim, "Dance") emoteIdCache[anim.AnimationId] = anim.Name end
+	end
+	local poseFolder = emotesFolder:FindFirstChild("Pose")
+	if poseFolder then
+		for _, anim in ipairs(poseFolder:GetChildren()) do
+			if anim:IsA("Animation") then createEmoteButton(anim, "Pose") emoteIdCache[anim.AnimationId] = anim.Name end
+		end
+	end
+	table.sort(allButtons, function(a, b) return a.name < b.name end)
+	for i, data in ipairs(allButtons) do data.button.LayoutOrder = i end
+	setActiveCategory("Dance")
+end)
+
+-- ============================================
+-- ANTI-DRIFT BACKGROUND SYNC (OPTIMIZED + SMOOTH LERP)
+-- ============================================
+task.spawn(function()
+	while isScriptActive do -- 🔥 TAMBAHKAN CEK IS_SCRIPT_ACTIVE DI SINI
+		task.wait(0.2)
+		if not isScriptActive then break end -- Putuskan loop jika script mati
+
+		local myChar = player.Character
+		local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+		if not myHrp then continue end
+
+		local myReferenceTrack = localSyncTrack or localAnimTrack
+
+		for _, p in ipairs(Players:GetPlayers()) do
+			local char = p.Character
+			if char and char ~= myChar then
+				local targetHrp = char:FindFirstChild("HumanoidRootPart")
+
+				if not targetHrp or (myHrp.Position - targetHrp.Position).Magnitude > 100 then 
+					continue 
+				end
+
+				local animator = char:FindFirstChild("Humanoid") and char.Humanoid:FindFirstChild("Animator")
+				if animator then
+					local syncingTo = char:GetAttribute("Syncing")
+
+					if syncingTo == player.Name then
+						if myReferenceTrack and myReferenceTrack.IsPlaying then
+							for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+								if track.Animation and track.Animation.AnimationId == myReferenceTrack.Animation.AnimationId then
+									local exactPos = myReferenceTrack.TimePosition
+									local diff = exactPos - track.TimePosition
+
+									if track.Length > 0 then
+										if diff > track.Length / 2 then diff = diff - track.Length end
+										if diff < -track.Length / 2 then diff = diff + track.Length end
+
+										if math.abs(diff) > 0.4 then
+											track.TimePosition = exactPos
+										elseif math.abs(diff) > 0.03 then
+											local catchUpSpeed = currentSpeed + (diff * 2.5)
+											track:AdjustSpeed(catchUpSpeed)
+										else
+											track:AdjustSpeed(currentSpeed)
+										end
+									end
+								end
+							end
+						end
+						continue 
+					end
+
+					local startTime = char:GetAttribute("DanceStartTime")
+					local speed = char:GetAttribute("DanceSpeed") or 1
+					local currentDanceId = char:GetAttribute("CurrentDanceID")
+
+					if syncingTo and syncingTo ~= "" then
+						local leader = Players:FindFirstChild(syncingTo)
+						if leader and leader.Character then
+							startTime = leader.Character:GetAttribute("DanceStartTime") or startTime
+							speed = leader.Character:GetAttribute("DanceSpeed") or speed
+							currentDanceId = leader.Character:GetAttribute("CurrentDanceID") or currentDanceId
+						end
+					end
+
+					if startTime and currentDanceId then
+						for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+							if track.Animation and track.Animation.AnimationId == currentDanceId then
+								local elapsed = workspace:GetServerTimeNow() - startTime
+								local exactPos = (elapsed * speed) % track.Length
+
+								if exactPos > 0 and track.Length > 0 then
+									local diff = exactPos - track.TimePosition
+
+									if diff > track.Length / 2 then diff = diff - track.Length end
+									if diff < -track.Length / 2 then diff = diff + track.Length end
+
+									if math.abs(diff) > 0.4 then
+										track.TimePosition = exactPos
+									elseif math.abs(diff) > 0.03 then
+										local catchUpSpeed = speed + (diff * 2.5)
+										track:AdjustSpeed(catchUpSpeed)
+									else
+										track:AdjustSpeed(speed)
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+end)
+
+
+-- ============================================
+-- THE ZOMBIE CLEANER
+-- ============================================
+-- 🔥 KONEKSI GLOBAL: Lacak
+trackConnection(player.CharacterAdded:Connect(function(newCharacter)
+	task.spawn(function()
+		local animScript = newCharacter:WaitForChild("Animate", 2)
+		if animScript and animScript:IsA("LocalScript") then
+			animScript.Disabled = false
+		end
+	end)
+
+	if localSyncTrack then
+		local oldTrack = localSyncTrack
+		pcall(function() oldTrack:Stop() oldTrack:Destroy() end)
+		localSyncTrack = nil
+	end
+
+	if localAnimTrack then
+		local oldTrack = localAnimTrack
+		pcall(function() oldTrack:Stop() oldTrack:Destroy() end)
+		localAnimTrack = nil
+	end
+
+	isSyncing = false
+	currentLeaderName = nil
+	currentSpeed = 1
+	currentAnimation = nil
+	lastEmoteClickTime = 0
+	savedLocalEmoteData = nil
+	updateButtonVisuals()
+end))
+
+script.Destroying:Connect(function()
+	isScriptActive = false -- 🔥 MATIKAN SEMUA INFINITE LOOP
+
+	-- 🔥 BERSIHKAN SEMUA KONEKSI GLOBAL YANG TERSISA
+	for _, conn in ipairs(scriptConnections) do
+		if conn and conn.Connected then
+			conn:Disconnect()
+		end
+	end
+	table.clear(scriptConnections)
+
+	if syncUpdateConnection then syncUpdateConnection:Disconnect() end
+	if localSyncTrack then localSyncTrack:Stop(0) end
+	if localAnimTrack then localAnimTrack:Stop(0) end
+	if player.Character then
+		restoreCharacterAnimations(player.Character)
+	end
+end)
+
+
+Fungsi suppressNativeAnimations Kosong: Pada baris awal, fungsi ini dideklarasikan tanpa isi sama sekali:  Lualocal function suppressNativeAnimations(animator, fade)
+end
+
+apakah ini benar?
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-28T09:07:10+07:00.
+
+The user's current state is as follows:
+Other open documents:
+- d:\PROJECT ROBLOX\ClubKit\src\server\DonationSystem\DonationServerHandler\DonationDataStore.lua (LANGUAGE_LUA)
+- d:\PROJECT ROBLOX\ClubKit\src\client\LikeVisualHandler.client.lua (LANGUAGE_LUA)
+- d:\PROJECT ROBLOX\ClubKit\src\shared\Modules\ClientModules\UIControlManager.lua (LANGUAGE_LUA)
+- d:\PROJECT ROBLOX\ClubKit\src\client\Top3SaweriaDonation.client.lua (LANGUAGE_LUA)
+- d:\PROJECT ROBLOX\ClubKit\src\shared\Modules\ClientModules\MusicPlayer.lua (LANGUAGE_LUA)
+</ADDITIONAL_METADATA>

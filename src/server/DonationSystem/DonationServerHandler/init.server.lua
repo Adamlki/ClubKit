@@ -145,14 +145,16 @@ end
 --]]
 local function fireBroadcastToAll(displayName, amount, message)
 	for _, targetPlayer in ipairs(Players:GetPlayers()) do
-		local canChat = false
-		local ok = pcall(function()
-			canChat = TextChatService:CanUserChatAsync(targetPlayer.UserId)
+		task.spawn(function()
+			local canChat = false
+			local ok = pcall(function()
+				canChat = TextChatService:CanUserChatAsync(targetPlayer.UserId)
+			end)
+			-- Jika pengecekan gagal (error jaringan), tetap kirim agar broadcast tidak hilang
+			if not ok or canChat then
+				receiveRemote:FireClient(targetPlayer, displayName, amount, message)
+			end
 		end)
-		-- Jika pengecekan gagal (error jaringan), tetap kirim agar broadcast tidak hilang
-		if not ok or canChat then
-			receiveRemote:FireClient(targetPlayer, displayName, amount, message)
-		end
 	end
 end
 

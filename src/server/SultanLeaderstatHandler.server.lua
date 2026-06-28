@@ -32,6 +32,9 @@ Players.PlayerAdded:Connect(function(player)
 		-- GANTI GetAllDonations menjadi LoadPlayerDonation
 		local myData = DonationDataStore:LoadPlayerDonation(player)
 
+		-- Cek eksistensi SEBELUM menyentuh UI dan Properties
+		if not player or not player.Parent then return end
+
 		local totalDonated = 0
 		if myData then
 			totalDonated = (myData["Donated - Studio"] or 0) + (myData["Donated - Experience"] or 0)

@@ -23,7 +23,7 @@ local function debugWarn(...)
 end
 
 -- 🔴 FIX 1: Interval dinaikkan ke 15 detik untuk mencegah IP Server diblokir oleh API Saweria!
-local CHECK_INTERVAL = 10 
+local CHECK_INTERVAL = 15 
 local MAX_DONATIONS = 50
 
 -- STATE
@@ -206,11 +206,20 @@ end
 debugPrint("✅ SAWERIA DONATION SYSTEM STARTED")
 updateBoard()
 
--- 🔴 FIX 3: Loop utama tidak lagi menggunakan logika tumpang tindih. Jauh lebih hemat CPU Server!
+local isFetchingAPI = false -- Gembok Anti-Thread Bomb
+
 while true do
 	task.wait(CHECK_INTERVAL)
-	-- 🔥 ARCHITECT FIX: Bungkus dalam Thread agar Jaringan tidak Deadlock jika API lambat
-	task.spawn(function()
-		pcall(fetchDonationData)
-	end)
+	
+	-- Hanya jalan jika API tidak sedang ngelag/nyangkut
+	if not isFetchingAPI then
+		isFetchingAPI = true
+		
+		task.spawn(function()
+			pcall(fetchDonationData)
+			isFetchingAPI = false -- Buka gembok saat selesai
+		end)
+	else
+		debugWarn("API Saweria sedang lambat, menunda fetch berikutnya...")
+	end
 end

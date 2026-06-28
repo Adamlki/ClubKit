@@ -262,17 +262,27 @@ function module.handleSyncRequest(player, targetPlayer, condition, loadedAnimati
 			syncNotificationRE:FireClient(player, "unsync_success")
 			module.updateLeaderStatus(trueLeaderOfTarget)
 		else
+			-- Cek leader lama sebelum menimpa data
+			local oldTargetName = player.Character and player.Character:GetAttribute("Syncing")
+
 			if player.Character then
-				--pcall(AnimatorUtils.stopAllDances, animator, loadedAnimations, 0.5)
 				player.Character:SetAttribute("CurrentDanceID", nil)
 				player.Character:SetAttribute("DanceStartTime", nil)
 				player.Character:SetAttribute("Syncing", trueLeaderOfTarget.Name)
-
-				-- FIX: Hapus Walkspeed Logic
 			end
 
 			syncNotificationRE:FireClient(player, "sync_success", trueLeaderOfTarget.Name)
+			
+			-- Update jumlah follower Leader Baru
 			module.updateLeaderStatus(trueLeaderOfTarget)
+
+			-- Kurangi jumlah follower Leader Lama agar tidak ada "Ghost Follower"
+			if oldTargetName and oldTargetName ~= "" and oldTargetName ~= trueLeaderOfTarget.Name then
+				local oldLeader = Players:FindFirstChild(oldTargetName)
+				if oldLeader then
+					module.updateLeaderStatus(oldLeader)
+				end
+			end
 
 			local playerName = player.Name
 			for _, otherPlayer in ipairs(Players:GetPlayers()) do

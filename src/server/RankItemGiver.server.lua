@@ -144,9 +144,14 @@ local function onPlayerAdded(player)
 	RoleSystem:InitializePlayer(player)
 
 	-- Setiap kali pemain Spawn / Respawn / Mati lalu hidup lagi
-	player.CharacterAdded:Connect(function()
-		-- Beri jeda 1.5 detik agar Backpack & UI selesai loading sepenuhnya
-		task.wait(1.5) 
+	player.CharacterAdded:Connect(function(character)
+		-- WAJIB: Tunggu sampai Roblox selesai meload penampilan asli (baju, dll)
+		if not player:HasAppearanceLoaded() then
+			player.CharacterAppearanceLoaded:Wait()
+		end
+		
+		-- Beri jeda sedikit tambahan agar Backpack & UI selesai loading sepenuhnya
+		task.wait(0.5) 
 		checkAndGiveItems(player)
 	end)
 end

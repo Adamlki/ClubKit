@@ -16,16 +16,20 @@ local function log(...) if DEBUG then print("[AdminPanelServer]", ...) end end
 local COOLDOWN_TIME = 1 -- Jeda 1 detik untuk setiap perintah admin
 local playerCooldowns = {}
 
-local function isSpamming(player)
+local function isSpamming(player, actionName)
 	-- 🔥 SECURITY FIX: Validasi tipe data sender untuk mencegah Error Crash
 	if not player or typeof(player) ~= "Instance" or not player:IsA("Player") then return true end
 
-	local lastRequest = playerCooldowns[player.UserId] or 0
+	if not playerCooldowns[player.UserId] then
+		playerCooldowns[player.UserId] = {}
+	end
+
+	local lastRequest = playerCooldowns[player.UserId][actionName] or 0
 	local now = os.clock()
 	if now - lastRequest < COOLDOWN_TIME then
-		return true -- Ketahuan spamming!
+		return true 
 	end
-	playerCooldowns[player.UserId] = now
+	playerCooldowns[player.UserId][actionName] = now
 	return false
 end
 
@@ -71,7 +75,7 @@ end
 -- [PERBAIKAN] MENGIRIM TEMPLATE WARNA KE CLIENT (ADMIN PANEL)
 -- =========================================================
 GetColorTemplatesRemote.OnServerInvoke = function(sender)
-	if not sender or isSpamming(sender) then return {} end
+	if not sender or isSpamming(sender, "GetColors") then return {} end
 
 	local templates = {}
 	-- Langsung ambil dari TeamGroups dan kirim format brickColorName
@@ -86,13 +90,13 @@ GetColorTemplatesRemote.OnServerInvoke = function(sender)
 end
 
 GetTeamListRemote.OnServerInvoke = function(sender)
-	if not sender or isSpamming(sender) or not isAdminOrMod(sender) then return {} end
+	if not sender or isSpamming(sender, "GetTeams") or not isAdminOrMod(sender) then return {} end
 	return CustomTeams.GetTeamList()
 end
 
 TeamActionRemote.OnServerEvent:Connect(function(sender, data)
 	-- 🔥 ARCHITECT FIX: BLOKIR JIKA SPAM!
-	if isSpamming(sender) then
+	if isSpamming(sender, "Action") then
 		TeamActionResultRemote:FireClient(sender, { success=false, message="Tunggu 1 detik! Jangan spam klik." })
 		return
 	end

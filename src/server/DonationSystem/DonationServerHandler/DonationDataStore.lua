@@ -69,8 +69,8 @@ function DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
 
 	-- 1. Simpan ke Database asli (Synchronous agar bisa return sukses/gagal ke ProcessReceipt)
 	for attempt = 1, 3 do
-		local ok, err = pcall(function()
-			dataStore:UpdateAsync(userIdStr, function(current)
+		local ok, updatedData = pcall(function()
+			return dataStore:UpdateAsync(userIdStr, function(current)
 				isNewReceipt = true
 				current = current or {
 					DisplayName = safeDisplayName,
@@ -83,7 +83,6 @@ function DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
 				-- IDEMPOTENSI: Jika receipt sudah ada di DataStore, abaikan penambahan amount
 				if receiptInfo and receiptInfo.PurchaseId then
 					if current.ProcessedReceipts[receiptInfo.PurchaseId] then
-						totalAmount = (current["Donated - Studio"] or 0) + (current["Donated - Experience"] or 0)
 						isNewReceipt = false
 						return current
 					end
@@ -100,7 +99,6 @@ function DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
 
 				current.DisplayName = safeDisplayName
 				current[DonationConfig.DONATION_FIELD] = (current[DonationConfig.DONATION_FIELD] or 0) + amount
-				totalAmount = (current["Donated - Studio"] or 0) + (current["Donated - Experience"] or 0)
 
 				return current
 			end)
@@ -109,6 +107,9 @@ function DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
 		if ok then
 			debugLog("DATASTORE", "Berhasil disimpan untuk", safePlayerName)
 			saveSuccess = true
+			if updatedData then
+				totalAmount = (updatedData["Donated - Studio"] or 0) + (updatedData["Donated - Experience"] or 0)
+			end
 			break
 		else
 			task.wait(2)

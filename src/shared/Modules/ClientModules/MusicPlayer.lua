@@ -416,9 +416,16 @@ function MusicPlayer:HandleDispatchEvent(data)
 		self.uiManager:UpdateFavorites(payload.favoriteSongs or {})
 		
 	elseif eventType == "PRELOAD_AUDIO" then
-		-- 🔥 AUDIO PRELOAD DINONAKTIFKAN 
-		-- Sengaja dimatikan agar tidak menyebabkan client freeze.
-		-- (Fitur ini sebelumnya menerima ID dari server untuk dipreload)
+		-- ✅ PRELOAD AMAN: Download audio berikutnya di latar belakang
+		-- Menggunakan asset string (BUKAN Sound instance) sehingga tidak freeze/stutter.
+		if payload.id then
+			task.spawn(function()
+				local ContentProvider = game:GetService("ContentProvider")
+				pcall(function()
+					ContentProvider:PreloadAsync({"rbxassetid://" .. payload.id})
+				end)
+			end)
+		end
 	end
 end
 
@@ -445,53 +452,11 @@ end
 -- THE ABSOLUTE AUDIO SNAP (TIME-TRAVEL)
 -- ====================================
 function MusicPlayer:ForceAudioSync(payload)
-	local serverSound = SoundService:WaitForChild("ServerMusicSound", 5)
-	if not serverSound then return end
-
-	-- Gunakan task.spawn agar tidak memblokir antarmuka UI
-	task.spawn(function()
-		local expectedAssetId = "rbxassetid://" .. payload.SoundId
-		local timeout = os.clock() + 20 
-		
-		-- 0. Tunggu sampai SoundId benar-benar terupdate oleh Roblox Native Replication
-		while serverSound.SoundId ~= expectedAssetId and os.clock() < timeout do
-			task.wait(0.1)
-		end
-
-		-- 1. Tunggu chipset HP selesai mengunduh & mendecode audio (Tunggu hingga 60 detik untuk HP kentang/lag)
-		while serverSound.TimeLength == 0 and os.clock() < timeout do
-			task.wait(0.2)
-		end
-
-		-- 2. Pastikan lagu yang selesai didecode ini adalah lagu yang benar (belum di-skip)
-		if serverSound.TimeLength > 0 and payload.ServerTime and serverSound.SoundId == expectedAssetId then
-
-			-- 3. Hitung persis berapa detik HP ini tertinggal dari Server
-			local exactPingDelay = workspace:GetServerTimeNow() - payload.ServerTime
-
-			-- 4. Extrapolasi Hardware: Decoding Audio di HP lebih lambat dari render grafis.
-			local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
-			local hardwareAudioOffset = isMobile and 0.15 or 0.05 
-
-			local speed = payload.PlaybackSpeed or 1.0
-
-			-- 5. Kalkulasi posisi detik absolut
-			local compensatedTime = (exactPingDelay + hardwareAudioOffset) * speed
-
-			-- 6. EKSEKUSI SNAP MUTLAK: Potong lagu secara paksa!
-			if compensatedTime > 0 and compensatedTime < serverSound.TimeLength then
-				-- Hanya paksakan sinkronisasi jika melenceng jauh (cegah efek double di awal lagu)
-				if math.abs(serverSound.TimePosition - compensatedTime) > 0.4 then
-					serverSound.TimePosition = compensatedTime
-				end
-			end
-
-			-- 🔥 FIX PENTING: Jika HP ngelag parah sampai Roblox native replication menyerah, PAKSA MAIN!
-			if not serverSound.IsPlaying then
-				serverSound:Play()
-			end
-		end
-	end)
+	-- DIBERSIHKAN: Biarkan Roblox Native Replication yang mengatur sinkronisasi audio.
+	-- Sistem manual sebelumnya (TimePosition snap + client-side Play()) menyebabkan:
+	-- 1. Musik patah-patah/stutter saat player baru join
+	-- 2. Musik tidak terdengar di beberapa player karena client memanggil Play() ilegal
+	-- Roblox SoundService sudah otomatis mereplikasi Sound ke semua client.
 end
 -- ====================================
 -- SYNC STATE (? FIXED WITH BLOCK STATE & 🔥 LATE JOINER AUDIO SNAP)
@@ -580,27 +545,9 @@ end
 -- UPDATE PROGRESS
 -- ====================================
 function MusicPlayer:UpdateProgress(data)
-	if data.Duration and data.Duration > 0 then
-		-- UI visual update is now handled smoothly via RenderStepped loop!
-		
-		-- 🔥 SYNC AUDIO BERKELANJUTAN (SOFT SYNC)
-		local serverSound = SoundService:FindFirstChild("ServerMusicSound")
-		if serverSound and serverSound.IsPlaying and serverSound.TimeLength > 0 and data.ServerTime then
-			local exactPingDelay = workspace:GetServerTimeNow() - data.ServerTime
-			local expectedTime = data.Current + (exactPingDelay * (data.PlaybackSpeed or 1.0))
-			
-			-- Ekstrapolasi hardware HP lambat
-			local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
-			expectedTime = expectedTime + (isMobile and 0.15 or 0.05)
-			
-			-- Jika audio melenceng lebih dari 0.5 detik dari server, paksakan snap!
-			if math.abs(serverSound.TimePosition - expectedTime) > 0.5 then
-				if expectedTime > 0 and expectedTime < serverSound.TimeLength then
-					serverSound.TimePosition = expectedTime
-				end
-			end
-		end
-	end
+	-- DIBERSIHKAN: Logika "Soft Sync" dihapus agar tidak bentrok dengan
+	-- sinkronisasi audio bawaan Roblox yang menyebabkan lagu tersendat/patah.
+	-- UI progress bar sudah ditangani oleh Heartbeat loop di atas.
 end
 
 -- ====================================

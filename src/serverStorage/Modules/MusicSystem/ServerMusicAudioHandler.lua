@@ -72,66 +72,68 @@ function ServerMusicAudioHandler:CreateServerSound()
 	self.serverSound = existingSound
 
 	-- ====================================
-	-- 🎛️ AUDIO ENGINEERING: CONCERT FX CHAIN
+	-- 🎛️ AUDIO ENGINEERING: CLUB FX CHAIN
+	-- Filosofi: Jernih, Keras, Tidak Pecah, Vokal Jelas
 	-- ====================================
 
-	-- 1. COMPRESSOR (Loudness Normalization / Perata Volume)
-	-- Ini akan menekan lagu yang terlalu berisik dan mengangkat lagu yang pelan.
+	-- 1. COMPRESSOR (Perata Volume — Anti Pecah & Anti Pelan)
+	-- Menekan bagian yang terlalu keras (anti clipping) dan mengangkat yang pelan.
 	local compressor = existingSound:FindFirstChild("ConcertCompressor")
 	if not compressor then
 		compressor = Instance.new("CompressorSoundEffect")
 		compressor.Name = "ConcertCompressor"
-		compressor.Attack = 0     -- Bereaksi instan saat ada suara menghentak
-		compressor.Release = 0     -- Waktu pemulihan standar
-		compressor.Ratio = 0          -- Skala penekanan 4:1
-		compressor.Threshold = 0     -- Menangkap puncak (peak) suara keras agar tidak clip
-		compressor.GainMakeup = 0     -- DITURUNKAN: +5dB bikin snare/gitar pecah (clipping), 0 lebih natural
 		compressor.Parent = existingSound
 	end
+	compressor.Attack    = 0.05  -- Cukup cepat menangkap hentak bass/snare, tapi tidak membunuh transient
+	compressor.Release   = 0.15  -- Pemulihan sedang agar lagu tetap bernapas (tidak gepeng)
+	compressor.Ratio     = 4     -- Penekanan 4:1 — standar industri musik untuk mastering
+	compressor.Threshold = -15   -- Menangkap puncak suara keras di atas -15 dB
+	compressor.GainMakeup = 3    -- Kompensasi +3 dB agar volume rata tanpa pecah
 
-	-- 2. EQUALIZER (Concert Acoustics / Bass Boost)
+	-- 2. EQUALIZER (Keseimbangan Frekuensi — Anti Mendem)
+	-- Bass cukup terasa, vokal jelas, instrumen tinggi berkilau.
 	local eq = existingSound:FindFirstChild("ConcertEQ")
 	if not eq then
 		eq = Instance.new("EqualizerSoundEffect")
 		eq.Name = "ConcertEQ"
-		eq.LowGain = 10    -- DITURUNKAN: Bass +12 dB terlalu besar & bikin pecah/clipping saat lagu dilambatkan (+4 dB aman)
-		eq.MidGain = 0    -- Dinormalkan ke 0 dB agar gitar tidak mendem/pecah
-		eq.HighGain = 0   -- DITURUNKAN: High +5 dB terlalu tajam, bikin snare/cymbal pecah (+1 dB lebih aman)
 		eq.Parent = existingSound
 	end
+	eq.LowGain  = 4   -- Bass +4 dB: cukup nendang tanpa mendem/clipping (sebelumnya +10, terlalu besar)
+	eq.MidGain  = 2   -- Mid +2 dB: mengangkat vokal & gitar agar tidak tenggelam oleh bass
+	eq.HighGain = 3   -- High +3 dB: menambah kejernihan/presence pada hi-hat, cymbal, vokal atas
 
-	-- 3. REVERB (Stadium Ambience / Gema Ruangan)
+	-- 3. REVERB (Nuansa Ruangan Club — Tipis Saja)
 	local reverb = existingSound:FindFirstChild("ConcertReverb")
 	if not reverb then
 		reverb = Instance.new("ReverbSoundEffect")
 		reverb.Name = "ConcertReverb"
-		reverb.DecayTime = 1   -- Durasi gema layaknya stadion besar
-		reverb.Density = 0.5     -- Kepadatan gema
-		reverb.DryLevel = 0      -- Volume asli tidak disentuh (0 dB)
-		reverb.WetLevel = -10    -- Volume gema diatur agak pelan agar lagu tetap jelas (-12 dB)
 		reverb.Parent = existingSound
 	end
+	reverb.DecayTime = 0.8   -- Gema pendek khas club indoor (bukan stadion)
+	reverb.Density   = 0.5   -- Kepadatan gema sedang
+	reverb.DryLevel  = 0     -- Suara asli utuh (0 dB)
+	reverb.WetLevel  = -14   -- Gema sangat halus di background, tidak mengaburkan vokal
 
-	-- 4. ECHO (Slapback / Pantulan Suara Panggung)
+	-- 4. ECHO (Pantulan Halus — Hampir Tidak Terasa)
 	local echo = existingSound:FindFirstChild("ConcertEcho")
 	if not echo then
 		echo = Instance.new("EchoSoundEffect")
 		echo.Name = "ConcertEcho"
-		echo.Delay = 0.15    -- Pantulan terjadi sangat cepat setelah suara asli
-		echo.Feedback = 0.1      -- Tidak memantul berkali-kali (hanya 1-2 kali)
-		echo.DryLevel = 0        -- Volume asli aman (0 dB)
-		echo.WetLevel = -18      -- Pantulan bersembunyi tipis di background (-18 dB)
 		echo.Parent = existingSound
 	end
-	
-	-- 5. PITCH SHIFT (Anti-Pecah & Koreksi Vokal)
+	echo.Delay    = 0.12  -- Pantulan sangat cepat (slapback khas club)
+	echo.Feedback = 0.05  -- Hanya 1 kali pantul, tidak berulang
+	echo.DryLevel = 0     -- Suara asli utuh (0 dB)
+	echo.WetLevel = -22   -- Sangat tipis, hanya memberi kesan "ruangan hidup"
+
+	-- 5. PITCH SHIFT (Koreksi Vokal saat Speed Diubah)
 	local pitchShift = existingSound:FindFirstChild("ConcertPitchShift")
 	if not pitchShift then
 		pitchShift = Instance.new("PitchShiftSoundEffect")
 		pitchShift.Name = "ConcertPitchShift"
-		pitchShift.Octave = 1 -- Default normal
 		pitchShift.Parent = existingSound
 	end
+	pitchShift.Octave = 1 -- Normal (diubah otomatis oleh sistem saat PlaybackSpeed berubah)
 
 	return existingSound
 end

@@ -217,7 +217,7 @@ local function onUpdate(top3Data)
 						local humanoid = model:FindFirstChildOfClass("Humanoid")
 						if humanoid then humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None end
 
-						-- Optimasi Fisika (0% Lag)
+						-- Optimasi Fisika
 						for _, p in ipairs(model:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end
 						local hrp = model:FindFirstChild("HumanoidRootPart")
 						if hrp then hrp.Anchored = true end

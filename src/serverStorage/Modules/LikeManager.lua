@@ -13,6 +13,7 @@ local COOLDOWN_DURATION = 86400 -- 24 jam (dalam detik)
 local playerCooldownsCache = {}
 local playerLikesCache = {} -- Menyimpan data like sementara sebelum di-save
 local playerLoadedFlags = {} -- Mencegah data loss jika GetAsync gagal
+local playerDirtyFlags = {} -- Dirty checking agar tidak boros DataStore
 
 -- Untuk mencegah Bug Race Condition saat pemain keluar-masuk terlalu cepat di server yang sama
 local activeSaves = {}
@@ -73,7 +74,7 @@ end
 
 function LikeManager.SaveTotalLikes(player)
 	-- Hanya save JIKA data pemain sudah berhasil di-load saat dia masuk (Mencegah Data Loss Bug)
-	if playerLoadedFlags[player.UserId] then
+	if playerLoadedFlags[player.UserId] and playerDirtyFlags[player.UserId] then
 		local likesToSave = playerLikesCache[player.UserId]
 		if likesToSave then
 			pcall(function()
@@ -82,6 +83,7 @@ function LikeManager.SaveTotalLikes(player)
 				OrderedLikesStore:SetAsync(tostring(player.UserId), likesToSave)
 			end)
 		end
+		playerDirtyFlags[player.UserId] = nil -- Reset dirty flag
 	end
 	playerLikesCache[player.UserId] = nil
 	playerLoadedFlags[player.UserId] = nil
@@ -132,10 +134,13 @@ function LikeManager.ProcessLike(liker, targetPlayer)
 	-- 1. Terapkan Cooldown ke pengirim
 	playerCooldownsCache[likerId][targetId] = os.time() + COOLDOWN_DURATION
 	
-	-- 2. Tambahkan Like ke Target (Hanya di Memory & Attribute agar tidak lag)
-	local currentLikes = (playerLikesCache[targetPlayer.UserId] or 0) + 1
-	playerLikesCache[targetPlayer.UserId] = currentLikes
-	targetPlayer:SetAttribute("TotalLikes", currentLikes)
+	-- Increment total likes
+	playerLikesCache[targetPlayer.UserId] = (playerLikesCache[targetPlayer.UserId] or 0) + 1
+	targetPlayer:SetAttribute("TotalLikes", playerLikesCache[targetPlayer.UserId])
+	
+	-- Mark as dirty
+	playerDirtyFlags[likerId] = true
+	playerDirtyFlags[targetPlayer.UserId] = true
 	
 	return true, "Success"
 end
@@ -174,22 +179,24 @@ Players.PlayerRemoving:Connect(function(player)
 	activeSaves[userId] = nil
 end)
 
--- Auto Save setiap 60 detik (Mencegah data hilang jika server crash)
+-- Auto Save setiap 300 detik (5 menit) agar DataStore limit tidak over (Mencegah FailedCount = 16)
 task.spawn(function()
 	while true do
-		task.wait(60)
+		task.wait(300)
 		for _, player in ipairs(Players:GetPlayers()) do
-			-- Simpan diam-diam di background (Pcall untuk cegah error)
-			local likesToSave = playerLikesCache[player.UserId]
-			if likesToSave then
-				pcall(function()
-					LikesStore:SetAsync(tostring(player.UserId), likesToSave)
-					OrderedLikesStore:SetAsync(tostring(player.UserId), likesToSave)
-				end)
-			end
-			
-			-- Simpan juga cooldown agar tidak hilang jika server crash tanpa BindToClose
-			local cooldownData = playerCooldownsCache[player.UserId]
+			local isDirty = playerDirtyFlags[player.UserId]
+			if isDirty then
+				-- Simpan diam-diam di background (Pcall untuk cegah error)
+				local likesToSave = playerLikesCache[player.UserId]
+				if likesToSave then
+					pcall(function()
+						LikesStore:SetAsync(tostring(player.UserId), likesToSave)
+						OrderedLikesStore:SetAsync(tostring(player.UserId), likesToSave)
+					end)
+				end
+				
+				-- Simpan juga cooldown agar tidak hilang jika server crash tanpa BindToClose
+				local cooldownData = playerCooldownsCache[player.UserId]
 			if cooldownData then
 				local cleanedData = {}
 				local currentTime = os.time()
@@ -203,8 +210,11 @@ task.spawn(function()
 				end)
 			end
 			
-			-- Beri jeda kecil antar pemain agar tidak kena Limit/Throttling dari Roblox DataStore
-			task.wait(2)
+			playerDirtyFlags[player.UserId] = nil -- Reset dirty
+			
+			-- Beri jeda 1 detik antar pemain agar tidak kena Limit/Throttling dari Roblox DataStore
+			task.wait(1)
+			end
 		end
 	end
 end)

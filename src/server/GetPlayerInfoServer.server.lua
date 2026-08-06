@@ -292,29 +292,31 @@ end
     - Request tersebar di waktu join, bukan burst saat menu dibuka
     - Mengurangi risiko rate limit roproxy
 ]]
---local function preFetchPlayer(player)
---	task.delay(3, function()
---		if not player or not player.Parent then return end
---		task.spawn(function()
---			local ok, err = pcall(fetchPlayerInfo, player.UserId, player)
---			if ok then
---				print("[GetPlayerInfo] Pre-cached:", player.Name)
---			else
---				warn("[GetPlayerInfo] Pre-fetch gagal untuk", player.Name, ":", err)
---			end
---		end)
---	end)
---end
+-- 🔥 NETWORK FIX: Pre-fetch DIAKTIFKAN KEMBALI dengan stagger delay
+-- Menghindari burst request ke roproxy saat banyak player join bersamaan
+local function preFetchPlayer(player)
+	-- Stagger delay: 3 detik base + random 0-5 detik jitter per player
+	local staggerDelay = 3 + (player.UserId % 5)
+	task.delay(staggerDelay, function()
+		if not player or not player.Parent then return end
+		task.spawn(function()
+			local ok, err = pcall(fetchPlayerInfo, player.UserId, player)
+			if not ok then
+				-- Silently ignore pre-fetch failures (will be retried on demand)
+			end
+		end)
+	end)
+end
 
---Players.PlayerAdded:Connect(preFetchPlayer)
+Players.PlayerAdded:Connect(preFetchPlayer)
 
----- Pre-fetch untuk player yang sudah ada saat script pertama jalan
---for _, player in ipairs(Players:GetPlayers()) do
---	task.spawn(function()
---		task.wait(1)
---		pcall(fetchPlayerInfo, player.UserId, player)
---	end)
---end
+-- Pre-fetch untuk player yang sudah ada saat script pertama jalan
+for i, player in ipairs(Players:GetPlayers()) do
+	task.spawn(function()
+		task.wait(1 + i * 0.5) -- Stagger 500ms antar player
+		pcall(fetchPlayerInfo, player.UserId, player)
+	end)
+end
 
 -- ============================================
 -- REMOTE HANDLER

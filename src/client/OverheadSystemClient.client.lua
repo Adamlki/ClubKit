@@ -57,9 +57,16 @@ local function checkPremium(player)
 	return ok and v or false
 end
 
+local groupCache = {}
 local function checkGroupMember(player)
+	if groupCache[player.UserId] ~= nil then
+		return groupCache[player.UserId]
+	end
+	
 	local ok, v = pcall(function() return player:IsInGroup(Config.GROUP_ID) end)
-	return ok and v or false
+	local isMember = ok and v or false
+	groupCache[player.UserId] = isMember
+	return isMember
 end
 
 local function setupTextSizeConstraint(textLabel)
@@ -370,4 +377,5 @@ Players.PlayerRemoving:Connect(function(player)
 		end
 		playerConnections[player.UserId] = nil
 	end
+	groupCache[player.UserId] = nil
 end)

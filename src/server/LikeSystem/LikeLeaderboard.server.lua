@@ -5,7 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ORDERED_DATASTORE_NAME = "PlayerLikes_Ordered_v1"
 local MAX_PLAYERS = 30
-local REFRESH_INTERVAL = 60
+local REFRESH_INTERVAL = 120
 
 local OrderedLikesStore = DataStoreService:GetOrderedDataStore(ORDERED_DATASTORE_NAME)
 

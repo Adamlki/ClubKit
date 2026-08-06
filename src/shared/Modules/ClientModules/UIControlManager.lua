@@ -1,4 +1,4 @@
-local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 
 local UIControlManager = {}
 UIControlManager.__index = UIControlManager
@@ -22,12 +22,17 @@ function UIControlManager.new(components)
 
 	self.isDraggingVolume = false
 	self.volumeValue = 0.5
-	self.progressTween = nil -- ✅ NEW: Tween reference
+    
+	-- OPTIMASI: Variabel untuk RenderStepped Progress Bar
+	self.renderConnection = nil
+	self.currentTime = 0
+	self.totalTime = 0
+	self.targetProgress = 0
 
-	-- ✅ NEW: Duration tracking
 	self.currentDuration = 0
 	self.metadataDuration = nil
 	self.wasDetected = false
+	self.lastCurrentSec = -1
 
 	self:SetupConnections()
 	self:SetupVolumeSlider()
@@ -205,44 +210,62 @@ function UIControlManager:SetVolume(volumePercent)
 end
 
 -- ====================================
--- PROGRESS UPDATE (ENHANCED DENGAN TWEEN SERVICE)
+-- ENGINE PROGRESS BAR KUSTOM (NO TWEEN SERVICE)
+-- ====================================
+function UIControlManager:StartProgressRender()
+	if self.renderConnection then return end
+	self.renderConnection = RunService.RenderStepped:Connect(function(dt)
+		if not self.totalTime or self.totalTime <= 0 then return end
+		
+		-- Prediksi waktu berjalan lokal (interpolasi)
+		self.currentTime = self.currentTime + dt
+		local simulatedProgress = math.clamp(self.currentTime / self.totalTime, 0, 1)
+
+		-- Koreksi jika terjadi drift dengan data asli (toleransi 0.15 dari skala 0-1)
+		if math.abs(simulatedProgress - self.targetProgress) > 0.15 then
+			self.currentTime = self.targetProgress * self.totalTime
+			simulatedProgress = self.targetProgress
+		end
+
+		self.trackBar.Size = UDim2.new(simulatedProgress, 0, 1, 0)
+	end)
+end
+
+function UIControlManager:StopProgressRender()
+	if self.renderConnection then
+		self.renderConnection:Disconnect()
+		self.renderConnection = nil
+	end
+end
+
+-- ====================================
+-- PROGRESS UPDATE (OPTIMIZED)
 -- ====================================
 function UIControlManager:UpdateProgress(progress, currentTime, totalTime)
-	-- OPTIMASI TWEEN: Hanya tween panjang bar jika perlu, biarkan TweenService menangani visual
+	-- Jika lagu dihentikan atau tidak ada durasi
 	if not totalTime or totalTime <= 0 or progress == 0 then
-		if self.progressTween then
-			self.progressTween:Cancel()
-			self.progressTween = nil
-		end
+		self:StopProgressRender()
 		self.trackBar.Size = UDim2.new(progress, 0, 1, 0)
-	else
-		-- Cek jika terdapat drift (tertinggal jauh) misal karena lag jaringan
-		if self.progressTween then
-			local currentTweenSize = self.trackBar.Size.X.Scale
-			if math.abs(currentTweenSize - progress) > 0.05 then
-				self.progressTween:Cancel()
-				self.progressTween = nil
-			end
-		end
-
-		if not self.progressTween and currentTime < totalTime then
-			self.trackBar.Size = UDim2.new(progress, 0, 1, 0)
-			local timeRemaining = totalTime - currentTime
-			if timeRemaining > 0 then
-				local tweenInfo = TweenInfo.new(timeRemaining, Enum.EasingStyle.Linear)
-				self.progressTween = TweenService:Create(self.trackBar, tweenInfo, {Size = UDim2.new(1, 0, 1, 0)})
-				self.progressTween:Play()
-			end
-		end
+		self.timeLabel.Text = self:FormatTimeWithInfo(0, 0)
+		self.lastCurrentSec = -1
+		return
 	end
 
-	-- OPTIMASI: Hanya update teks waktu jika detik berganti
+	-- Update target data
+	self.targetProgress = progress
+	self.currentTime = currentTime
+	self.totalTime = totalTime
+
+	-- Nyalakan mesin interpolasi visual jika belum nyala
+	if not self.renderConnection then
+		self:StartProgressRender()
+	end
+
+	-- OPTIMASI: Hanya update teks string jika detiknya benar-benar berganti
 	local currentSec = math.floor(currentTime or 0)
 	if self.lastCurrentSec ~= currentSec then
 		self.lastCurrentSec = currentSec
-		-- ✅ ENHANCED: Format time label with duration info
-		local timeText = self:FormatTimeWithInfo(currentTime, totalTime)
-		self.timeLabel.Text = timeText
+		self.timeLabel.Text = self:FormatTimeWithInfo(currentTime, totalTime)
 	end
 end
 

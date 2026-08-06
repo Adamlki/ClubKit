@@ -28,6 +28,27 @@ local MAX_SYNC_DEPTH = 10
 local DANCE_WALK_SPEED = 5 
 
 -- ============================================
+-- 🔥 NETWORK FIX: Dirty-Checked SetAttribute
+-- ============================================
+local function safeSetAttr(obj, key, value)
+	if obj:GetAttribute(key) ~= value then
+		obj:SetAttribute(key, value)
+	end
+end
+
+-- Helper: Bersihkan semua attribute sync/dance sekaligus
+function module.clearAllSyncAttributes(character)
+	if not character then return end
+	safeSetAttr(character, "Syncing", nil)
+	safeSetAttr(character, "IsLeader", nil)
+	safeSetAttr(character, "FollowerCount", nil)
+	safeSetAttr(character, "CurrentDanceID", nil)
+	safeSetAttr(character, "DanceStartTime", nil)
+	safeSetAttr(character, "DanceSpeed", nil)
+	safeSetAttr(character, "SpamNonce", nil)
+end
+
+-- ============================================
 
 local function waitForCharacterReady(player, timeout)
 	if AnimatorUtils.isCharacterReady(player) then return true end
@@ -51,7 +72,7 @@ function module.getSyncSource(player, depth, visitedPlayers)
 	if not player.Character or not player.Character.Parent then return nil end
 	if depth >= MAX_SYNC_DEPTH then return player end
 	if visitedPlayers[player] then
-		player.Character:SetAttribute("Syncing", nil)
+		safeSetAttr(player.Character, "Syncing", nil)
 		return player
 	end
 	visitedPlayers[player] = true
@@ -60,7 +81,7 @@ function module.getSyncSource(player, depth, visitedPlayers)
 
 	local targetPlayer = Players:FindFirstChild(syncTarget)
 	if not targetPlayer or not targetPlayer.Parent or not targetPlayer.Character then
-		player.Character:SetAttribute("Syncing", nil)
+		safeSetAttr(player.Character, "Syncing", nil)
 		return player
 	end
 	return module.getSyncSource(targetPlayer, depth + 1, visitedPlayers)
@@ -96,11 +117,11 @@ function module.updateLeaderStatus(player)
 	if not player or not player.Parent or not player.Character then return end
 	local followerCount = module.getFollowerCount(player)
 	if followerCount > 0 then
-		player.Character:SetAttribute("IsLeader", true)
-		player.Character:SetAttribute("FollowerCount", followerCount)
+		safeSetAttr(player.Character, "IsLeader", true)
+		safeSetAttr(player.Character, "FollowerCount", followerCount)
 	else
-		player.Character:SetAttribute("IsLeader", nil)
-		player.Character:SetAttribute("FollowerCount", nil)
+		safeSetAttr(player.Character, "IsLeader", nil)
+		safeSetAttr(player.Character, "FollowerCount", nil)
 	end
 end
 
@@ -128,11 +149,11 @@ function module.updateAllLeaderStatus()
 		if player.Character then
 			local count = followerCounts[player.Name] or 0
 			if count > 0 then
-				player.Character:SetAttribute("IsLeader", true)
-				player.Character:SetAttribute("FollowerCount", count)
+				safeSetAttr(player.Character, "IsLeader", true)
+				safeSetAttr(player.Character, "FollowerCount", count)
 			else
-				player.Character:SetAttribute("IsLeader", nil)
-				player.Character:SetAttribute("FollowerCount", nil)
+				safeSetAttr(player.Character, "IsLeader", nil)
+				safeSetAttr(player.Character, "FollowerCount", nil)
 			end
 		end
 	end
@@ -163,9 +184,9 @@ function module.forceUnsyncAllFollowers(leaderPlayer, loadedAnimations)
 			if follower ~= leaderPlayer and follower.Character then
 				if follower.Character:GetAttribute("Syncing") == leaderName then
 					syncNotificationRE:FireClient(follower, "leader_left", leaderName)
-					follower.Character:SetAttribute("Syncing", nil)
-					follower.Character:SetAttribute("IsLeader", nil)
-					follower.Character:SetAttribute("FollowerCount", nil)
+					safeSetAttr(follower.Character, "Syncing", nil)
+					safeSetAttr(follower.Character, "IsLeader", nil)
+					safeSetAttr(follower.Character, "FollowerCount", nil)
 				end
 			end
 		end
@@ -179,8 +200,8 @@ function module.unsyncPlayer(player, loadedAnimations)
 		-- HAPUS: task.wait(FADE_OUT)
 	end
 	if player.Character then
-		player.Character:SetAttribute("Syncing", nil)
-		player.Character:SetAttribute("CurrentDanceID", nil)
+		safeSetAttr(player.Character, "Syncing", nil)
+		safeSetAttr(player.Character, "CurrentDanceID", nil)
 	end
 
 	local playerName = player.Name
@@ -190,7 +211,7 @@ function module.unsyncPlayer(player, loadedAnimations)
 				local oa = AnimatorUtils.getAnimator(otherPlayer)
 				if oa then --pcall(AnimatorUtils.stopAllDances, oa, loadedAnimations, FADE_OUT)
 				end
-				otherPlayer.Character:SetAttribute("Syncing", nil)
+				otherPlayer.Character:SetAttribute("Syncing", nil) -- Tetap direct karena memang harus berubah
 			end
 		end
 	end
@@ -266,8 +287,8 @@ function module.handleSyncRequest(player, targetPlayer, condition, loadedAnimati
 			local oldTargetName = player.Character and player.Character:GetAttribute("Syncing")
 
 			if player.Character then
-				player.Character:SetAttribute("CurrentDanceID", nil)
-				player.Character:SetAttribute("DanceStartTime", nil)
+				safeSetAttr(player.Character, "CurrentDanceID", nil)
+				safeSetAttr(player.Character, "DanceStartTime", nil)
 				player.Character:SetAttribute("Syncing", trueLeaderOfTarget.Name)
 			end
 

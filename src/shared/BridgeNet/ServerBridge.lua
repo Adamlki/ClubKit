@@ -124,30 +124,34 @@ function ServerBridge._start(): nil
 				debug.profilebegin(string.format("connections_%s", obj._name))
 
 				for _, callback in obj._connections do
-					-- Spawn a thread to be yield-safe. Potentially implement thread reusability for optimization later?
-					-- also for error protection
-					task.spawn(function()
-						if #obj._inboundMiddleware ~= 0 then
-							local result
-							for _, func in obj._inboundMiddleware do
-								if result then
-									local potential = { func(table.unpack(result)) }
-									if #potential == 0 then
-										continue
+					-- OPTIMIZED: Use task.defer instead of task.spawn for better thread scheduling
+					task.defer(function()
+						local success, err = pcall(function()
+							if #obj._inboundMiddleware ~= 0 then
+								local result
+								for _, func in obj._inboundMiddleware do
+									if result then
+										local potential = { func(table.unpack(result)) }
+										if #potential == 0 then
+											continue
+										end
+										result = potential
+									else
+										result = { func(table.unpack(v.args)) }
 									end
-									result = potential
-								else
-									result = { func(table.unpack(v.args)) }
 								end
-							end
 
-							if result == nil then
-								result = v.args
-							end
+								if result == nil then
+									result = v.args
+								end
 
-							callback(v.plr, table.unpack(result))
-						else
-							callback(v.plr, table.unpack(v.args))
+								callback(v.plr, table.unpack(result))
+							else
+								callback(v.plr, table.unpack(v.args))
+							end
+						end)
+						if not success then
+							warn("[ServerBridge] Middleware/Callback Error: ", err)
 						end
 					end)
 				end

@@ -177,7 +177,6 @@ function MusicSystem:PlayNext()
 		end
 
 		-- Sync queue to all players
-		self.dispatcher:SyncQueueOnly()
 		self.dispatcher:SyncState()
 		self.isTransitioning = false
 		
@@ -222,27 +221,10 @@ end
 -- BROADCAST PRELOAD NEXT SONG
 -- ====================================
 function MusicSystem:BroadcastPreloadNext()
-	local queue = self.queueManager:GetQueue()
-	local nextUp = queue[1]
-	local nextId = nil
-	
-	if nextUp and nextUp.musicData then
-		nextId = nextUp.musicData.id
-	else
-		local peekSong = self.playlistManager:PeekNextSong()
-		if peekSong then
-			nextId = peekSong.id
-		end
-	end
-	
-	if nextId then
-		pcall(function()
-			self.remotes.DispatchEvent:FireAllClients({
-				type = "PRELOAD_AUDIO",
-				payload = { id = nextId }
-			})
-		end)
-	end
+	-- 🔥 ARCHITECT FIX: Fungsi ini sengaja dikosongkan untuk mengikuti Best Practice Roblox.
+	-- Menggunakan ContentProvider:PreloadAsync pada file Audio besar sangat rentan 
+	-- menyebabkan ping spike atau stuttering pada koneksi klien (terutama HP).
+	-- Pemuatan audio kini sepenuhnya diserahkan pada fitur Auto-Streaming bawaan Roblox.
 end
 
 -- ====================================
@@ -256,6 +238,15 @@ function MusicSystem:Start()
 
 	Players.PlayerRemoving:Connect(function(player)
 		self.playerManager:OnPlayerRemoving(player)
+	end)
+
+	-- 🔥 FIX: BindToClose untuk mencegah Data Loss saat Server Shutdown/Restart
+	game:BindToClose(function()
+		print("[MusicSystem] Server shutting down, backing up all favorite data...")
+		for _, player in ipairs(Players:GetPlayers()) do
+			self.playerManager:OnPlayerRemoving(player)
+		end
+		task.wait(3) -- Beri waktu 3 detik agar proses save async (Datastore) selesai sebelum mati
 	end)
 
 	-- Handle existing players

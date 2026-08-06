@@ -70,16 +70,11 @@ function module.preloadAnimations(animationFolder)
 
 	-- Unduh aset ke memori HP/PC secara non-blocking
 	task.spawn(function()
-		local success, err = pcall(function()
-			ContentProvider:PreloadAsync(animationsToPreload)
-		end)
-			
-		if success then
-			isPreloaded = true
-			debug("✅ Successfully preloaded all animations!")
-		else
-			warn("[AnimPreloader] Failed to preload:", err)
-		end
+		-- Tambahkan baris di bawah ini untuk BENAR-BENAR mendownload animasinya!
+		ContentProvider:PreloadAsync(animationsToPreload)
+		
+		isPreloaded = true
+		debug("✅ Animations successfully preloaded to memory!")
 	end)
 
 	-- Return true agar tidak nge-block script yang memanggilnya

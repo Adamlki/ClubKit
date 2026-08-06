@@ -33,12 +33,14 @@ local function processQueue()
 			if taskData.retries < 3 then
 				Logger:Warn("Failed to log transaction, retrying later... (Attempt " .. taskData.retries .. ")")
 				table.insert(transactionQueue, taskData) -- Masukkan balik jika gagal
+				-- 🔥 NETWORK FIX: Exponential Backoff (2s, 4s) agar tidak kena rate-limit
+				task.wait(2 ^ taskData.retries)
 			else
 				Logger:Warn("Failed to log transaction completely after 3 retries. Dropping data to prevent infinite loop.")
 			end
 		end
 
-		task.wait(1) -- ?? JEDA AMAN agar tidak terkena Error 429
+		task.wait(6) -- 🔥 NETWORK FIX: Jeda 6 detik antar request (maks 10 req/menit, jauh di bawah limit 60/menit)
 	end
 	isSaving = false
 end

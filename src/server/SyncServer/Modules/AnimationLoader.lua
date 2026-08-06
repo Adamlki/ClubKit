@@ -81,22 +81,17 @@ function module.initializeEmotesFolder()
 	end
 
 	-- ============================================
-	-- PRELOAD (Server-side preloading for faster first load)
+	-- PRELOAD DIHAPUS DARI SERVER
+	-- Server tidak merender animasi, jadi PreloadAsync di sini hanya membuang resource HTTP
+	-- dan menyebabkan delay (seperti yang terlihat di Developer Console).
 	-- ============================================
-	if animCount > 0 then
-		local allAnims = {}
-
-		for _, anim in pairs(animationCache) do
-			table.insert(allAnims, anim)
-		end
-
-		pcall(function()
-			--ContentProvider:PreloadAsync(allAnims)
-		end)
-	end
+	-- if animCount > 0 then
+	-- 	... dihapus ...
+	-- end
 
 	return emotesFolder
 end
+
 
 -- ============================================
 -- BUILD ANIMATION TABLE (For AnimationController)

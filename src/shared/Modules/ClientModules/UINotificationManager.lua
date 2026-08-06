@@ -70,9 +70,20 @@ function UINotificationManager:ShowNotification(message)
 end
 
 -- ====================================
--- NOW PLAYING POPUP (WITH PROPER CLEANUP)
+-- NOW PLAYING POPUP (WITH PROPER CLEANUP & DEBOUNCE)
 -- ====================================
+local lastPopupSongId = nil
+local lastPopupTime = 0
+
 function UINotificationManager:ShowNowPlayingPopup(musicData, uploaderName)
+	-- Anti-Double Trigger (Debounce 3 detik untuk lagu yang sama)
+	local currentSongId = musicData.id or musicData.judul
+	if lastPopupSongId == currentSongId and (os.clock() - lastPopupTime) < 3 then
+		return -- Abaikan jika lagu yang sama dipanggil beruntun (bug double popup)
+	end
+	
+	lastPopupSongId = currentSongId
+	lastPopupTime = os.clock()
 	-- Update now playing popup
 	self.npSongTitle.Text = musicData.judul or "Unknown"
 	self.npRequester.Text = uploaderName or "Unknown"

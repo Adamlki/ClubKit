@@ -2,6 +2,24 @@ local RoleSystem = {}
 
 local DataStoreService = game:GetService("DataStoreService")
 local MarketplaceService = game:GetService("MarketplaceService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- ====================================
+-- AUTO-CREATE NOTIFICATION REMOTE
+-- ====================================
+local CustomTeamsRemotes = ReplicatedStorage:FindFirstChild("CustomTeamsRemotes")
+if not CustomTeamsRemotes then
+	CustomTeamsRemotes = Instance.new("Folder")
+	CustomTeamsRemotes.Name = "CustomTeamsRemotes"
+	CustomTeamsRemotes.Parent = ReplicatedStorage
+end
+
+local notifyRemote = CustomTeamsRemotes:FindFirstChild("Notify")
+if not notifyRemote then
+	notifyRemote = Instance.new("RemoteEvent")
+	notifyRemote.Name = "Notify"
+	notifyRemote.Parent = CustomTeamsRemotes
+end
 
 -- 🔥 ARCHITECT FIX: Master Debug Toggle
 local DEBUG_MODE = false -- Biarkan false agar F9 Console bersih saat game live!
@@ -78,7 +96,7 @@ end
 -- ====================================
 -- DATASTORE OPERATIONS (WITH RETRY)
 -- ====================================
-local function datastoreGetAsync(key)
+local function datastoreGetAsync(key, player)
 	for attempt = 1, RoleSystem.Config.DATASTORE_RETRY_ATTEMPTS do
 		local success, result = pcall(function()
 			return giveGamePassStore:GetAsync(key)
@@ -89,8 +107,19 @@ local function datastoreGetAsync(key)
 		end
 
 		if attempt < RoleSystem.Config.DATASTORE_RETRY_ATTEMPTS then
-			task.wait(RoleSystem.Config.DATASTORE_RETRY_DELAY)
+			task.wait(2 ^ attempt) -- Exponential Backoff: 2s, 4s...
 		end
+	end
+
+	-- FAILSAFE NOTIFICATION (DataStore Down)
+	if player then
+		pcall(function()
+			notifyRemote:FireClient(player, {
+				Title = "Sistem Padat",
+				Text = "Pemuatan status Donasi/Gamepass kamu sedang dalam antrean.",
+				Duration = 8,
+			})
+		end)
 	end
 
 	return nil
@@ -142,47 +171,36 @@ local function checkSingleGamepass(player, gamepassId, retryCount)
 		return false
 	end
 
-	-- 🔥 ARCHITECT FIX: Amankan UserId SEBELUM task.spawn/yield
 	local safeUserId = player.UserId
 
-	local result = false
-	local completed = false
-	local checkError = nil
-
-	task.spawn(function()
-		local success, hasPass = pcall(function()
-			return MarketplaceService:UserOwnsGamePassAsync(safeUserId, gamepassId)
-		end)
-
-		if success then
-			result = hasPass
-		else
-			checkError = hasPass
-		end
-		completed = true
+	-- 🔥 ARCHITECT FIX: Dihapus total sistem while task.wait() polling yang merusak performa.
+	-- Karena fungsi ini dipanggil dari dalam antrean background (processGamepassQueue), 
+	-- kita bisa langsung menggunakan pcall dan membiarkan Roblox API yield secara natural tanpa memblokir server.
+	local success, hasPass = pcall(function()
+		return MarketplaceService:UserOwnsGamePassAsync(safeUserId, gamepassId)
 	end)
 
-	local startTime = os.clock()
-	while not completed and (os.clock() - startTime) < RoleSystem.Config.GAMEPASS_CHECK_TIMEOUT do
-		task.wait(0.1)
-	end
-
-	if not completed then
+	if success then
+		return hasPass
+	else
 		if retryCount < RoleSystem.Config.GAMEPASS_CHECK_RETRIES then
-			task.wait(1)
+			task.wait(2 ^ (retryCount + 1)) -- Exponential Backoff: 2s, 4s, 8s...
 			return checkSingleGamepass(player, gamepassId, retryCount + 1)
 		end
+		
+		-- FAILSAFE NOTIFICATION (Gamepass API Down)
+		if player then
+			pcall(function()
+				notifyRemote:FireClient(player, {
+					Title = "Sistem Padat",
+					Text = "Pemuatan status Donasi/Gamepass kamu sedang dalam antrean.",
+					Duration = 8,
+				})
+			end)
+		end
+		
 		return false
 	end
-
-	if checkError then
-		if retryCount < RoleSystem.Config.GAMEPASS_CHECK_RETRIES then
-			task.wait(1)
-			return checkSingleGamepass(player, gamepassId, retryCount + 1)
-		end
-	end
-
-	return result
 end
 
 local function checkAnyGamepass(player, gamepassIds)
@@ -239,7 +257,7 @@ function RoleSystem:CachePlayerOwnership(player)
 
 	-- 1. Check Given Pass dari DataStore (sync - cepat)
 	local key = "givenpass_" .. tostring(userId)
-	local givenPassData = datastoreGetAsync(key)
+	local givenPassData = datastoreGetAsync(key, player)
 
 	if givenPassData and givenPassData.passType then
 		ownership.GivenPass = givenPassData.passType
@@ -311,6 +329,10 @@ function RoleSystem:GetPlayerOwnership(player)
 	local userId = player.UserId
 
 	if playerOwnershipCache[userId] then
+		-- Rejoin Cache: Hapus flag DisconnectedAt jika pemain kembali online
+		if playerOwnershipCache[userId].DisconnectedAt then
+			playerOwnershipCache[userId].DisconnectedAt = nil
+		end
 		return playerOwnershipCache[userId]
 	end
 
@@ -334,7 +356,18 @@ function RoleSystem:UpdateOwnershipCache(player, gamepassType, owned)
 end
 
 function RoleSystem:InvalidateOwnershipCache(userId)
-	playerOwnershipCache[userId] = nil
+	if playerOwnershipCache[userId] then
+		playerOwnershipCache[userId].DisconnectedAt = os.clock()
+		
+		-- Memory Leak Prevention: Hapus cache setelah 65 detik jika tidak rejoin
+		task.delay(65, function()
+			if playerOwnershipCache[userId] and playerOwnershipCache[userId].DisconnectedAt then
+				if os.clock() - playerOwnershipCache[userId].DisconnectedAt >= 60 then
+					playerOwnershipCache[userId] = nil
+				end
+			end
+		end)
+	end
 end
 
 -- ====================================

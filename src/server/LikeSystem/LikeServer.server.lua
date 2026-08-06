@@ -54,7 +54,16 @@ CheckLikeCooldownRemote.OnServerInvoke = function(player, targetUserId)
 	}
 end
 
+local likeDebounces = {}
+
 LikePlayerRemote.OnServerInvoke = function(player, targetUserId)
+	-- 🔥 SECURITY FIX: Server-side debounce per player (1 detik)
+	local now = os.time()
+	if likeDebounces[player.UserId] and (now - likeDebounces[player.UserId]) < 1 then
+		return false, "Terlalu cepat! Tunggu sebentar."
+	end
+	likeDebounces[player.UserId] = now
+
 	-- Blokir spammer di pintu depan!
 	if not RemoteEventManager.checkRateLimit(player, "LikePlayerInvoke") then
 		return false, "Terlalu cepat! Tunggu sebentar."
@@ -110,4 +119,8 @@ Players.PlayerAdded:Connect(function(player)
 			end
 		end)
 	end)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	likeDebounces[player.UserId] = nil
 end)

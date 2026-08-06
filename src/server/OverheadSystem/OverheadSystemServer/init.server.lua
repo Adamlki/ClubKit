@@ -63,21 +63,21 @@ local function onCharacterAdded(player, character)
 	if not character or not character.Parent then return end
 
 	NametagDisabler:DisableNametag(player, character)
-	OverheadManager:CreateOverhead(player, character)
-
-	-- FIX: Setelah overhead dibuat, force update label team sekali lagi.
-	-- Ini safety net untuk kasus di mana player.Team baru settled
-	-- setelah CreateOverhead sudah jalan (terutama di Studio dan server penuh).
-	-- task.wait(0.5) memberi waktu overhead selesai dibangun sebelum di-update.
+	
+	-- 🔥 ARCHITECT FIX: Jalankan pembuatan Overhead secara Asynchronous (Non-Blocking).
+	-- Karena CreateOverhead memanggil SaweriaAPI (HTTP GetAsync yang memakan waktu 3-5 detik),
+	-- kita membungkusnya dengan task.spawn agar tidak menahan (freeze) alur spawn pemain lain.
 	task.spawn(function()
+		OverheadManager:CreateOverhead(player, character)
+		
+		-- FIX: Setelah overhead dibuat, force update label team sekali lagi.
+		-- Ini safety net untuk kasus di mana player.Team baru settled
 		task.wait(0.5)
 		if player and player.Parent and character and character.Parent then
 			OverheadManager:UpdateTeam(player)
 		end
 
-		-- 🔥 ARCHITECT FIX: Reload data Donasi & Saweria setelah beberapa detik
-		-- Seringkali saat player baru join, data Leaderboard/Saweria belum siap
-		-- sehingga label "Top Donate" tidak muncul. Ini akan me-refresh label tersebut.
+		-- Reload data Donasi & Saweria setelah beberapa detik
 		task.wait(3.5)
 		if player and player.Parent and character and character.Parent then
 			if OverheadManager.UpdateDonationRank then
@@ -93,14 +93,17 @@ local function onCharacterAdded(player, character)
 	end)
 
 	character:GetAttributeChangedSignal("RefreshTrigger"):Connect(function()
-		task.wait(0.5)
-		if player and player.Parent and character and character.Parent then
-			OverheadManager:CreateOverhead(player, character)
-			OverheadManager:UpdateTeam(player)
-			if OverheadManager.UpdateDonationRank then
-				OverheadManager:UpdateDonationRank(player, nil, nil)
+		task.spawn(function()
+			task.wait(0.5)
+			if player and player.Parent and character and character.Parent then
+				OverheadManager:CreateOverhead(player, character)
+				OverheadManager:UpdateTeam(player)
+
+				if OverheadManager.UpdateDonationRank then
+					OverheadManager:UpdateDonationRank(player, nil, nil)
+				end
 			end
-		end
+		end)
 	end)
 end
 

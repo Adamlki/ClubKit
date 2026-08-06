@@ -22,6 +22,24 @@ local processingRequests = {}
 local lastRequestTime = {}
 local MIN_REQUEST_INTERVAL = 0.05 -- 50ms (Agar spam dance dari leader langsung tersinkron ke followers 0 delay)
 
+-- ============================================
+-- 🔥 NETWORK FIX: Dirty-Checked SetAttribute
+-- Hanya memanggil SetAttribute jika value BERUBAH.
+-- Menghilangkan replication packet yang tidak perlu.
+-- ============================================
+local function safeSetAttr(obj, key, value)
+	if obj:GetAttribute(key) ~= value then
+		obj:SetAttribute(key, value)
+	end
+end
+
+local function clearDanceState(character)
+	safeSetAttr(character, "CurrentDanceID", nil)
+	safeSetAttr(character, "DanceStartTime", nil)
+	safeSetAttr(character, "DanceSpeed", nil)
+	safeSetAttr(character, "SpamNonce", nil)
+end
+
 local function canProcessRequest(player)
 	if processingRequests[player] then return false end
 	local lastTime = lastRequestTime[player] or 0
@@ -56,9 +74,8 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 	if character then
 		local syncTarget = character:GetAttribute("Syncing")
 		if syncTarget and syncTarget ~= "" then
-			character:SetAttribute("Syncing", nil)
-			character:SetAttribute("CurrentDanceID", nil)
-			--AnimatorUtils.stopAllDances(animator, loadedAnimations, FADE_OUT)
+			safeSetAttr(character, "Syncing", nil)
+			safeSetAttr(character, "CurrentDanceID", nil)
 			task.delay(FADE_OUT, function() SyncController.updateLeaderStatus(player) end)
 		end
 	end
@@ -67,10 +84,8 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 	if not shouldPlay then
 		--AnimatorUtils.stopAllDances(animator, loadedAnimations, FADE_OUT)
 		if character then
-			character:SetAttribute("Syncing", nil)
-			character:SetAttribute("CurrentDanceID", nil)
-			character:SetAttribute("DanceStartTime", nil)
-			character:SetAttribute("DanceSpeed", nil)
+			safeSetAttr(character, "Syncing", nil)
+			clearDanceState(character)
 		end
 		SyncController.stopAllFollowers(player, loadedAnimations)
 		SyncController.updateLeaderStatus(player)
@@ -105,14 +120,14 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 			return "blocked"
 		end
 		
-		character:SetAttribute("Syncing", nil)
+		safeSetAttr(character, "Syncing", nil)
 
 		if animation then
-			character:SetAttribute("CurrentDanceID", animation.AnimationId)
+			safeSetAttr(character, "CurrentDanceID", animation.AnimationId)
 		end
 
 		character:SetAttribute("DanceStartTime", clientStartTime or workspace:GetServerTimeNow())
-		character:SetAttribute("DanceSpeed", speed)
+		safeSetAttr(character, "DanceSpeed", speed)
 
 		if isSpam then
 			local currentNonce = character:GetAttribute("SpamNonce") or 0
@@ -140,23 +155,7 @@ function module.adjustAnimationSpeed(player, speed, loadedAnimations)
 
 	speed = math.clamp(tonumber(speed) or 1, 0.1, 3)
 
-	local oldSpeed = character:GetAttribute("DanceSpeed") or 1
-	local oldStartTime = character:GetAttribute("DanceStartTime") or workspace:GetServerTimeNow()
-
-	local elapsed = workspace:GetServerTimeNow() - oldStartTime
-	local exactTimePosition = elapsed * oldSpeed
-	local compensatedStartTime = workspace:GetServerTimeNow() - (exactTimePosition / speed)
-
-	local animator = AnimatorUtils.getAnimator(player)
-	if animator then
-		local track = AnimatorUtils.getPlayingDanceTrack(animator, loadedAnimations)
-		if track then
-			track:AdjustSpeed(speed)
-		end
-	end
-
-	character:SetAttribute("DanceSpeed", speed)
-	character:SetAttribute("DanceStartTime", compensatedStartTime)
+	safeSetAttr(character, "DanceSpeed", speed)
 
 	endProcessing(player)
 	return "speed_changed"

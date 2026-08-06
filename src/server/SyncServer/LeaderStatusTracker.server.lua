@@ -142,10 +142,8 @@ local function setupCharacterTracking(player, character)
 		local diedConnection = humanoid.Died:Connect(function()
 			debug("??", player.Name, "died - clearing status")
 
-			-- Clear attributes
-			character:SetAttribute("IsLeader", nil)
-			character:SetAttribute("FollowerCount", nil)
-			character:SetAttribute("Syncing", nil)
+			-- Clear attributes (delegated ke SyncController dengan dirty-checking)
+			SyncController.clearAllSyncAttributes(character)
 
 			-- ?? NOTE: No manual cache cleanup needed (weak tables auto-cleanup!)
 
@@ -178,10 +176,8 @@ Players.PlayerAdded:Connect(function(player)
 
 			-- ?? NOTE: No manual cache cleanup needed!
 
-			-- Clear attributes
-			character:SetAttribute("Syncing", nil)
-			character:SetAttribute("IsLeader", nil)
-			character:SetAttribute("FollowerCount", nil)
+			-- Clear attributes (delegated ke SyncController dengan dirty-checking)
+			SyncController.clearAllSyncAttributes(character)
 
 			task.wait(0.1)
 			setupCharacterTracking(player, character)
@@ -192,10 +188,8 @@ Players.PlayerAdded:Connect(function(player)
 	local charRemovingConn = player.CharacterRemoving:Connect(function(character)
 		debug("??", player.Name, "character removing")
 
-		-- Clear attributes
-		character:SetAttribute("Syncing", nil)
-		character:SetAttribute("IsLeader", nil)
-		character:SetAttribute("FollowerCount", nil)
+		-- Clear attributes (delegated ke SyncController dengan dirty-checking)
+		SyncController.clearAllSyncAttributes(character)
 
 		-- ?? NOTE: No manual cache cleanup needed!
 
@@ -211,9 +205,7 @@ Players.PlayerAdded:Connect(function(player)
 	if player.Character then
 		-- ?? NOTE: No manual cache cleanup needed!
 
-		player.Character:SetAttribute("Syncing", nil)
-		player.Character:SetAttribute("IsLeader", nil)
-		player.Character:SetAttribute("FollowerCount", nil)
+		SyncController.clearAllSyncAttributes(player.Character)
 
 		task.wait(0.1)
 		setupCharacterTracking(player, player.Character)
@@ -226,9 +218,7 @@ Players.PlayerRemoving:Connect(function(player)
 
 	-- Clear attributes
 	if player.Character then
-		player.Character:SetAttribute("Syncing", nil)
-		player.Character:SetAttribute("IsLeader", nil)
-		player.Character:SetAttribute("FollowerCount", nil)
+		SyncController.clearAllSyncAttributes(player.Character)
 
 		cleanupCharacterConnections(player.Character)
 	end
@@ -307,9 +297,7 @@ game:BindToClose(function()
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player.Character then
-			player.Character:SetAttribute("Syncing", nil)
-			player.Character:SetAttribute("IsLeader", nil)
-			player.Character:SetAttribute("FollowerCount", nil)
+			SyncController.clearAllSyncAttributes(player.Character)
 		end
 	end
 
@@ -331,9 +319,7 @@ task.spawn(function()
 		if player.Character then
 			-- ?? NOTE: No manual cache cleanup needed!
 
-			player.Character:SetAttribute("Syncing", nil)
-			player.Character:SetAttribute("IsLeader", nil)
-			player.Character:SetAttribute("FollowerCount", nil)
+			SyncController.clearAllSyncAttributes(player.Character)
 
 			task.wait(0.1)
 			setupCharacterTracking(player, player.Character)

@@ -155,10 +155,7 @@ local function setupPlayerRespawnHandler(player)
 		
 		AnimatorUtils.clearCacheForPlayer(player)
 
-		character:SetAttribute("Syncing", nil)
-		character:SetAttribute("IsLeader", nil)
-		character:SetAttribute("FollowerCount", nil)
-		character:SetAttribute("CurrentDanceID", nil)
+		SyncController.clearAllSyncAttributes(character)
 	end)
 
 	table.insert(playerConnections[player], charRemovingConn)
@@ -169,10 +166,7 @@ local function setupPlayerRespawnHandler(player)
 			local humanoid = player.Character:WaitForChild("Humanoid", 5)
 			local hrp = player.Character:WaitForChild("HumanoidRootPart", 5)
 			if humanoid and hrp then
-				player.Character:SetAttribute("Syncing", nil)
-				player.Character:SetAttribute("IsLeader", nil)
-				player.Character:SetAttribute("FollowerCount", nil)
-				player.Character:SetAttribute("CurrentDanceID", nil)
+			SyncController.clearAllSyncAttributes(player.Character)
 			end
 		end)
 	end
@@ -188,10 +182,7 @@ Players.PlayerRemoving:Connect(function(leavingPlayer)
 	AnimatorUtils.clearCacheForPlayer(leavingPlayer)
 
 	if leavingPlayer.Character then
-		leavingPlayer.Character:SetAttribute("Syncing", nil)
-		leavingPlayer.Character:SetAttribute("IsLeader", nil)
-		leavingPlayer.Character:SetAttribute("FollowerCount", nil)
-		leavingPlayer.Character:SetAttribute("CurrentDanceID", nil)
+		SyncController.clearAllSyncAttributes(leavingPlayer.Character)
 	end
 
 	task.delay(0.1, function()
@@ -223,10 +214,7 @@ game:BindToClose(function()
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player.Character then
-			player.Character:SetAttribute("Syncing", nil)
-			player.Character:SetAttribute("IsLeader", nil)
-			player.Character:SetAttribute("FollowerCount", nil)
-			player.Character:SetAttribute("CurrentDanceID", nil)
+			SyncController.clearAllSyncAttributes(player.Character)
 		end
 	end
 end)

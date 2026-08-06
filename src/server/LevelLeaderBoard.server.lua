@@ -53,6 +53,6 @@ task.spawn(function()
 			remote:FireAllClients(topData)
 			debugPrint("Leaderboard refreshed -", #topData, "players")
 		end
-		task.wait(60) 
+		task.wait(120) 
 	end
 end)

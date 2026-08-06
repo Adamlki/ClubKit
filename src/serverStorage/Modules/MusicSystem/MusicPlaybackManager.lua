@@ -24,7 +24,7 @@ local CONFIG = {
 	PROGRESS_BROADCAST_INTERVAL = 2, -- Optimized: 2 seconds instead of 1
 	DEFAULT_COVER = "rbxassetid://88574818940840",
 	DEFAULT_PLAYBACK_SPEED = 1.0,
-	AUTO_DURATION_TIMEOUT = 6, -- Maximum wait time for duration detection
+	AUTO_DURATION_TIMEOUT = 10, -- Maximum wait time for duration detection
 }
 
 function MusicPlaybackManager.new(config)
@@ -43,8 +43,6 @@ function MusicPlaybackManager.new(config)
 
 	self.autoNextCallback = nil
 	self.endedConnection = nil
-	self.progressLoopRunning = false -- Optimized: flag instead of connection
-	self.lastProgressBroadcast = 0
 
 	self.volumeTween = nil
 	self.originalVolume = 0.5
@@ -101,11 +99,11 @@ function MusicPlaybackManager:TryDetectDuration(soundId, playbackSpeed)
 		local sound = self.audioHandler:GetSound()
 		if not sound then return nil end
 
-		local startTime = tick()
+		local startTime = os.clock()
 		local timeout = CONFIG.AUTO_DURATION_TIMEOUT
 
 		-- Wait for TimeLength to be available
-		while sound.TimeLength == 0 and (tick() - startTime) < timeout do
+		while sound.TimeLength == 0 and (os.clock() - startTime) < timeout do
 			task.wait(0.1)
 		end
 
@@ -152,27 +150,8 @@ function MusicPlaybackManager:ConnectEndedEvent()
 end
 
 -- ====================================
--- OPTIMIZED: Progress Broadcast with task.wait()
--- More efficient than RunService.Heartbeat
+-- PROGRESS BROADCAST DELETED
 -- ====================================
-function MusicPlaybackManager:StartProgressBroadcast(remotes)
-	self.broadcastToken = (self.broadcastToken or 0) + 1
-	local currentToken = self.broadcastToken
-
-	task.spawn(function()
-		while self.isPlaying and self.broadcastToken == currentToken do
-			task.wait(CONFIG.PROGRESS_BROADCAST_INTERVAL)
-
-			if self.isPlaying and self.broadcastToken == currentToken then
-				self:UpdateProgress(remotes)
-			end
-		end
-	end)
-end
-
-function MusicPlaybackManager:StopProgressBroadcast()
-	self.broadcastToken = (self.broadcastToken or 0) + 1
-end
 
 -- ====================================
 -- FADE EFFECTS
@@ -245,7 +224,6 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 		self.endedConnection:Disconnect()
 		self.endedConnection = nil
 	end
-	self:StopProgressBroadcast()
 	self:CancelFade()
 
 	local musicData = songData.musicData or songData
@@ -300,11 +278,8 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 	-- Connect ended event
 	self:ConnectEndedEvent()
 
-	-- Start progress broadcast immediately
-	self:StartProgressBroadcast(remotes)
-
 	-- 📡 BROADCAST INSTAN: Agar UI pemain langsung ganti tanpa delay (menggunakan durasi sementara)
-	self:BroadcastSongUpdate(remotes, displayMusicData, uploaderName, self.adjustedDuration, playbackSpeed)
+	self:BroadcastSongUpdate(remotes, displayMusicData, uploaderName, self.adjustedDuration, playbackSpeed, false)
 
 	-- ⏳ DETEKSI DURASI ASLI DI BACKGROUND: Jangan nge-block script utama
 	task.spawn(function()
@@ -315,15 +290,17 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 			return
 		end
 
-		local isActuallyPlaying = self.audioHandler:IsPlaying()
+		local sound = self.audioHandler:GetSound()
+		local hasTimeLength = sound and sound.TimeLength > 0
+		local isLoaded = sound and sound.IsLoaded
 
-		if (detectedDuration and detectedDuration > 0) or isActuallyPlaying then
+		if hasTimeLength or isLoaded then
 			if detectedDuration and detectedDuration > 0 then
 				self.adjustedDuration = detectedDuration
 				debugPrint(string.format("Duration corrected for '%s': %.1fs", displayMusicData.judul, self.adjustedDuration))
 				
 				-- 📡 BROADCAST KOREKSI: Update durasi yang benar ke UI pemain
-				self:BroadcastSongUpdate(remotes, displayMusicData, uploaderName, self.adjustedDuration, playbackSpeed)
+				self:BroadcastSongUpdate(remotes, displayMusicData, uploaderName, self.adjustedDuration, playbackSpeed, true)
 			end
 		else
 			-- 🚨 SISTEM AUTO-SKIP ANTI-BAN BEKERJA!
@@ -346,7 +323,6 @@ function MusicPlaybackManager:Stop(remotes)
 		self.endedConnection:Disconnect()
 		self.endedConnection = nil
 	end
-	self:StopProgressBroadcast()
 	self:CancelFade()
 
 	self.audioHandler:Stop()
@@ -365,7 +341,6 @@ function MusicPlaybackManager:Cleanup()
 		self.endedConnection:Disconnect()
 		self.endedConnection = nil
 	end
-	self:StopProgressBroadcast()
 	self:CancelFade()
 	self.audioHandler:Cleanup()
 	-- 🔥 ARCHITECT FIX 1: HAPUS JUGA DI SINI!
@@ -384,7 +359,7 @@ function MusicPlaybackManager:BroadcastStopMusic(remotes)
 	end)
 end
 
-function MusicPlaybackManager:BroadcastSongUpdate(remotes, musicData, uploaderName, duration, playbackSpeed)
+function MusicPlaybackManager:BroadcastSongUpdate(remotes, musicData, uploaderName, duration, playbackSpeed, isCorrection)
 	pcall(function()
 		musicBroadcastBridge:FireAll({
 			eventType = "SongUpdate",
@@ -402,31 +377,14 @@ function MusicPlaybackManager:BroadcastSongUpdate(remotes, musicData, uploaderNa
 
 				MetadataDuration = musicData.Duration, 
 				DetectedDuration = duration, 
-				WasDetected = (musicData.Duration ~= duration) 
+				WasDetected = (musicData.Duration ~= duration),
+				IsCorrection = isCorrection or false
 			}
 		})
 	end)
 end
 
-function MusicPlaybackManager:UpdateProgress(remotes)
-	if not self.isPlaying then return end
 
-	local elapsed = self.audioHandler:GetTimePosition()
-
-	pcall(function()
-		musicBroadcastBridge:FireAll({
-			eventType = "Progress",
-			data = {
-				Current = elapsed,
-				Duration = self.adjustedDuration,
-				IsPlaying = true,
-
-				-- 🔥 FIX: Samakan dengan ServerTime Absolut
-				ServerTime = workspace:GetServerTimeNow()
-			}
-		})
-	end)
-end
 
 function MusicPlaybackManager:SyncToPlayer(remotes, player)
 	if not self.isPlaying or not self.currentSong then

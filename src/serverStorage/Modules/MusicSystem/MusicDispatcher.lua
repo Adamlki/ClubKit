@@ -70,17 +70,9 @@ end
 -- QUEUE SYNC (DIRECT - NO BATCHING)
 -- ====================================
 function MusicDispatcher:SyncQueueOnly()
-	local fullQueue = self.queueManager:GetQueue()
-	local limitedQueue = {}
-
-	-- Only send first 10 items to reduce network traffic
-	for i = 1, math.min(10, #fullQueue) do
-		table.insert(limitedQueue, fullQueue[i])
-	end
-
 	self:SendToAll("QUEUE_UPDATE", {
-		queue = limitedQueue,
-		totalCount = #fullQueue
+		queue = self.queueManager:GetQueue(),
+		totalCount = self.queueManager:GetSize()
 	})
 end
 
@@ -137,8 +129,13 @@ function MusicDispatcher:SyncToPlayer(player)
 	local role = roleSystem:GetPlayerRole(player)
 	local roleHierarchy = roleSystem.Config.RoleHierarchy[role] or 0
 
-	if self.systemState.IsUIBlocked and roleHierarchy < 4 then
-		self:SendToClient(player, "ADMIN_BLOCK_ACTIVATED", {})
+	if self.systemState.IsUIBlocked then
+		if roleHierarchy < 4 then
+			self:SendToClient(player, "ADMIN_BLOCK_ACTIVATED", {})
+		else
+			-- 💡 FIX: Beritahu Admin baru bahwa sistem sedang terblokir!
+			self:SendToClient(player, "ADMIN_BUTTON_UPDATE", {text = "Unblock"})
+		end
 	end
 end
 

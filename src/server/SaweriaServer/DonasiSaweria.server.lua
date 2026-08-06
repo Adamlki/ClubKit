@@ -22,8 +22,8 @@ local function debugWarn(...)
 	if DEBUG_ENABLED then warn(DEBUG_PREFIX, ...) end
 end
 
--- 🔴 FIX 1: Interval dinaikkan ke 15 detik untuk mencegah IP Server diblokir oleh API Saweria!
-local CHECK_INTERVAL = 15 
+-- 🔴 FIX 1: Interval dinaikkan ke 60 detik untuk mencegah IP Server diblokir oleh API Saweria!
+local CHECK_INTERVAL = 60 
 local MAX_DONATIONS = 50
 
 -- STATE

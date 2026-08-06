@@ -148,12 +148,9 @@ function ServerMusicAudioHandler:Preload(soundId)
 
 	local assetId = "rbxassetid://" .. soundId
 
-	-- 🔥 ARCHITECT FIX 3: ANTI-STUTTERING
 	-- Jangan isi SoundId jika sudah sama. Jika beda, matikan yang lama.
 	if self.serverSound.SoundId ~= assetId then
 		self.serverSound:Stop()
-		self.serverSound.SoundId = ""
-		task.wait()
 		self.serverSound.SoundId = assetId
 	end
 end
@@ -199,37 +196,9 @@ function ServerMusicAudioHandler:Play(soundId, timePosition, playbackSpeed, pitc
 
 	local assetId = "rbxassetid://" .. soundId
 
-	-- ARCHITECT FIX 4: SMART LOADING WITH RETRY (Anti HTTP 502)
-	local maxRetries = 3
-	local isLoaded = false
-
-	for attempt = 1, maxRetries do
-		if self.serverSound.SoundId ~= assetId then
-			self.serverSound:Stop()
-			self.serverSound.SoundId = ""
-			task.wait(0.1) -- Jeda sebentar untuk mereset cache jaringan
-			self.serverSound.SoundId = assetId
-		end
-
-		-- Tunggu engine Roblox selesai mendownload lagu sebelum lanjut (Max 5 detik per percobaan)
-		local startLoad = os.clock()
-		while not self.serverSound.IsLoaded and (os.clock() - startLoad) < 5 do
-			task.wait(0.1)
-		end
-
-		if self.serverSound.IsLoaded then
-			isLoaded = true
-			break
-		else
-			warn(string.format("[ServerAudio] Gagal memuat lagu %s (Attempt %d/%d). Mencoba ulang...", soundId, attempt, maxRetries))
-			-- Kosongkan SoundId agar di loop berikutnya dipaksa unduh ulang
-			self.serverSound.SoundId = ""
-		end
-	end
-
-	if not isLoaded then
-		warn("[ServerAudio] Gagal total memuat lagu setelah 3 kali percobaan: " .. soundId)
-		return false
+	if self.serverSound.SoundId ~= assetId then
+		self.serverSound:Stop()
+		self.serverSound.SoundId = assetId
 	end
 
 	-- Atur Waktu dan Kecepatan

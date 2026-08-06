@@ -68,9 +68,25 @@ local function aggregateDonations(donations)
 	return sorted
 end
 
+local cachedTopDonators = {}
+local lastCacheUpdate = 0
+local CACHE_DURATION = 60 -- 60 detik cache
+
 GetTopSaweriaFunc.OnInvoke = function()
+	local now = os.time()
+	if now - lastCacheUpdate < CACHE_DURATION and #cachedTopDonators > 0 then
+		return cachedTopDonators
+	end
+	
 	local donations = getDonations()
-	if donations and #donations > 0 then return aggregateDonations(donations) end
+	if donations and #donations > 0 then 
+		cachedTopDonators = aggregateDonations(donations)
+		lastCacheUpdate = now
+		return cachedTopDonators 
+	end
+	
+	-- Fallback jika gagal tapi ada data lama
+	if #cachedTopDonators > 0 then return cachedTopDonators end
 	return {}
 end
 

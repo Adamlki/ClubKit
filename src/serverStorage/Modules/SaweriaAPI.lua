@@ -35,21 +35,34 @@ function SaweriaAPI:GetDonationData()
 	isFetching = true
 	lastFetchTime = os.clock() -- Update waktu SEBELUM nge-yield agar tertutup rapat!
 
-	-- 3. FETCH BARU: Telepon Google Sheets
-	local success, response = pcall(function()
-		return HttpService:GetAsync(WEB_APP_URL .. "?action=getLatest&t=" .. os.time())
-	end)
-
-	if success and response then
-		local ok, result = pcall(function()
-			return HttpService:JSONDecode(response)
+	local success, response = false, nil
+	
+	-- 🔥 ARCHITECT FIX: Smart Auto-Retry dengan Exponential Backoff
+	for attempt = 1, 3 do
+		success, response = pcall(function()
+			return HttpService:GetAsync(WEB_APP_URL .. "?action=getLatest&t=" .. os.time())
 		end)
 
-		if ok and type(result) == "table" then
-			-- Simpan data terbaru ke ingatan Modul
-			cachedData = result.data or result
-			isFetching = false
-			return cachedData
+		if success and response then
+			local ok, result = pcall(function()
+				return HttpService:JSONDecode(response)
+			end)
+
+			if ok and type(result) == "table" then
+				-- Simpan data terbaru ke ingatan Modul
+				cachedData = result.data or result
+				isFetching = false
+				return cachedData
+			end
+		end
+
+		if attempt < 3 then
+			task.wait(2 ^ attempt) -- Exponential Backoff: 2s, 4s
+		else
+			warn("[SaweriaAPI] Gagal mengambil data terbaru dari Google API setelah 3 kali percobaan (Tidak memblokir sistem).")
+			
+			-- FAILSAFE NOTIFICATION (Global Broadcast - Opsional jika ingin memberitahu semua client yang aktif)
+			-- Namun karena instruksi berfokus pada Player yang baru masuk, notifikasinya sudah dihandle penuh oleh RoleSystem (Gamepass).
 		end
 	end
 

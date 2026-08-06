@@ -46,6 +46,12 @@ function MusicPlayer.new()
 
 	-- ✅ NEW: Track player role hierarchy for client-side checks
 	self.playerRoleHierarchy = 1 -- Default to Player
+	
+	-- 🔥 Variabel State
+	self.expectedIsPlaying = false
+	self.lastTimePosition = 0 
+	self.absoluteStartTime = 0 -- ⏱️ THE HIVE MIND: Mencatat waktu absolut server
+	self.expectedSoundId = "" -- 🔒 KUNCI ID LAGU
 
 	-- Setup
 	self:SetupUICallbacks()
@@ -54,19 +60,65 @@ function MusicPlayer.new()
 	self:SetupChatCommands()
 	self:SetupRoleWatcher() -- ✅ NEW: Watch for role changes
 
-	-- OPTIMASI: Throttled UI update loop (1 FPS instead of 60+ FPS) untuk menghemat CPU
-	-- Visual progress bar (Size) sudah ditangani otomatis oleh TweenService di UIControlManager
+	-- ⏱️ THE HIVE MIND: Watchdog Pengawas Audio & Anti-Drift 0ms
 	local timeSinceLastUpdate = 0
 	RunService.Heartbeat:Connect(function(dt)
 		timeSinceLastUpdate = timeSinceLastUpdate + dt
-		if timeSinceLastUpdate >= 1 then
+		
+		-- Cek setiap 0.5 detik (lebih responsif mencegah lag, tidak memberatkan performa)
+		if timeSinceLastUpdate >= 0.5 then 
 			timeSinceLastUpdate = 0
+			
 			local serverSound = SoundService:FindFirstChild("ServerMusicSound")
-			if serverSound and serverSound.IsPlaying and serverSound.TimeLength > 0 then
-				local current = serverSound.TimePosition
-				local duration = serverSound.TimeLength
-				local progress = math.clamp(current / duration, 0, 1)
-				self.uiManager:UpdateProgress(progress, current, duration)
+			if not serverSound then return end
+
+			-- 🔒 CEK KESESUAIAN ID (AMBIL ANGKANYA SAJA AGAR COCOK)
+			local currentID = string.match(tostring(serverSound.SoundId), "%d+")
+			local expectedID = string.match(tostring(self.expectedSoundId), "%d+")
+
+			if expectedID and currentID and expectedID ~= "" then
+				if currentID ~= expectedID then
+					-- Jika ID lagu beda karena delay jaringan, STOP agar tidak bocor!
+					if serverSound.IsPlaying then
+						serverSound:Stop()
+					end
+					return -- Jangan lakukan apa-apa sampai lagunya benar-benar berganti
+				end
+			end
+
+			if self.expectedIsPlaying and self.absoluteStartTime > 0 then
+				-- Kalkulasi matematis persis seperti sistem Anti-Drift Dance
+				local currentServerTime = workspace:GetServerTimeNow()
+				local realTimeElapsed = currentServerTime - self.absoluteStartTime
+				local expectedTimePos = realTimeElapsed * (serverSound.PlaybackSpeed or 1)
+
+				local maxDuration = serverSound.TimeLength
+				
+				-- Validasi jika lagu masih berjalan
+				if maxDuration > 0 and expectedTimePos < maxDuration then
+					local currentPos = serverSound.TimePosition
+					local desync = math.abs(currentPos - expectedTimePos)
+
+					-- SNAP! Jika tertinggal/mendahului > 0.15 detik, ATAU lagunya mati (buffering)
+					if desync > 0.15 or not serverSound.IsPlaying then
+						serverSound.TimePosition = math.max(0, expectedTimePos)
+						if not serverSound.IsPlaying then
+							serverSound:Play()
+						end
+						-- print(string.format("[Hive Mind Music] Auto-Snap ke %.2f (Desync: %.3f)", expectedTimePos, desync))
+					end
+				end
+				
+				-- Update UI Progress Bar sesuai waktu absolut
+				if maxDuration > 0 then
+					local progress = math.clamp(expectedTimePos / maxDuration, 0, 1)
+					self.uiManager:UpdateProgress(progress, expectedTimePos, maxDuration)
+				end
+			else
+				-- Matikan secara absolut jika sistem disuruh stop
+				if serverSound.IsPlaying then
+					serverSound:Stop()
+				end
 			end
 		end
 	end)
@@ -129,28 +181,28 @@ function MusicPlayer:SetupRoleWatcher()
 	updateRoleHierarchy()
 
 	-- Watch for role changes
-	local roleValue = self.player:FindFirstChild("Role")
-	if roleValue and roleValue:IsA("StringValue") then
-		roleValue.Changed:Connect(updateRoleHierarchy)
-	else
-		-- Wait for Role to be created
-		self.player.ChildAdded:Connect(function(child)
-			if child.Name == "Role" and child:IsA("StringValue") then
-				updateRoleHierarchy()
-				child.Changed:Connect(updateRoleHierarchy)
-			end
-		end)
-	end
+	task.spawn(function()
+		local roleValue = self.player:WaitForChild("Role", 15)
+		if roleValue and roleValue:IsA("StringValue") then
+			updateRoleHierarchy()
+			roleValue.Changed:Connect(updateRoleHierarchy)
+		end
+	end)
 end
 
 -- ====================================
 -- SETUP VOLUME CONTROL (LIGHTWEIGHT - WAIT ONCE)
 -- ====================================
 function MusicPlayer:SetupVolumeControl()
-	-- Hilangkan angka 10, biarkan dia menunggu grup asli dari server
-	local musicGroup = SoundService:WaitForChild("MusicGroup") 
-	self.musicGroup = musicGroup
-	self.musicGroup.Volume = CONFIG.DEFAULT_VOLUME
+	-- 💡 FIX: Beri batas waktu 5 detik. Jika server ngelag/gagal, client tidak ikut mati.
+	local musicGroup = SoundService:WaitForChild("MusicGroup", 5) 
+	if musicGroup then
+		self.musicGroup = musicGroup
+		self.musicGroup.Volume = CONFIG.DEFAULT_VOLUME
+	else
+		warn("[MusicPlayer] Server gagal mengirim MusicGroup! Memicu pembuatan lokal...")
+		self:UpdateVolume(CONFIG.DEFAULT_VOLUME)
+	end
 end
 
 -- ====================================
@@ -414,18 +466,6 @@ function MusicPlayer:HandleDispatchEvent(data)
 
 	elseif eventType == "FAVORITES_UPDATE" then
 		self.uiManager:UpdateFavorites(payload.favoriteSongs or {})
-		
-	elseif eventType == "PRELOAD_AUDIO" then
-		-- ✅ PRELOAD AMAN: Download audio berikutnya di latar belakang
-		-- Menggunakan asset string (BUKAN Sound instance) sehingga tidak freeze/stutter.
-		if payload.id then
-			task.spawn(function()
-				local ContentProvider = game:GetService("ContentProvider")
-				pcall(function()
-					ContentProvider:PreloadAsync({"rbxassetid://" .. payload.id})
-				end)
-			end)
-		end
 	end
 end
 
@@ -437,14 +477,26 @@ function MusicPlayer:HandleMusicBroadcast(eventType, payload)
 		-- Update UI
 		self:UpdateMusicUI(payload)
 
-		-- 🔥 SINKRONISASI AUDIO ABSOLUT!
-		self:ForceAudioSync(payload)
+		-- HANYA SINKRONISASI JIKA BUKAN KOREKSI DURASI
+		if not payload.IsCorrection then
+			-- ⏱️ SIMPAN WAKTU SERVER SEBAGAI ACUAN UTAMA (Dengan Fallback)
+			self.absoluteStartTime = payload.ServerTime or workspace:GetServerTimeNow()
+			
+			-- 🔒 CATAT ID LAGU BARU DENGAN AMAN
+			self.expectedSoundId = payload.SoundId or payload.id or ""
+
+			-- 🔥 SINKRONISASI AUDIO ABSOLUT!
+			self:ForceAudioSync(payload)
+			
+			self.expectedIsPlaying = true
+			self.lastTimePosition = 0 
+		end
 
 	elseif eventType == "StopMusic" then
 		self:StopMusicUI()
+		self.expectedIsPlaying = false
+		self.lastTimePosition = 0
 
-	elseif eventType == "Progress" then
-		self:UpdateProgress(payload)
 	end
 end
 
@@ -452,11 +504,48 @@ end
 -- THE ABSOLUTE AUDIO SNAP (TIME-TRAVEL)
 -- ====================================
 function MusicPlayer:ForceAudioSync(payload)
-	-- DIBERSIHKAN: Biarkan Roblox Native Replication yang mengatur sinkronisasi audio.
-	-- Sistem manual sebelumnya (TimePosition snap + client-side Play()) menyebabkan:
-	-- 1. Musik patah-patah/stutter saat player baru join
-	-- 2. Musik tidak terdengar di beberapa player karena client memanggil Play() ilegal
-	-- Roblox SoundService sudah otomatis mereplikasi Sound ke semua client.
+	local serverSound = SoundService:FindFirstChild("ServerMusicSound")
+	if not serverSound then return end
+
+	task.spawn(function()
+		-- 1. Tunggu audio selesai dimuat ke memori perangkat (mencegah error di HP)
+		if not serverSound.IsLoaded then
+			local t = os.clock()
+			while not serverSound.IsLoaded and (os.clock() - t) < 5 do task.wait(0.1) end
+		end
+
+		if not payload.ServerTime then return end
+
+		-- 2. Hitung waktu absolut server
+		local currentServerTime = workspace:GetServerTimeNow()
+		local realTimeElapsed = currentServerTime - payload.ServerTime
+		local expectedTimePos = realTimeElapsed * (serverSound.PlaybackSpeed or 1) -- 👈 Dikalikan Speed
+
+		local maxDuration = payload.Duration or serverSound.TimeLength
+		if maxDuration <= 0 then maxDuration = 9999 end
+
+		-- 3. Validasi apakah lagu masih dalam durasi putar
+		if expectedTimePos > 0 and expectedTimePos < maxDuration then
+			
+			local currentPos = serverSound.TimePosition
+			local desync = math.abs(currentPos - expectedTimePos)
+
+			if desync > 0.15 then
+				serverSound.TimePosition = math.max(0, expectedTimePos)
+				-- print(string.format("[Audio Sync] Snap ke %.2f (Desync: %.3f)", expectedTimePos, desync))
+			end
+
+			-- Mainkan lagu jika belum menyala di sisi client
+			if not serverSound.IsPlaying then
+				serverSound:Play()
+			end
+		else
+			-- Jika lagu sudah habis waktunya, pastikan dimatikan
+			if serverSound.IsPlaying then
+				serverSound:Stop()
+			end
+		end
+	end)
 end
 -- ====================================
 -- SYNC STATE (? FIXED WITH BLOCK STATE & 🔥 LATE JOINER AUDIO SNAP)
@@ -481,12 +570,24 @@ function MusicPlayer:SyncState(state)
 			state.currentSong.Duration,
 			false
 		)
+		
+		self.expectedIsPlaying = state.isPlaying
+		self.lastTimePosition = 0 -- 🔥 RESET JUGA DI SINI
 
-		-- 🔥 ARCHITECT FIX: LATE JOINER AUDIO SNAP!
+		-- ⏱️ THE HIVE MIND: LATE JOINER AUDIO SNAP!
 		-- Tarik pemain yang baru masuk ke Waktu Absolut 0 Delay!
-		if state.isPlaying and state.startTime then
-			-- Late joiner sync is handled by native Roblox replication for SoundService
+		if state.isPlaying then
+			self.absoluteStartTime = state.startTime or workspace:GetServerTimeNow()
+			self.expectedSoundId = state.currentSong.SoundId or state.currentSong.id or "" -- 🔒 CATAT ID
+			
+			self:ForceAudioSync({
+				ServerTime = self.absoluteStartTime,
+				Duration = state.currentSong.Duration
+			})
 		end
+	else
+		self.expectedIsPlaying = false
+		self.lastTimePosition = 0
 	end
 
 	-- Update admin block state (only for non-moderators)
@@ -509,7 +610,8 @@ function MusicPlayer:UpdateMusicUI(data)
 		Duration = data.Duration or 0
 	}
 
-	self.uiManager:UpdateNowPlaying(musicData, data.AddedBy, true) -- Show popup
+	-- HANYA MUNCULKAN POPUP JIKA BUKAN KOREKSI
+	self.uiManager:UpdateNowPlaying(musicData, data.AddedBy, not data.IsCorrection)
 
 	self.uiManager:UpdateSongDuration(
 		data.DetectedDuration or data.Duration or 0,
@@ -541,14 +643,7 @@ function MusicPlayer:StopMusicUI()
 	self.uiManager:ResetUI()
 end
 
--- ====================================
--- UPDATE PROGRESS
--- ====================================
-function MusicPlayer:UpdateProgress(data)
-	-- DIBERSIHKAN: Logika "Soft Sync" dihapus agar tidak bentrok dengan
-	-- sinkronisasi audio bawaan Roblox yang menyebabkan lagu tersendat/patah.
-	-- UI progress bar sudah ditangani oleh Heartbeat loop di atas.
-end
+
 
 -- ====================================
 -- SEND ACTION TO SERVER (✅ NO REDUNDANT CHECK - LET SERVER DECIDE)

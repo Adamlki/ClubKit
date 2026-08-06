@@ -236,6 +236,13 @@ SendMessageRemote.OnServerEvent:Connect(function(player, message, isGlobal)
 	if type(message) ~= "string" then return end
 	if type(isGlobal) ~= "boolean" then isGlobal = false end
 
+	-- 🔥 SECURITY FIX: Sanitize input dari Client untuk mencegah HTML Injection
+	message = string.gsub(message, "&", "&amp;")
+	message = string.gsub(message, "<", "&lt;")
+	message = string.gsub(message, ">", "&gt;")
+	message = string.gsub(message, '"', "&quot;")
+	message = string.gsub(message, "'", "&apos;")
+
 	local isValid, errorMsg, role, trimmedMessage = validateMessage(player, message)
 
 	if not isValid then

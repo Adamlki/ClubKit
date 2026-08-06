@@ -124,6 +124,12 @@ function MusicActionHandler:HandleAddToQueue(player, data)
 		return
 	end
 
+	-- 🔥 FIX: Cek apakah ID musik murni angka (jika bukan dari playlist)
+	if not isFromPlaylist and not tonumber(musicId) then
+		self.dispatcher:Notify(player, "ID Lagu tidak valid!")
+		return
+	end
+
 	-- Check role permission
 	local role = RoleSystem:GetPlayerRole(player)
 	if RoleSystem.Config.RoleHierarchy[role] < RoleSystem.Config.RoleHierarchy.VIP then
@@ -220,8 +226,8 @@ function MusicActionHandler:HandleAddToQueue(player, data)
 		local queuePosition = self.queueManager:GetSize()
 		self.dispatcher:Notify(player, string.format("'%s' added to queue (Position: #%d)", musicData.judul, queuePosition))
 
-		-- Auto-play if nothing is playing
-		if not self.playbackManager:IsPlaying() then
+		-- Auto-play if nothing is playing (Gunakan variabel isPlaying langsung, jangan method IsPlaying() untuk menghindari bias audio loading)
+		if not self.playbackManager.isPlaying then
 			task.delay(0.5, self.playNextCallback)
 		end
 	end)
@@ -307,7 +313,7 @@ function MusicActionHandler:HandleSkipVoteYes(player, data)
 	if passed then
 		local currentSong = self.playbackManager:GetCurrentSong()
 		self.dispatcher:NotifyAll(string.format("Skip vote passed! Skipping: %s", currentSong and currentSong.judul or "Unknown"))
-		task.wait(1)
+		-- 🔥 FIX: Dihapus task.wait(1) untuk mencegah bug double-skip
 		self.playNextCallback()
 		self.skipVoteManager:EndVote(self.dispatcher, true)
 	else
@@ -438,6 +444,15 @@ end
 -- ====================================
 function MusicActionHandler:HandleToggleFavorite(player, data)
 	if not validatePlayer(player) then return end
+
+	-- 🔥 FIX: Rate Limiter untuk mencegah spam dan lag server
+	self._favoriteCooldowns = self._favoriteCooldowns or {}
+	local lastReq = self._favoriteCooldowns[player.UserId] or 0
+	if tick() - lastReq < 0.5 then
+		self.dispatcher:Notify(player, "Tolong jangan spam tombol Favorite!")
+		return
+	end
+	self._favoriteCooldowns[player.UserId] = tick()
 
 	-- ✅ FAVORITES ARE ALLOWED DURING BLOCK (personal preference)
 

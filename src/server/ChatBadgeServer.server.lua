@@ -14,11 +14,10 @@ local RoleSystem = require(ServerStorage:WaitForChild("Modules"):WaitForChild("R
 -- ====================================
 local CONFIG = {
 	BADGES = {
-		Owner     = { text = "Owner",      color = Color3.fromRGB(255, 0,   0),    priority = 7 },
-		Admin     = { text = "Head Staff", color = Color3.fromRGB(255, 85,  0),    priority = 6 },
-		Moderator = { text = "Staff",      color = Color3.fromRGB(0,   170, 255),  priority = 5 },
-		Sultan    = { text = "Sultan",     color = Color3.fromRGB(255, 215, 0),    priority = 4 }, -- [TAMBAH INI]
-		VVIP      = { text = "VVIP",       color = Color3.fromRGB(150, 0,   200),  priority = 3 },
+		Owner     = { text = "Owner",      color = Color3.fromRGB(255, 0,   0),    priority = 6 },
+		Admin     = { text = "Head Staff", color = Color3.fromRGB(255, 85,  0),    priority = 5 },
+		Moderator = { text = "Staff",      color = Color3.fromRGB(0,   170, 255),  priority = 4 },
+		Sultan    = { text = "Sultan",     color = Color3.fromRGB(255, 215, 0),    priority = 3 },
 		VIP       = { text = "VIP",        color = Color3.fromRGB(0,   255, 0),    priority = 2 },
 		Player    = { text = nil,          color = nil,                            priority = 1 },
 	},

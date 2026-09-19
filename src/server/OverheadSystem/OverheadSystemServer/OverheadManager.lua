@@ -25,7 +25,6 @@ end
 local CONFIG              = nil
 local RoleSystem          = nil
 local LevelSystem         = nil
-local DonationRankSystem  = nil
 local DonaturRankSystem   = nil
 local TitleDataManager    = nil
 local DebugSystem         = nil
@@ -33,11 +32,10 @@ local DebugSystem         = nil
 -- ====================================
 -- INIT
 -- ====================================
-function OverheadManager:Init(config, roleSystem, levelSystem, titleDataManager, donationRankSystem, donaturRankSystem)
+function OverheadManager:Init(config, roleSystem, levelSystem, titleDataManager, donaturRankSystem)
 	CONFIG             = config
 	RoleSystem         = roleSystem
 	LevelSystem        = levelSystem
-	DonationRankSystem = donationRankSystem
 	DonaturRankSystem  = donaturRankSystem
 	TitleDataManager   = titleDataManager
 	DebugSystem        = require(script.Parent.DebugSystem)
@@ -149,6 +147,38 @@ function OverheadManager:UpdateAllAttributes(player)
 		local donaturRank = DonaturRankSystem:GetRank(player.UserId)
 		player:SetAttribute("Overhead_DonaturRank", donaturRank or 0)
 	end
+
+	-- 8. Country Code (Regional Detection)
+	if not player:GetAttribute("Overhead_CountryCode") then
+		task.spawn(function()
+			local LocalizationService = game:GetService("LocalizationService")
+			local ok, code = pcall(function()
+				return LocalizationService:GetCountryRegionForPlayerAsync(player)
+			end)
+			if ok and type(code) == "string" and #code == 2 then
+				player:SetAttribute("Overhead_CountryCode", string.upper(code))
+			else
+				player:SetAttribute("Overhead_CountryCode", "ID")
+			end
+		end)
+	end
+
+	-- 9. VIP Status Check
+	local hasVIP = false
+	if RoleSystem then
+		if role == "VIP" or (RoleSystem.GetPlayerRole and RoleSystem:GetPlayerRole(player) == "VIP") then
+			hasVIP = true
+		elseif RoleSystem.Config and RoleSystem.Config.GamePasses and RoleSystem.Config.GamePasses.VIP then
+			local passes = RoleSystem.Config.GamePasses.VIP
+			for _, passId in ipairs(passes) do
+				if RoleSystem.UserOwnsGamePass and RoleSystem:UserOwnsGamePass(player, passId) then
+					hasVIP = true
+					break
+				end
+			end
+		end
+	end
+	player:SetAttribute("Overhead_HasVIP", hasVIP)
 end
 
 -- ====================================

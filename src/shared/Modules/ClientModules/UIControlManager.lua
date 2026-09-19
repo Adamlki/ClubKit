@@ -1,4 +1,5 @@
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local UIControlManager = {}
 UIControlManager.__index = UIControlManager
@@ -7,6 +8,7 @@ function UIControlManager.new(components)
 	local self = setmetatable({}, UIControlManager)
 
 	self.skipBtn = components.skipBtn
+	self.reloadBtn = components.reloadBtn
 	self.adminBtn = components.adminBtn
 	self.volumeFrameBg = components.volumeFrameBg
 	self.volumeBar = components.volumeBar
@@ -14,24 +16,22 @@ function UIControlManager.new(components)
 	self.volumeLabel = components.volumelabel
 	self.trackFrameBg = components.trackFrameBg
 	self.trackBar = components.trackBar
+	self.thumbKnob = components.thumbKnob
+	self.currentTimeLabel = components.currentTimeLabel
 	self.timeLabel = components.timeLabel
 
 	self.onNextCallback = nil
+	self.onReloadCallback = nil
 	self.onVolumeChangeCallback = nil
 	self.onAdminToggleBlockCallback = nil
 
 	self.isDraggingVolume = false
-	self.volumeValue = 0.5
-    
-	-- OPTIMASI: Variabel untuk RenderStepped Progress Bar
-	self.renderConnection = nil
+	self.volumeValue = 1.0
+
 	self.currentTime = 0
 	self.totalTime = 0
 	self.targetProgress = 0
-
 	self.currentDuration = 0
-	self.metadataDuration = nil
-	self.wasDetected = false
 	self.lastCurrentSec = -1
 
 	self:SetupConnections()
@@ -45,37 +45,35 @@ end
 -- ====================================
 function UIControlManager:SetupConnections()
 	-- Skip button
-	self.skipBtn.MouseButton1Click:Connect(function()
-		if self.onNextCallback then
-			self.onNextCallback()
-		end
-	end)
-
-	-- Admin button
-	self.adminBtn.MouseButton1Click:Connect(function()
-		if self.onAdminToggleBlockCallback then
-			self.onAdminToggleBlockCallback()
-		end
-	end)
-end
-
--- ====================================
--- VOLUME SNAPPING UTILITY
--- ====================================
-local function snapVolume(percent, snapPoints)
-	local snapThreshold = 0.05 -- 5% threshold for snapping
-
-	for _, snapPoint in ipairs(snapPoints) do
-		if math.abs(percent - snapPoint) < snapThreshold then
-			return snapPoint
-		end
+	if self.skipBtn then
+		self.skipBtn.MouseButton1Click:Connect(function()
+			if self.onNextCallback then
+				self.onNextCallback()
+			end
+		end)
 	end
 
-	return percent
+	-- Reload button
+	if self.reloadBtn then
+		self.reloadBtn.MouseButton1Click:Connect(function()
+			if self.onReloadCallback then
+				self.onReloadCallback()
+			end
+		end)
+	end
+
+	-- Admin button
+	if self.adminBtn then
+		self.adminBtn.MouseButton1Click:Connect(function()
+			if self.onAdminToggleBlockCallback then
+				self.onAdminToggleBlockCallback()
+			end
+		end)
+	end
 end
 
 -- ====================================
--- VOLUME SLIDER SYSTEM (WITH SNAPPING)
+-- VOLUME SLIDER SYSTEM
 -- ====================================
 function UIControlManager:SetupVolumeSlider()
 	local dragging = false
@@ -84,268 +82,173 @@ function UIControlManager:SetupVolumeSlider()
 	local volumeBtn = self.volumeBtn
 	local volumeLabel = self.volumeLabel
 
-	-- Snap points: 0%, 25%, 50%, 75%, 100%
-	local snapPoints = {0, 0.25, 0.5, 0.75, 1}
+	if not volumeBg or not volumeBar then return end
 
-	-- Set initial position (50%)
-	volumeBtn.Position = UDim2.new(0.5, 0, 0.5, 0)
-	volumeBar.Size = UDim2.new(0.5, 0, 1, 0)
-
-	if volumeLabel then
-		volumeLabel.Text = "50%"
-	end
-
-	-- Helper function to update volume
-	local function updateVolume(percent, applySnap)
+	local function updateVolume(percent)
 		percent = math.clamp(percent, 0, 1)
 
-		-- Apply snapping if requested
-		if applySnap then
-			percent = snapVolume(percent, snapPoints)
+		if volumeBtn then
+			volumeBtn.Position = UDim2.new(1, 0, 0.5, 0)
 		end
 
-		-- Update button position
-		volumeBtn.Position = UDim2.new(percent, 0, 0.5, 0)
-
-		-- Update bar width
 		volumeBar.Size = UDim2.new(percent, 0, 1, 0)
 
-		-- Update volume label
 		if volumeLabel then
 			local volumePercent = math.floor(percent * 100)
 			volumeLabel.Text = string.format("%d%%", volumePercent)
 		end
 
-		-- Store volume value
 		self.volumeValue = percent
 
-		-- Callback
 		if self.onVolumeChangeCallback then
 			self.onVolumeChangeCallback(percent)
 		end
 	end
 
-	-- Helper function to get percent from mouse position
 	local function getPercentFromPosition(mouseX)
 		local bgPosition = volumeBg.AbsolutePosition.X
 		local bgSize = volumeBg.AbsoluteSize.X
+		if bgSize <= 0 then return 1 end
 		local relativeX = mouseX - bgPosition
 		return math.clamp(relativeX / bgSize, 0, 1)
 	end
 
-	-- Button drag events
-	volumeBtn.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or 
-			input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true
-			self.isDraggingVolume = true
-		end
-	end)
+	-- Dragging via volumeBtn
+	if volumeBtn then
+		volumeBtn.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				dragging = true
+				self.isDraggingVolume = true
+			end
+		end)
 
-	volumeBtn.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or 
-			input.UserInputType == Enum.UserInputType.Touch then
-			dragging = false
-			self.isDraggingVolume = false
+		volumeBtn.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				dragging = false
+				self.isDraggingVolume = false
+			end
+		end)
+	end
 
-			-- Apply snapping when releasing
-			updateVolume(self.volumeValue, true)
-		end
-	end)
-
-	-- Mouse/touch movement
-	game:GetService("UserInputService").InputChanged:Connect(function(input)
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or 
-			input.UserInputType == Enum.UserInputType.Touch) then
-
-			local percent = getPercentFromPosition(input.Position.X)
-			updateVolume(percent, false) -- Don't snap while dragging
-		end
-	end)
-
-	-- Click on bar to jump (with snap)
+	-- Click on background bar
 	volumeBg.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or 
-			input.UserInputType == Enum.UserInputType.Touch then
-
-			local percent = getPercentFromPosition(input.Position.X)
-			updateVolume(percent, true) -- Apply snap on click
-		end
-	end)
-
-	-- Bar drag
-	volumeBar.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or 
-			input.UserInputType == Enum.UserInputType.Touch then
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
 			self.isDraggingVolume = true
-
-			local percent = getPercentFromPosition(input.Position.X)
-			updateVolume(percent, false)
+			updateVolume(getPercentFromPosition(input.Position.X))
 		end
 	end)
 
-	volumeBar.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or 
-			input.UserInputType == Enum.UserInputType.Touch then
+	volumeBg.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = false
 			self.isDraggingVolume = false
+		end
+	end)
 
-			-- Apply snapping when releasing
-			updateVolume(self.volumeValue, true)
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			updateVolume(getPercentFromPosition(input.Position.X))
+		end
+	end)
+
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+			self.isDraggingVolume = false
 		end
 	end)
 end
 
 function UIControlManager:SetVolume(volumePercent)
 	local percent = math.clamp(volumePercent / 100, 0, 1)
-	self.volumeValue = percent
-
-	self.volumeBtn.Position = UDim2.new(percent, 0, 0.5, 0)
-	self.volumeBar.Size = UDim2.new(percent, 0, 1, 0)
-
+	if self.volumeBar then
+		self.volumeBar.Size = UDim2.new(percent, 0, 1, 0)
+	end
 	if self.volumeLabel then
 		self.volumeLabel.Text = string.format("%d%%", math.floor(volumePercent))
 	end
+	self.volumeValue = percent
 end
 
 -- ====================================
--- ENGINE PROGRESS BAR KUSTOM (NO TWEEN SERVICE)
+-- TIME FORMATTER (MM:SS)
 -- ====================================
-function UIControlManager:StartProgressRender()
-	if self.renderConnection then return end
-	self.renderConnection = RunService.RenderStepped:Connect(function(dt)
-		if not self.totalTime or self.totalTime <= 0 then return end
-		
-		-- Prediksi waktu berjalan lokal (interpolasi)
-		self.currentTime = self.currentTime + dt
-		local simulatedProgress = math.clamp(self.currentTime / self.totalTime, 0, 1)
-
-		-- Koreksi jika terjadi drift dengan data asli (toleransi 0.15 dari skala 0-1)
-		if math.abs(simulatedProgress - self.targetProgress) > 0.15 then
-			self.currentTime = self.targetProgress * self.totalTime
-			simulatedProgress = self.targetProgress
-		end
-
-		self.trackBar.Size = UDim2.new(simulatedProgress, 0, 1, 0)
-	end)
-end
-
-function UIControlManager:StopProgressRender()
-	if self.renderConnection then
-		self.renderConnection:Disconnect()
-		self.renderConnection = nil
-	end
-end
-
--- ====================================
--- PROGRESS UPDATE (OPTIMIZED)
--- ====================================
-function UIControlManager:UpdateProgress(progress, currentTime, totalTime)
-	-- Jika lagu dihentikan atau tidak ada durasi
-	if not totalTime or totalTime <= 0 or progress == 0 then
-		self:StopProgressRender()
-		self.trackBar.Size = UDim2.new(progress, 0, 1, 0)
-		self.timeLabel.Text = self:FormatTimeWithInfo(0, 0)
-		self.lastCurrentSec = -1
-		return
-	end
-
-	-- Update target data
-	self.targetProgress = progress
-	self.currentTime = currentTime
-	self.totalTime = totalTime
-
-	-- Nyalakan mesin interpolasi visual jika belum nyala
-	if not self.renderConnection then
-		self:StartProgressRender()
-	end
-
-	-- OPTIMASI: Hanya update teks string jika detiknya benar-benar berganti
-	local currentSec = math.floor(currentTime or 0)
-	if self.lastCurrentSec ~= currentSec then
-		self.lastCurrentSec = currentSec
-		self.timeLabel.Text = self:FormatTimeWithInfo(currentTime, totalTime)
-	end
-end
-
-function UIControlManager:UpdateSongDuration(duration, metadataDuration, wasDetected)
-	-- ✅ NEW: Store duration info
-	self.currentDuration = duration
-	self.metadataDuration = metadataDuration
-	self.wasDetected = wasDetected
-
-	-- Display initial time
-	local timeText = self:FormatTimeWithInfo(0, duration)
-	self.timeLabel.Text = timeText
-end
-
--- ====================================
--- FORMAT TIME WITH DETECTION INFO
--- ====================================
-function UIControlManager:FormatTimeWithInfo(currentTime, totalTime)
-	if not totalTime or totalTime ~= totalTime then
-		return "0:00 / 0:00"
-	end
-
-	local currentStr = self:FormatTime(currentTime)
-	local totalStr = self:FormatTime(totalTime)
-
-	-- Base format
-	local baseText = string.format("%s / %s", currentStr, totalStr)
-
-	-- ✅ ENHANCED: Add duration info if available
-	if self.metadataDuration and self.wasDetected then
-		local metadataStr = self:FormatTime(self.metadataDuration)
-		local difference = math.abs(totalTime - self.metadataDuration)
-
-		-- Show warning if difference > 10 seconds
-		if difference > 10 then
-			-- Color indicator (you can customize this)
-			-- Red = mismatch, Green = detected
-			return string.format("%s / %s ✓ (DB: %s)", currentStr, totalStr, metadataStr)
-		else
-			-- Small difference, just show detected mark
-			return string.format("%s / %s ✓", currentStr, totalStr)
-		end
-	elseif self.wasDetected then
-		-- Was detected but no metadata to compare
-		return string.format("%s / %s ✓", currentStr, totalStr)
-	else
-		-- Not detected (using metadata or fallback)
-		return baseText
-	end
-end
-
-function UIControlManager:FormatTime(seconds)
-	if not seconds or seconds ~= seconds then
-		return "0:00"
+local function formatTime(seconds)
+	if not seconds or seconds < 0 or seconds ~= seconds then
+		return "00:00"
 	end
 	local mins = math.floor(seconds / 60)
 	local secs = math.floor(seconds % 60)
-	return string.format("%d:%02d", mins, secs)
+	return string.format("%02d:%02d", mins, secs)
 end
 
 -- ====================================
--- ADMIN BUTTON
+-- UPDATE PROGRESS
 -- ====================================
-function UIControlManager:UpdateAdminButtonState(isModeratorPlus)
-	self.adminBtn.Visible = isModeratorPlus
+function UIControlManager:UpdateProgress(progress, currentTime, totalTime)
+	progress = math.clamp(progress or 0, 0, 1)
+	self.targetProgress = progress
+	self.currentTime = currentTime or 0
+	self.totalTime = totalTime or 0
 
-	if isModeratorPlus then
-		self.adminBtn.Text = "Block"
+	if self.trackBar then
+		self.trackBar.Size = UDim2.new(progress, 0, 1, 0)
+	end
+
+	local curSec = math.floor(self.currentTime)
+	if curSec ~= self.lastCurrentSec then
+		self.lastCurrentSec = curSec
+		if self.currentTimeLabel then
+			self.currentTimeLabel.Text = formatTime(self.currentTime)
+		end
+		if self.timeLabel then
+			self.timeLabel.Text = formatTime(self.totalTime)
+		end
 	end
 end
 
-function UIControlManager:UpdateAdminButtonText(newText)
-	self.adminBtn.Text = newText
+function UIControlManager:UpdateSongDuration(duration)
+	self.currentDuration = duration or 0
+	if self.timeLabel then
+		self.timeLabel.Text = formatTime(self.currentDuration)
+	end
 end
 
 -- ====================================
--- CALLBACK SETTERS
+-- ADMIN CONTROLS
+-- ====================================
+function UIControlManager:UpdateAdminButtonState(isModerator)
+	if self.adminBtn then
+		self.adminBtn.Visible = isModerator
+	end
+end
+
+function UIControlManager:UpdateAdminButtonText(text)
+	if self.adminBtn then
+		self.adminBtn.Text = text
+		local stroke = self.adminBtn:FindFirstChildOfClass("UIStroke")
+		if string.find(text, "Unblock") then
+			self.adminBtn.BackgroundColor3 = Color3.fromRGB(55, 25, 35)
+			self.adminBtn.TextColor3 = Color3.fromRGB(255, 120, 140)
+			if stroke then stroke.Color = Color3.fromRGB(200, 60, 80) end
+		else
+			self.adminBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
+			self.adminBtn.TextColor3 = Color3.fromRGB(240, 240, 240)
+			if stroke then stroke.Color = Color3.fromRGB(46, 46, 46) end
+		end
+	end
+end
+
+-- ====================================
+-- CALLBACKS
 -- ====================================
 function UIControlManager:OnNext(callback)
 	self.onNextCallback = callback
+end
+
+function UIControlManager:OnReload(callback)
+	self.onReloadCallback = callback
 end
 
 function UIControlManager:OnVolumeChange(callback)

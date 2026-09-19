@@ -15,7 +15,7 @@ local UIAnimator = require(ReplicatedStorage:WaitForChild("UIAnimator"))
 local CONFIG = {
 	Alignment = "left",
 	InitDelay = 0.1,
-	GlobalAnimations = true,
+	GlobalAnimations = false,
 	UseStroke       = false,
 	StrokeThickness = 0,
 	StrokeColor     = Color3.fromRGB(255, 255, 255),
@@ -27,16 +27,24 @@ local CONFIG = {
 }
 
 local ICON_CONFIGS = {
-	Menu      = { enabled = true, image = "rbxassetid://87603332567027",  label = "", order = 1 },
-	Dance     = { enabled = true, image = "rbxassetid://113394514826547", label = "", order = 2 },
-	Music     = { enabled = true, image = "rbxassetid://123643550590893", label = "", order = 3, animate = false },
-	Gamepass  = { enabled = true, image = "rbxassetid://140276937557646", label = "", order = 4 },
-	Setting   = { enabled = true, image = "rbxassetid://116292866711662", label = "", order = 5 }, 
-	FreeCam   = { enabled = true, image = "rbxassetid://134750039859396", label = "", order = 6 }, 
-	Refresh   = { enabled = true, image = nil, label = "/", alignment = "right", order = 7 },
-	Broadcast = { enabled = true, image = "rbxassetid://124033060370841", label = ""},
-	MyHat     = { enabled = true, image = "rbxassetid://120495411505696", label = "" },
+	-- Right Side
+	Menu         = { enabled = true, image = "rbxassetid://87603332567027",  label = "", alignment = "right", order = 1 },
+	Refresh      = { enabled = true, image = nil, label = "/", alignment = "right", order = 2 },
+
+	-- Left Side (Music & Donate only)
+	Music        = { enabled = true, image = "rbxassetid://123643550590893", label = "", alignment = "left", order = 1, animate = false },
+
+	-- Dropdown / Sub-menu Icons (Inside Menu)
+	Dance        = { enabled = true, image = "rbxassetid://113394514826547", label = "", order = 1 },
+	Setting      = { enabled = true, image = "rbxassetid://116292866711662", label = "", order = 2 }, 
+	FreeCam      = { enabled = true, image = "rbxassetid://134750039859396", label = "", order = 3 }, 
+	CustomTitle  = { enabled = true, image = "", label = "🏷️", order = 4 },
+	Broadcast    = { enabled = true, image = "rbxassetid://124033060370841", label = "" },
+	MyHat        = { enabled = true, image = "rbxassetid://120495411505696", label = "" },
 	GlobalEffect = { enabled = true, image = "rbxassetid://84595853614117", label = "" },
+
+	-- Disabled Shop System
+	Gamepass     = { enabled = false, image = "rbxassetid://140276937557646", label = "" },
 }
 
 local function getCfg(name)
@@ -171,12 +179,13 @@ local function createRawIcon(name)
 end
 
 -- 1. Main Topbar Icons
-local danceIcon   = createRawIcon("Dance")
+-- Sisi Kiri: Musik (di luar menu)
 local musicIcon   = createRawIcon("Music")
-local gpIcon      = createRawIcon("Gamepass")
+
+-- Sisi Kanan: Refresh
 local refreshIcon = createRawIcon("Refresh")
 
--- 2. Menu Icon
+-- 2. Menu Icon (Sisi Kanan, sejajar dengan refresh)
 local menuCfg = getCfg("Menu")
 if menuCfg.enabled then
 	menuIcon = Icon.new()
@@ -185,12 +194,14 @@ if menuCfg.enabled then
 	menuIcon:autoDeselect(false)
 end
 
--- 3. Dropdown Icons (Temporarily unassigned)
-local broadcastIcon = createRawIcon("Broadcast")
+-- 3. Icons di dalam Menu Dropdown
+local danceIcon     = createRawIcon("Dance")
 local setIcon       = createRawIcon("Setting")
+local freecamIcon   = createRawIcon("FreeCam")
+local titleIcon     = createRawIcon("CustomTitle")
+local broadcastIcon = createRawIcon("Broadcast")
 local hatIcon       = createRawIcon("MyHat")
 local effectIcon    = createRawIcon("GlobalEffect")
-local freecamIcon   = createRawIcon("FreeCam")
 
 -- Initially disable network-dependent icons until verified
 if broadcastIcon then broadcastIcon:setEnabled(false) end
@@ -198,18 +209,17 @@ if effectIcon then effectIcon:setEnabled(false) end
 
 if menuIcon then
 	local activeMenu = {}
-	-- Masukkan SEMUA icon ke dalam horizontal menu
-	if musicIcon then table.insert(activeMenu, musicIcon) end
-	if gpIcon then table.insert(activeMenu, gpIcon) end
+	if danceIcon then table.insert(activeMenu, danceIcon) end
 	if setIcon then table.insert(activeMenu, setIcon) end
 	if freecamIcon then table.insert(activeMenu, freecamIcon) end
+	if titleIcon then table.insert(activeMenu, titleIcon) end
 	
 	-- Menu Spesial (Network)
 	if broadcastIcon then table.insert(activeMenu, broadcastIcon) end
 	if hatIcon then table.insert(activeMenu, hatIcon) end
 	if effectIcon then table.insert(activeMenu, effectIcon) end
 	
-	-- Gunakan setMenu agar bergeser ke samping secara horizontal
+	-- Gunakan setMenu agar bergeser ke samping
 	menuIcon:setMenu(activeMenu)
 end
 
@@ -260,7 +270,10 @@ local function bindIconLogic(name, icon, gui, frame, closeBtnPath, originalBtnNa
 		playClick()
 		for otherName, d in pairs(icons) do
 			if otherName ~= name and d.isOpen and not d.lockSync then
-				if d.animate then
+				local toggleDrawer = d.gui and d.gui:FindFirstChild("ToggleDrawer")
+				if toggleDrawer then
+					toggleDrawer:Fire(false)
+				elseif d.animate then
 					UIAnimator.Close(d.frame)
 				else
 					d.frame.Visible = false
@@ -271,7 +284,10 @@ local function bindIconLogic(name, icon, gui, frame, closeBtnPath, originalBtnNa
 		end
 		local d = icons[name]
 		if d and d.frame and not d.lockSync then
-			if d.animate then
+			local toggleDrawer = d.gui and d.gui:FindFirstChild("ToggleDrawer")
+			if toggleDrawer then
+				toggleDrawer:Fire(true)
+			elseif d.animate then
 				UIAnimator.Open(d.frame)
 			else
 				d.frame.Visible = true
@@ -284,7 +300,10 @@ local function bindIconLogic(name, icon, gui, frame, closeBtnPath, originalBtnNa
 		playClick()
 		local d = icons[name]
 		if d and d.frame and not d.lockSync then
-			if d.animate then
+			local toggleDrawer = d.gui and d.gui:FindFirstChild("ToggleDrawer")
+			if toggleDrawer then
+				toggleDrawer:Fire(false)
+			elseif d.animate then
 				UIAnimator.Close(d.frame)
 			else
 				d.frame.Visible = false
@@ -319,16 +338,17 @@ task.spawn(function()
 	local gui = playerGui:WaitForChild("MusicPlayer", 5)
 	if gui then
 		local frame = gui:WaitForChild("MainFrame", 5)
-		bindIconLogic("Music", musicIcon, gui, frame, {"CloseBtn"}, "MusicBtn")
+		local cp = frame and frame:FindFirstChild("Header") and {"Header","CloseBtn"} or {"CloseBtn"}
+		bindIconLogic("Music", musicIcon, gui, frame, cp, "MusicBtn")
 	end
 end)
 
 task.spawn(function()
 	local gui = playerGui:WaitForChild("GamepassShop", 5)
 	if gui then
-		local frame = gui:WaitForChild("MainFrame", 5)
-		local cp = frame and frame:FindFirstChild("Header") and {"Header","CloseBtn"} or {"CloseBtn"}
-		bindIconLogic("Gamepass", gpIcon, gui, frame, cp, "Shop")
+		gui.Enabled = false
+		local frame = gui:FindFirstChild("MainFrame")
+		if frame then frame.Visible = false end
 	end
 end)
 
@@ -347,6 +367,17 @@ task.spawn(function()
 		local frame = gui:WaitForChild("Mainframe", 5)
 		local cp = frame and frame:FindFirstChild("HeaderFrame") and {"HeaderFrame","CloseBtn"} or {"CloseBtn"}
 		bindIconLogic("Setting", setIcon, gui, frame, cp, "SettingBtn")
+	end
+end)
+
+task.spawn(function()
+	local gui = playerGui:WaitForChild("CustomTitleGui", 10)
+	if gui then
+		local frame = gui:WaitForChild("MainFrame", 5)
+		if frame and titleIcon then
+			local cp = frame:FindFirstChild("Header") and {"Header","CloseBtn"} or {"CloseBtn"}
+			bindIconLogic("CustomTitle", titleIcon, gui, frame, cp)
+		end
 	end
 end)
 

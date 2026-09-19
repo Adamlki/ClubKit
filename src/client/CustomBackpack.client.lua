@@ -23,7 +23,6 @@ local CONFIG = {
 	SectionPadding = 6,
 	CornerRadius = 14,
 	MaxHotbarSlots = 9,
-	MaxTotalSlots = 36,
 
 	AnimSpeed = 0.3,
 
@@ -42,11 +41,7 @@ local CONFIG = {
 		Text = Color3.fromRGB(220, 220, 220),
 		SubText = Color3.fromRGB(140, 140, 140),
 		Border = Color3.fromRGB(25, 25, 25),
-		InventoryBg = Color3.fromRGB(8, 8, 8),
 	},
-
-	InventoryColumns = isMobile and 5 or 6,
-	BackpackIconId = "rbxassetid://135273755533681",
 
 	EyeOpenId = "rbxassetid://125603824847579", 
 	EyeClosedId = "rbxassetid://70802654569830", 
@@ -55,15 +50,26 @@ local CONFIG = {
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-local ALLOWED_ROLES = {
-	["VIP"] = true, ["VVIP"] = true, ["Moderator"] = true,
-	["Admin"] = true, ["Owner"] = true, ["Sultan"] = true,
-	["Head Staff"] = true, ["Staff"] = true
-}
-
-local function hasToolsAccess()
-	local roleVal = player:FindFirstChild("Role")
-	return roleVal and ALLOWED_ROLES[roleVal.Value] or false
+-- Deteksi jumlah tool yang dimiliki pemain saat ini (di Backpack + Karakter)
+local function getTotalTools()
+	local count = 0
+	local backpack = player:FindFirstChild("Backpack")
+	if backpack then
+		for _, item in ipairs(backpack:GetChildren()) do
+			if item:IsA("Tool") then
+				count += 1
+			end
+		end
+	end
+	local char = player.Character
+	if char then
+		for _, item in ipairs(char:GetChildren()) do
+			if item:IsA("Tool") then
+				count += 1
+			end
+		end
+	end
+	return count
 end
 
 local screenGui = Instance.new("ScreenGui")
@@ -87,7 +93,7 @@ mainContainer.BackgroundTransparency = 1
 mainContainer.AnchorPoint = Vector2.new(0.5, 1)
 mainContainer.Position = UDim2.new(0.5, 0, 1, -10)
 mainContainer.AutomaticSize = Enum.AutomaticSize.XY
-mainContainer.Visible = hasToolsAccess()
+mainContainer.Visible = false -- Sembunyikan jika belum ada tool
 mainContainer.Parent = screenGui
 
 local hotbarFrame = Instance.new("Frame")
@@ -126,111 +132,7 @@ hbPadding.PaddingLeft, hbPadding.PaddingRight = UDim.new(0, p), UDim.new(0, p)
 hbPadding.PaddingTop, hbPadding.PaddingBottom = UDim.new(0, p), UDim.new(0, p)
 hbPadding.Parent = hotbarFrame
 
-local inventoryPanel = Instance.new("Frame")
-inventoryPanel.Name = "InventoryPanel"
-inventoryPanel.BackgroundColor3 = CONFIG.Colors.InventoryBg
-inventoryPanel.BackgroundTransparency = 0.05
-inventoryPanel.AutomaticSize = Enum.AutomaticSize.XY
-inventoryPanel.AnchorPoint = Vector2.new(0.5, 1)
-inventoryPanel.Position = UDim2.new(0.5, 0, 0, -CONFIG.SlotSize - CONFIG.Padding * 2 - CONFIG.SectionPadding)
-inventoryPanel.Visible = false
-inventoryPanel.Parent = mainContainer
-
-local invCorner = Instance.new("UICorner")
-invCorner.CornerRadius = UDim.new(0, CONFIG.CornerRadius)
-invCorner.Parent = inventoryPanel
-
-local invStroke = Instance.new("UIStroke")
-invStroke.Color = Color3.new(1, 1, 1)
-invStroke.Thickness = 1.5
-invStroke.Transparency = 0.6
-invStroke.Parent = inventoryPanel
-
-local invStrokeGrad = Instance.new("UIGradient")
-invStrokeGrad.Name = "BorderAnim"
-invStrokeGrad.Color = CONFIG.BorderSequence
-invStrokeGrad.Parent = invStroke
-
-local invInner = Instance.new("Frame")
-invInner.Name = "InvInner"
-invInner.BackgroundTransparency = 1
-invInner.AutomaticSize = Enum.AutomaticSize.XY
-invInner.Parent = inventoryPanel
-
-local invPadding = Instance.new("UIPadding")
-invPadding.PaddingLeft = UDim.new(0, CONFIG.Padding)
-invPadding.PaddingRight = UDim.new(0, CONFIG.Padding)
-invPadding.PaddingTop = UDim.new(0, CONFIG.Padding)
-invPadding.PaddingBottom = UDim.new(0, CONFIG.Padding)
-invPadding.Parent = inventoryPanel
-
-local invGrid = Instance.new("UIGridLayout")
-invGrid.CellSize = UDim2.new(0, CONFIG.SlotSize, 0, CONFIG.SlotSize)
-invGrid.CellPadding = UDim2.new(0, CONFIG.Padding, 0, CONFIG.Padding)
-invGrid.FillDirection = Enum.FillDirection.Horizontal
-invGrid.HorizontalAlignment = Enum.HorizontalAlignment.Left
-invGrid.VerticalAlignment = Enum.VerticalAlignment.Top
-invGrid.SortOrder = Enum.SortOrder.LayoutOrder
-invGrid.Parent = invInner
-
-local isInventoryOpen = false
 local isHotbarCollapsed = false
-
-local function setInventoryVisible(open, instant)
-	isInventoryOpen = open
-	if instant then
-		inventoryPanel.Visible = open
-		return
-	end
-	if open then
-		inventoryPanel.Visible = true
-		inventoryPanel.BackgroundTransparency = 0.8
-		local tw = TweenService:Create(inventoryPanel, TweenInfo.new(CONFIG.AnimSpeed, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { BackgroundTransparency = 0.05 })
-		tw:Play()
-	else
-		local tw = TweenService:Create(inventoryPanel, TweenInfo.new(CONFIG.AnimSpeed * 0.7, Enum.EasingStyle.Quart, Enum.EasingDirection.In), { BackgroundTransparency = 1 })
-		tw:Play()
-		tw.Completed:Connect(function()
-			inventoryPanel.Visible = false
-			inventoryPanel.BackgroundTransparency = 0.05
-		end)
-	end
-end
-
-local backpackBtn = Instance.new("ImageButton")
-backpackBtn.Name = "BackpackBtn"
-backpackBtn.Size = UDim2.new(0, CONFIG.SlotSize, 0, CONFIG.SlotSize)
-backpackBtn.LayoutOrder = 0
-backpackBtn.BackgroundColor3 = CONFIG.Colors.Container
-backpackBtn.BackgroundTransparency = 0.1
-backpackBtn.AutoButtonColor = true
-backpackBtn.ClipsDescendants = true
-backpackBtn.Parent = hotbarFrame
-
-local bpIcon = Instance.new("ImageLabel")
-bpIcon.Name = "Icon"
-bpIcon.Size = UDim2.new(0.65, 0, 0.65, 0) 
-bpIcon.Position = UDim2.new(0.5, 0, 0.5, 0)
-bpIcon.AnchorPoint = Vector2.new(0.5, 0.5)
-bpIcon.BackgroundTransparency = 1
-bpIcon.Image = CONFIG.BackpackIconId
-bpIcon.ScaleType = Enum.ScaleType.Fit
-bpIcon.Parent = backpackBtn
-
-local bbCorner = Instance.new("UICorner")
-bbCorner.CornerRadius = UDim.new(0, CONFIG.CornerRadius - 4)
-bbCorner.Parent = backpackBtn
-
-local bbStroke = Instance.new("UIStroke")
-bbStroke.Color = CONFIG.Colors.Border
-bbStroke.Thickness = 1
-bbStroke.Parent = backpackBtn
-
-backpackBtn.MouseButton1Click:Connect(function()
-	if not isHotbarCollapsed then
-		setInventoryVisible(not isInventoryOpen)
-	end
-end)
 
 local eyeBtn = Instance.new("ImageButton")
 eyeBtn.Name = "EyeBtn"
@@ -239,7 +141,7 @@ eyeBtn.LayoutOrder = -1
 eyeBtn.BackgroundColor3 = CONFIG.Colors.Container
 eyeBtn.BackgroundTransparency = 0.1
 eyeBtn.AutoButtonColor = true
-eyeBtn.Visible = hasToolsAccess()
+eyeBtn.Visible = true
 eyeBtn.Parent = hotbarFrame
 
 local eyeIcon = Instance.new("ImageLabel")
@@ -261,27 +163,9 @@ eyeStroke.Color = CONFIG.Colors.Border
 eyeStroke.Thickness = 1
 eyeStroke.Parent = eyeBtn
 
--- Role changes update visibility of the eyeBtn and main container visibility
-task.spawn(function()
-	local roleVal = player:WaitForChild("Role", 15)
-	if roleVal then
-		local function updateBackpackAccess()
-			local hasAccess = hasToolsAccess()
-			eyeBtn.Visible = hasAccess
-			mainContainer.Visible = hasAccess
-		end
-		updateBackpackAccess()
-		roleVal.Changed:Connect(updateBackpackAccess)
-	end
-end)
-
 local function setHotbarCollapsed(collapsed)
 	isHotbarCollapsed = collapsed
 	eyeIcon.Image = collapsed and CONFIG.EyeClosedId or CONFIG.EyeOpenId
-
-	if collapsed and isInventoryOpen then
-		setInventoryVisible(false)
-	end
 
 	local targetPadding = collapsed and UDim.new(0, 0) or UDim.new(0, CONFIG.Padding)
 	TweenService:Create(hbList, TweenInfo.new(CONFIG.AnimSpeed, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Padding = targetPadding}):Play()
@@ -345,15 +229,9 @@ if not isMobile then
 		if processed then return end
 		-- Tekan 'B' untuk menyembunyikan/menampilkan hotbar (sama seperti tombol mata)
 		if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.B then
-			if hasToolsAccess() then
+			if getTotalTools() > 0 then
 				playSound()
 				setHotbarCollapsed(not isHotbarCollapsed)
-			end
-		end
-		-- Tekan 'I' untuk membuka inventory
-		if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.I then
-			if not isHotbarCollapsed and hasToolsAccess() then
-				setInventoryVisible(not isInventoryOpen)
 			end
 		end
 	end)
@@ -362,7 +240,7 @@ end
 local BoundSlots = {}
 
 local function getNextFreeSlot()
-	for i = 1, CONFIG.MaxTotalSlots do
+	for i = 1, CONFIG.MaxHotbarSlots do
 		if BoundSlots[i] == nil then return i end
 	end
 	return nil
@@ -396,13 +274,17 @@ local function autoBindInitial()
 	local backpack = player:FindFirstChild("Backpack")
 	if backpack then
 		for _, tool in ipairs(backpack:GetChildren()) do
-			autoBindTool(tool)
+			if tool:IsA("Tool") then
+				autoBindTool(tool)
+			end
 		end
 	end
 	local char = player.Character
 	if char then
 		for _, tool in ipairs(char:GetChildren()) do
-			autoBindTool(tool)
+			if tool:IsA("Tool") then
+				autoBindTool(tool)
+			end
 		end
 	end
 end
@@ -495,13 +377,19 @@ local function makeSlotButton(parent, slotIndex, tool, isEquipped, layoutOrder)
 end
 
 local function updateVisuals()
-	for _, v in pairs(hotbarFrame:GetChildren()) do
-		if v:IsA("GuiButton") and v.Name ~= "BackpackBtn" and v.Name ~= "EyeBtn" then
-			v:Destroy()
-		end
+	cleanSlots()
+
+	local totalTools = getTotalTools()
+	-- 🛡️ Jika player belum punya tools/barang, sembunyikan seluruh GUI
+	if totalTools == 0 then
+		mainContainer.Visible = false
+		return
 	end
-	for _, v in pairs(invInner:GetChildren()) do
-		if v:IsA("GuiButton") then
+
+	mainContainer.Visible = true
+
+	for _, v in pairs(hotbarFrame:GetChildren()) do
+		if v:IsA("GuiButton") and v.Name ~= "EyeBtn" then
 			v:Destroy()
 		end
 	end
@@ -510,16 +398,11 @@ local function updateVisuals()
 	local equippedTool = char and char:FindFirstChildOfClass("Tool")
 
 	local highestSlot = 0
-	for i = 1, CONFIG.MaxTotalSlots do
+	for i = 1, CONFIG.MaxHotbarSlots do
 		if BoundSlots[i] ~= nil then highestSlot = i end
 	end
 
-	local hotbarHighest = math.min(highestSlot, CONFIG.MaxHotbarSlots)
-	local hasOverflow = highestSlot > CONFIG.MaxHotbarSlots
-
-	hotbarFrame.Visible = true
-
-	for i = 1, hotbarHighest do
+	for i = 1, highestSlot do
 		local tool = BoundSlots[i]
 		local isEquipped = tool and (tool == equippedTool)
 		local btn = makeSlotButton(hotbarFrame, i, tool, isEquipped, i)
@@ -535,43 +418,6 @@ local function updateVisuals()
 			end
 		end
 	end
-
-	if hasOverflow then
-		local invSlotCount = highestSlot - CONFIG.MaxHotbarSlots
-		local cols = CONFIG.InventoryColumns
-		local totalCols = math.min(invSlotCount, cols)
-		local cellW = CONFIG.SlotSize * totalCols + CONFIG.Padding * (totalCols - 1) + CONFIG.Padding * 2
-		invInner.Size = UDim2.new(0, cellW, 0, 0)
-		invInner.AutomaticSize = Enum.AutomaticSize.Y
-
-		for i = CONFIG.MaxHotbarSlots + 1, highestSlot do
-			local tool = BoundSlots[i]
-			local isEquipped = tool and (tool == equippedTool)
-			makeSlotButton(invInner, i, tool, isEquipped, i - CONFIG.MaxHotbarSlots)
-		end
-	end
-
-	local bbActive = isInventoryOpen and hasOverflow
-
-	if isHotbarCollapsed then
-		backpackBtn.Size = UDim2.new(0, 0, 0, CONFIG.SlotSize)
-		backpackBtn.BackgroundTransparency = 1
-		backpackBtn.Visible = false
-		bbStroke.Transparency = 1
-		if backpackBtn:FindFirstChild("Icon") then backpackBtn.Icon.ImageTransparency = 1 end
-	else
-		backpackBtn.Size = UDim2.new(0, CONFIG.SlotSize, 0, CONFIG.SlotSize)
-		backpackBtn.BackgroundTransparency = bbActive and 0 or 0.1
-		backpackBtn.Visible = true
-		bbStroke.Transparency = 0
-		if backpackBtn:FindFirstChild("Icon") then backpackBtn.Icon.ImageTransparency = 0 end
-	end
-
-	backpackBtn.BackgroundColor3 = bbActive and Color3.fromRGB(25, 25, 25) or CONFIG.Colors.Container
-
-	if not hasOverflow and isInventoryOpen then
-		setInventoryVisible(false, true)
-	end
 end
 
 UserInputService.InputBegan:Connect(function(input, processed)
@@ -583,7 +429,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
 			[Enum.KeyCode.Seven]=7,[Enum.KeyCode.Eight]=8,[Enum.KeyCode.Nine]=9
 		}
 		local slotNum = map[input.KeyCode]
-		if slotNum and not isHotbarCollapsed and hasToolsAccess() then
+		if slotNum and not isHotbarCollapsed and getTotalTools() > 0 then
 			local tool = BoundSlots[slotNum]
 			if tool then
 				playSound()
@@ -603,10 +449,14 @@ local function hookEvents()
 	local char = player.Character or player.CharacterAdded:Wait()
 
 	backpack.ChildAdded:Connect(function(child)
-		task.defer(function() cleanSlots() autoBindTool(child) updateVisuals() end)
+		if child:IsA("Tool") then
+			task.defer(function() cleanSlots() autoBindTool(child) updateVisuals() end)
+		end
 	end)
-	backpack.ChildRemoved:Connect(function()
-		task.defer(function() cleanSlots() updateVisuals() end)
+	backpack.ChildRemoved:Connect(function(child)
+		if child:IsA("Tool") then
+			task.defer(function() cleanSlots() updateVisuals() end)
+		end
 	end)
 	char.ChildAdded:Connect(function(child)
 		if child:IsA("Tool") then
@@ -627,9 +477,6 @@ if player.Character then
 end
 
 player.CharacterAdded:Connect(function()
-	if hasToolsAccess() then
-		mainContainer.Visible = true
-	end
 	BoundSlots = {}
 	task.wait(0.5)
 	autoBindInitial()
@@ -640,3 +487,15 @@ end)
 player.CharacterRemoving:Connect(function()
 	mainContainer.Visible = false
 end)
+
+RunService.RenderStepped:Connect(function(dt)
+	if mainContainer.Visible and not isHotbarCollapsed then
+		hbGrad.Rotation = (hbGrad.Rotation + CONFIG.BorderSpeed * dt) % 360
+		for _, v in pairs(hotbarFrame:GetChildren()) do
+			if v:IsA("GuiButton") and v:FindFirstChild("UIStroke") and v.UIStroke:FindFirstChild("BorderAnim") then
+				v.UIStroke.BorderAnim.Rotation = (v.UIStroke.BorderAnim.Rotation + CONFIG.BorderSpeed * dt) % 360
+			end
+		end
+	end
+end)
+

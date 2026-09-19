@@ -22,6 +22,7 @@ function MusicDispatcher.new(remotes, config, managers)
 	self.playbackManager = managers.playbackManager
 	self.favoriteManager = managers.favoriteManager
 	self.systemState = managers.systemState
+	self.playlistManager = managers.playlistManager
 
 	return self
 end
@@ -137,6 +138,29 @@ function MusicDispatcher:SyncToPlayer(player)
 			self:SendToClient(player, "ADMIN_BUTTON_UPDATE", {text = "Unblock"})
 		end
 	end
+
+	-- 🚀 SMART BACKGROUND BUFFER: Beritahu client lagu berikutnya untuk di-preload
+	task.defer(function()
+		if not validatePlayer(player) then return end
+		local nextSongId = nil
+		local queue = self.queueManager:GetQueue()
+		if queue and #queue > 0 and queue[1] then
+			local queued = queue[1]
+			local mData = queued.musicData or queued
+			nextSongId = mData.id
+		elseif self.playlistManager then
+			local playlistSong = self.playlistManager:PeekNextSong()
+			if playlistSong then
+				nextSongId = playlistSong.id
+			end
+		end
+
+		if nextSongId and tostring(nextSongId) ~= "" then
+			self:SendToClient(player, "PRELOAD_SONG", {
+				soundId = tostring(nextSongId)
+			})
+		end
+	end)
 end
 
 return MusicDispatcher

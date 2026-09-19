@@ -33,9 +33,28 @@ local SharedModules = ReplicatedStorage:WaitForChild("Modules")
 local AnimatorUtils = require(SharedModules:WaitForChild("AnimatorUtils"))
 
 -- ============================================
--- BUILD ANIMATION TABLE
+-- BUILD ANIMATION TABLE & O(1) LOOKUP CACHE
 -- ============================================
 local loadedAnimations = AnimationLoader.loadAnimations()
+local loadedAnimationsById = {}
+local loadedAnimationsByNormId = {}
+
+local function normalizeAnimId(id)
+	if not id then return "" end
+	local s = tostring(id):gsub("%s+", "")
+	local num = s:match("%d+")
+	return num or s
+end
+
+for _, anim in pairs(loadedAnimations) do
+	if anim and anim:IsA("Animation") and anim.AnimationId ~= "" then
+		loadedAnimationsById[anim.AnimationId] = anim
+		local norm = normalizeAnimId(anim.AnimationId)
+		if norm ~= "" then
+			loadedAnimationsByNormId[norm] = anim
+		end
+	end
+end
 
 -- ============================================
 -- RATE LIMIT DITANGANI OLEH REMOTE EVENT MANAGER
@@ -52,17 +71,22 @@ animationStartRE.OnServerEvent:Connect(function(player, animationId, shouldPlay,
 
 	local animation = nil
 	if animationId then
-		-- Cari di loadedAnimations dulu (lebih efisien dari buat baru)
-		for _, anim in pairs(loadedAnimations) do
-			if anim.AnimationId == animationId then
-				animation = anim
-				break
-			end
+		-- 🔥 OPTIMASI 50+ PLAYERS: O(1) Instant Lookup (Tanpa scan linear loop)
+		animation = loadedAnimationsById[animationId]
+		if not animation then
+			local norm = normalizeAnimId(animationId)
+			animation = loadedAnimationsByNormId[norm]
 		end
-		-- Fallback: buat Animation baru jika tidak ketemu
+
+		-- Fallback: buat Animation baru dan cache agar pemanggilan berikutnya langsung O(1)
 		if not animation then
 			animation = Instance.new("Animation")
 			animation.AnimationId = animationId
+			loadedAnimationsById[animationId] = animation
+			local norm = normalizeAnimId(animationId)
+			if norm ~= "" then
+				loadedAnimationsByNormId[norm] = animation
+			end
 		end
 	end
 	AnimationController.executeAnimation(player, animation, shouldPlay, speed, loadedAnimations, isSpam, clientStartTime)

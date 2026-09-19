@@ -3,6 +3,7 @@ local RoleSystem = {}
 local DataStoreService = game:GetService("DataStoreService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 -- ====================================
 -- AUTO-CREATE NOTIFICATION REMOTE
@@ -29,18 +30,14 @@ local DEBUG_MODE = false -- Biarkan false agar F9 Console bersih saat game live!
 -- ====================================
 RoleSystem.Config = {
 	GamePasses = {
-		VVIP = {1799395597},
-		VIP = {1800222458}
+		VIP = {1800222458, 1799395597} -- 1799395597 adalah ID VVIP lama yang sekarang otomatis jadi VIP
 	},
 	-- Developer Product (Fitur Gift/Beliin orang lain)
-	-- Masukkan ID Developer Product yang kamu buat di Creator Dashboard
 	GiftProducts = {
-		VIP = 3578052945,    -- Ganti ID Dev Product Gift VIP
-		VVIP = 3578052943    -- Ganti ID Dev Product Gift VVIP
+		VIP = 3578052945,    -- ID Dev Product Gift VIP
 	},
 	
 	ActiveGamepasses = {
-		VVIP = 1799395597,
 		VIP = 1800222458
 	},
 
@@ -49,13 +46,14 @@ RoleSystem.Config = {
 	ModeratorIds = {},
 
 	RoleHierarchy = {
-		Owner = 6,
-		Admin = 5,
-		Moderator = 4,
-		VVIP = 3,
+		Owner = 5,
+		Admin = 4,
+		Moderator = 3,
 		VIP = 2,
 		Player = 1
 	},
+
+	GroupId = 192828493, -- ID Komunitas / Grup untuk Free VIP
 
 	DATASTORE_NAME = "PlayerGiveGamePasses_v1",
 	DATASTORE_RETRY_ATTEMPTS = 3,
@@ -249,7 +247,6 @@ function RoleSystem:CachePlayerOwnership(player)
 	local userId = player.UserId
 
 	local ownership = {
-		VVIP = false,
 		VIP = false,
 		GivenPass = "None",
 		CheckedAt = os.clock()
@@ -260,11 +257,9 @@ function RoleSystem:CachePlayerOwnership(player)
 	local givenPassData = datastoreGetAsync(key, player)
 
 	if givenPassData and givenPassData.passType then
-		ownership.GivenPass = givenPassData.passType
+		ownership.GivenPass = (givenPassData.passType == "VVIP") and "VIP" or givenPassData.passType
 
-		if givenPassData.passType == "VVIP" then
-			ownership.VVIP = true
-		elseif givenPassData.passType == "VIP" then
+		if givenPassData.passType == "VIP" or givenPassData.passType == "VVIP" then
 			ownership.VIP = true
 		elseif givenPassData.passType == "Moderator" then
 			ownership.GivenPass = "Moderator"
@@ -282,37 +277,16 @@ function RoleSystem:CachePlayerOwnership(player)
 		table.insert(gamepassQueue, {
 			player = player,
 			callback = function()
-				local hasVVIP = checkAnyGamepass(player, self.Config.GamePasses.VVIP)
-
-				if hasVVIP then
-					ownership.VVIP = true
-					ownership.GivenPass = "VVIP"
-					playerOwnershipCache[userId] = ownership
-
-					if DEBUG_MODE then -- 🔥 DEBUG WRAPPER
-						print(string.format("[RoleSystem] Auto-saving VVIP purchase for user %d", userId))
-					end
-
-					-- Jangan spam DataStore untuk owner asli!
-					-- self:GivePassToPlayer(userId, "VVIP", 0)
-					if player and player.Parent then
-						self:UpdatePlayerRole(player)
-					end
-					return
-				end
-
 				local hasVIP = checkAnyGamepass(player, self.Config.GamePasses.VIP)
 				if hasVIP then
 					ownership.VIP = true
 					ownership.GivenPass = "VIP"
 					playerOwnershipCache[userId] = ownership
 
-					if DEBUG_MODE then -- 🔥 DEBUG WRAPPER
+					if DEBUG_MODE then
 						print(string.format("[RoleSystem] Auto-saving VIP purchase for user %d", userId))
 					end
 
-					-- Jangan spam DataStore untuk owner asli!
-					-- self:GivePassToPlayer(userId, "VIP", 0)
 					if player and player.Parent then
 						self:UpdatePlayerRole(player)
 					end
@@ -344,7 +318,6 @@ function RoleSystem:UpdateOwnershipCache(player, gamepassType, owned)
 
 	if not playerOwnershipCache[userId] then
 		playerOwnershipCache[userId] = {
-			VVIP = false,
 			VIP = false,
 			GivenPass = "None",
 			CheckedAt = os.clock()
@@ -403,11 +376,16 @@ function RoleSystem:GetPlayerRole(player)
 		return "Moderator"
 	end
 
-	if ownership.GivenPass == "VVIP" or ownership.VVIP then
-		return "VVIP"
+	if ownership.GivenPass == "VIP" or ownership.GivenPass == "VVIP" or ownership.VIP then
+		return "VIP"
 	end
 
-	if ownership.GivenPass == "VIP" or ownership.VIP then
+	-- Priority 5: Anggota Komunitas / Grup (Free VIP)
+	local targetGroupId = self.Config.GroupId or 192828493
+	local ok, res = pcall(function()
+		return player:IsInGroup(targetGroupId)
+	end)
+	if ok and res then
 		return "VIP"
 	end
 
@@ -445,11 +423,14 @@ function RoleSystem:UpdatePlayerRole(player)
 end
 
 -- ====================================
--- GIVE PASS MANAGEMENT (EXTENDED: VIP, VVIP, Moderator, Admin)
+-- GIVE PASS MANAGEMENT (EXTENDED: VIP, Moderator, Admin)
 -- ====================================
 function RoleSystem:GivePassToPlayer(targetUserId, passType, giverUserId)
-	-- FIX: "Admin" sekarang valid sebagai passType
-	if passType ~= "VIP" and passType ~= "VVIP" and passType ~= "Moderator" and passType ~= "Admin" then
+	if passType == "VVIP" then
+		passType = "VIP" -- Konversi VVIP ke VIP
+	end
+
+	if passType ~= "VIP" and passType ~= "Moderator" and passType ~= "Admin" then
 		warn(string.format("[RoleSystem] GivePassToPlayer: invalid passType '%s'", tostring(passType)))
 		return false, "Invalid pass type"
 	end
@@ -537,7 +518,6 @@ end
 function RoleSystem:GetOwnershipStats()
 	local stats = {
 		totalCached   = 0,
-		vvipCount     = 0,
 		vipCount      = 0,
 		givenPassCount = 0,
 		moderatorCount = 0,
@@ -547,8 +527,7 @@ function RoleSystem:GetOwnershipStats()
 	for userId, ownership in pairs(playerOwnershipCache) do
 		stats.totalCached = stats.totalCached + 1
 
-		if ownership.VVIP then stats.vvipCount = stats.vvipCount + 1 end
-		if ownership.VIP  then stats.vipCount  = stats.vipCount  + 1 end
+		if ownership.VIP then stats.vipCount = stats.vipCount + 1 end
 
 		if ownership.GivenPass ~= "None" then
 			stats.givenPassCount = stats.givenPassCount + 1
@@ -600,5 +579,56 @@ game:GetService("Players").PlayerRemoving:Connect(function(player)
 	-- Variabel playerOwnershipCache ada di scope file ini
 	RoleSystem:InvalidateOwnershipCache(player.UserId)
 end)
+
+-- ====================================
+-- REMOTE CHECK GROUP VIP (INVOKED MID-GAME)
+-- ====================================
+local RemotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
+if not RemotesFolder then
+	RemotesFolder = Instance.new("Folder")
+	RemotesFolder.Name = "Remotes"
+	RemotesFolder.Parent = ReplicatedStorage
+end
+
+local checkGroupVIPRemote = RemotesFolder:FindFirstChild("CheckGroupVIP")
+if not checkGroupVIPRemote then
+	checkGroupVIPRemote = Instance.new("RemoteFunction")
+	checkGroupVIPRemote.Name = "CheckGroupVIP"
+	checkGroupVIPRemote.Parent = RemotesFolder
+end
+
+if RunService:IsServer() then
+	checkGroupVIPRemote.OnServerInvoke = function(player)
+		local targetGroupId = RoleSystem.Config.GroupId or 192828493
+		local isMember = false
+
+		local ok, res = pcall(function()
+			return player:IsInGroup(targetGroupId)
+		end)
+		if ok and res then
+			isMember = true
+		else
+			local GroupService = game:GetService("GroupService")
+			local ok2, groups = pcall(function()
+				return GroupService:GetGroupsAsync(player.UserId)
+			end)
+			if ok2 and groups then
+				for _, g in ipairs(groups) do
+					if g.Id == targetGroupId then
+						isMember = true
+						break
+					end
+				end
+			end
+		end
+
+		if isMember then
+			RoleSystem:UpdatePlayerRole(player)
+			return true, "Selamat! Kamu telah bergabung di komunitas dan mendapatkan VIP Gratis!"
+		else
+			return false, "Kamu belum bergabung ke grup komunitas."
+		end
+	end
+end
 
 return RoleSystem

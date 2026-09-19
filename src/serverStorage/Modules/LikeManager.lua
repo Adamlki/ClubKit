@@ -141,6 +141,15 @@ function LikeManager.ProcessLike(liker, targetPlayer)
 	-- Mark as dirty
 	playerDirtyFlags[likerId] = true
 	playerDirtyFlags[targetPlayer.UserId] = true
+
+	-- Increment Daily Likes OrderedDataStore
+	task.spawn(function()
+		local dailyKey = "PlayerLikes_Daily_" .. os.date("!%Y_%m_%d")
+		local dailyStore = DataStoreService:GetOrderedDataStore(dailyKey)
+		pcall(function()
+			dailyStore:IncrementAsync(targetId, 1)
+		end)
+	end)
 	
 	return true, "Success"
 end

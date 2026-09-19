@@ -182,9 +182,8 @@ task.spawn(function()
 		if timePassed >= reportInterval then
 			timePassed = 0
 			Logger:Info(string.format(
-				"Ownership Stats - Cached: %d, VVIP: %d, VIP: %d, Given: %d",
+				"Ownership Stats - Cached: %d, VIP: %d, Given: %d",
 				ownershipStats.totalCached,
-				ownershipStats.vvipCount,
 				ownershipStats.vipCount,
 				ownershipStats.givenPassCount
 				))

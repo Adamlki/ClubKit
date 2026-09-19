@@ -33,11 +33,10 @@ function GiftManager:Init(ProcessReceiptHandler)
 
 		if giftData then
 			local isVIP = (productId == RoleSystem.Config.GiftProducts.VIP)
-			local isVVIP = (productId == RoleSystem.Config.GiftProducts.VVIP)
 
-			if isVIP or isVVIP then
+			if isVIP then
 				local targetId = giftData.TargetId
-				local giftType = giftData.GiftType
+				local giftType = "VIP"
 
 				-- Berikan hadiah ke target via RoleSystem
 				local success = RoleSystem:GivePassToPlayer(targetId, giftType, giverId)

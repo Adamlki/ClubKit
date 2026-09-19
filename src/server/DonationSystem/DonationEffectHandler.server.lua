@@ -198,9 +198,10 @@ local function fireToPlayer(targetPlayer, donationData)
 end
 
 local function fireToAllPlayers(donationData)
-	for _, p in ipairs(Players:GetPlayers()) do
-		fireToPlayer(p, donationData)
-	end
+	-- 🔥 OPTIMASI 50+ PLAYERS: Native C++ Engine Multicast (1 call tanpa 50x pcall loop)
+	pcall(function()
+		CinematicRemote:FireAllClients(donationData)
+	end)
 end
 
 -- ============================================================
@@ -318,7 +319,7 @@ local function getSaweriaRangeByPrice(price)
 	return nil
 end
 
-local function grantSaweriaEffect(player, rpAmount)
+local function grantSaweriaEffect(playerOrName, rpAmount)
 	local range = getSaweriaRangeByPrice(rpAmount)
 	if not range then return false end
 
@@ -326,9 +327,31 @@ local function grantSaweriaEffect(player, rpAmount)
 		and (range.cinematicDuration or CONFIG.LEVEL4_DURATION)
 		or  CONFIG.DISPLAY_DURATION
 
-	task.spawn(function()
-		spawnDonationObject(player, range.templateName, duration)
-	end)
+	local donorPlayer = nil
+	local donorDisplayName = "Saweria Donator"
+	local donorUserId = 1
+
+	if typeof(playerOrName) == "Instance" and playerOrName:IsA("Player") then
+		donorPlayer = playerOrName
+		donorDisplayName = playerOrName.DisplayName
+		donorUserId = playerOrName.UserId
+	elseif type(playerOrName) == "string" then
+		donorDisplayName = playerOrName
+		donorPlayer = Players:FindFirstChild(playerOrName)
+		if donorPlayer then
+			donorUserId = donorPlayer.UserId
+		else
+			pcall(function()
+				donorUserId = Players:GetUserIdFromNameAsync(playerOrName)
+			end)
+		end
+	end
+
+	if donorPlayer then
+		task.spawn(function()
+			spawnDonationObject(donorPlayer, range.templateName, duration)
+		end)
+	end
 
 	if rpAmount >= 10000 then
 		task.spawn(function()
@@ -337,8 +360,8 @@ local function grantSaweriaEffect(player, rpAmount)
 	end
 
 	local donationData = {
-		donorName         = player.DisplayName,
-		donorUserId       = player.UserId,
+		donorName         = donorDisplayName,
+		donorUserId       = donorUserId or 1,
 		price             = rpAmount, 
 		currencyType      = "Rupiah", -- 🔥 TAMBAHAN: Tanda kalau ini Rupiah
 		levelName         = range.name,
@@ -363,6 +386,6 @@ if not SaweriaEffectEvent then
 end
 
 -- Menjalankan efek saat ada sinyal dari script DonasiSaweria
-SaweriaEffectEvent.Event:Connect(function(player, rpAmount)
-	grantSaweriaEffect(player, rpAmount)
+SaweriaEffectEvent.Event:Connect(function(playerOrName, rpAmount)
+	grantSaweriaEffect(playerOrName, rpAmount)
 end)

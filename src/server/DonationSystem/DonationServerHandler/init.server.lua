@@ -35,9 +35,10 @@ end
 -- ============================================
 -- REMOTES
 -- ============================================
-local getProductsRemote  = getOrCreate(ReplicatedStorage, "RemoteFunction", "GetDeveloperProducts")
-local broadcastRemote    = getOrCreate(ReplicatedStorage, "RemoteFunction", "BroadcastDonationMessage")
-local receiveRemote      = getOrCreate(ReplicatedStorage, "RemoteEvent",    "ReceiveDonationBroadcast")
+local getProductsRemote    = getOrCreate(ReplicatedStorage, "RemoteFunction", "GetDeveloperProducts")
+local broadcastRemote      = getOrCreate(ReplicatedStorage, "RemoteFunction", "BroadcastDonationMessage")
+local receiveRemote        = getOrCreate(ReplicatedStorage, "RemoteEvent",    "ReceiveDonationBroadcast")
+local getPlayerStatsRemote = getOrCreate(ReplicatedStorage, "RemoteFunction", "GetPlayerDonationStats")
 
 -- ============================================
 -- STATE
@@ -288,6 +289,44 @@ getProductsRemote.OnServerInvoke = function(player)
 		table.sort(cachedProducts, function(a, b) return a.Price < b.Price end)
 	end
 	return cachedProducts
+end
+
+-- ============================================
+-- REMOTES - Get Player Donation Stats (Robux + Rupiah)
+-- ============================================
+getPlayerStatsRemote.OnServerInvoke = function(clientPlayer)
+	if not clientPlayer then return {robux = 0, rupiah = 0} end
+
+	local robuxData = DonationDataStore:GetPlayerDonation(clientPlayer.UserId)
+	local totalRobux = 0
+	if robuxData then
+		totalRobux = (robuxData["Donated - Studio"] or 0) + (robuxData["Donated - Experience"] or 0)
+	end
+
+	local totalRupiah = 0
+	local ok, SaweriaAPI = pcall(function()
+		return require(game:GetService("ServerStorage"):WaitForChild("Modules"):WaitForChild("SaweriaAPI"))
+	end)
+	if ok and SaweriaAPI then
+		local okData, donations = pcall(function() return SaweriaAPI:GetDonationData() end)
+		if okData and type(donations) == "table" then
+			local pName = clientPlayer.Name:lower()
+			local pDisplay = clientPlayer.DisplayName:lower()
+			for _, d in ipairs(donations) do
+				local dName = tostring(d.donator or d.nama or d.Nama or ""):lower()
+				if dName == pName or dName == pDisplay then
+					local raw = tostring(d.amount or d.jumlah or d.Jumlah or "0"):gsub("%D", "")
+					local amt = tonumber(raw) or 0
+					totalRupiah = totalRupiah + amt
+				end
+			end
+		end
+	end
+
+	return {
+		robux = totalRobux,
+		rupiah = totalRupiah
+	}
 end
 
 -- ============================================

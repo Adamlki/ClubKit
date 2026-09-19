@@ -59,6 +59,7 @@ local function buildNetworkData(donors)
 		data[i] = {
 			UserId      = donors[i].UserId,
 			DisplayName = donors[i].DisplayName,
+			Username    = donors[i].Username,
 			Amount      = donors[i].Amount,
 			Rank        = donors[i].Rank,
 		}
@@ -73,24 +74,27 @@ function updateLeaderboard()
 	local ok, donors = pcall(function()
 		return leaderboard:GetTopDonors(TOP_ENTRIES)
 	end)
+	local okDaily, dailyDonors = pcall(function()
+		return leaderboard:GetTopDailyDonors(TOP_ENTRIES)
+	end)
 
-	if ok and donors then
-		-- Simpan data ke dalam Cache
-		cachedDonors = buildNetworkData(donors)
+	local allTimeData = (ok and donors) and buildNetworkData(donors) or {}
+	local dailyData   = (okDaily and dailyDonors) and buildNetworkData(dailyDonors) or {}
 
-		-- HANYA FIRING KE CLIENT, TIDAK ADA RENDER DI SERVER
-		updateTopBoardRemote:FireAllClients(cachedDonors)
-	else
-		warn("[LeaderboardDisplay] Gagal fetch data:", donors)
-	end
+	cachedDonors = {
+		AllTime = allTimeData,
+		Daily   = dailyData,
+	}
+
+	-- HANYA FIRING KE CLIENT, TIDAK ADA RENDER DI SERVER
+	updateTopBoardRemote:FireAllClients(cachedDonors)
 end
 
 -- ============================================
 -- KETIKA CLIENT MEMINTA DATA (Saat Baru Masuk)
 -- ============================================
 updateTopBoardRemote.OnServerEvent:Connect(function(player)
-	-- Cukup kirim data yang sudah diingat Server, jangan panggil GetTopDonors lagi!
-	if cachedDonors and #cachedDonors > 0 then
+	if cachedDonors and (cachedDonors.AllTime or #cachedDonors > 0) then
 		pcall(function()
 			updateTopBoardRemote:FireClient(player, cachedDonors)
 		end)

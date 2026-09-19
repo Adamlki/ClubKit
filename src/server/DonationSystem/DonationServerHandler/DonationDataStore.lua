@@ -117,24 +117,39 @@ function DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
 	end
 
 	if saveSuccess then
-		-- Update Memory Cache
-		local cache = PlayerDataCache[userIdStr]
-		if cache then
-			cache.DisplayName = safeDisplayName
-			cache[DonationConfig.DONATION_FIELD] = (cache[DonationConfig.DONATION_FIELD] or 0) + amount
-		end
-
-		-- 2. Papan Peringkat 3D (Dengan Sistem Retry Mandiri)
-		task.spawn(function()
-			local safeAmount = math.floor(totalAmount)
-			for attempt = 1, 3 do
-				local ok = pcall(function()
-					orderedDataStore:SetAsync(safeUserId, safeAmount)
-				end)
-				if ok then break end
-				task.wait(2)
+		-- Update Memory Cache & Papan Peringkat HANYA jika ini adalah transaksi baru (Bukan retry)
+		if isNewReceipt then
+			local cache = PlayerDataCache[userIdStr]
+			if cache then
+				cache.DisplayName = safeDisplayName
+				cache[DonationConfig.DONATION_FIELD] = (cache[DonationConfig.DONATION_FIELD] or 0) + amount
 			end
-		end)
+
+			-- 2. Papan Peringkat 3D (All Time & Daily)
+			task.spawn(function()
+				local safeAmount = math.floor(totalAmount)
+				for attempt = 1, 3 do
+					local ok = pcall(function()
+						orderedDataStore:SetAsync(safeUserId, safeAmount)
+					end)
+					if ok then break end
+					task.wait(2)
+				end
+
+				-- Daily OrderedDataStore (Hanya ditambah jika receipt baru)
+				local dailyKey = "DonationDaily_" .. os.date("!%Y_%m_%d")
+				local dailyStore = DataStoreService:GetOrderedDataStore(dailyKey, "global")
+				for attempt = 1, 3 do
+					local ok = pcall(function()
+						dailyStore:IncrementAsync(safeUserId, math.floor(amount))
+					end)
+					if ok then break end
+					task.wait(2)
+				end
+			end)
+		else
+			debugLog("DATASTORE", "Receipt sudah pernah diproses sebelumnya. Melewati penambahan Daily & Cache.")
+		end
 	end
 
 	return saveSuccess, isNewReceipt

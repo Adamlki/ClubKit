@@ -14,8 +14,8 @@ local CustomTeams = require(ServerStorage.Modules.CustomTeams)
 -- sudah ada di customTeamObjects dengan PaletteIndex yang benar.
 CustomTeams.LoadFromDataStore()
 
--- Step 2: Buat default team objects (Owner, Head Staff, Staff, VVIP, VIP, Tamu)
--- Palette index default teams: 40-45 (tidak akan pernah konflik dengan custom: 50+)
+-- Step 2: Buat default team objects (Owner, Head Staff, Staff, Sultan, VIP, Tamu)
+-- Palette index default teams: 40-46 (tidak akan pernah konflik dengan custom: 50+)
 TeamGroups.CreateDefaultTeams()
 
 -- Step 3: Append custom team objects setelah default, sync lookup table

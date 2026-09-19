@@ -4,6 +4,8 @@ local MusicModule = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChi
 local UIAlbumManager = {}
 UIAlbumManager.__index = UIAlbumManager
 
+local DEFAULT_COVER = "rbxassetid://100874885625675"
+
 function UIAlbumManager.new(albumList, albumTemplateBtn)
 	local self = setmetatable({}, UIAlbumManager)
 
@@ -12,27 +14,9 @@ function UIAlbumManager.new(albumList, albumTemplateBtn)
 	self.currentAlbum = "All Songs"
 	self.favoriteSongs = {}
 	self.onAlbumSelectedCallback = nil
-	self.albumButtons = {} -- Track album buttons for highlighting
+	self.albumButtons = {}
 
 	return self
-end
-
--- ====================================
--- HIGHLIGHT SELECTED ALBUM
--- ====================================
-function UIAlbumManager:HighlightAlbum(albumName)
-	-- Remove highlight from all buttons
-	for name, button in pairs(self.albumButtons) do
-		button.BackgroundColor3 = Color3.fromRGB(45, 45, 45) -- Default color
-		button.TextColor3 = Color3.fromRGB(200, 200, 200)
-	end
-
-	-- Highlight selected album
-	local selectedButton = self.albumButtons[albumName]
-	if selectedButton then
-		selectedButton.BackgroundColor3 = Color3.fromRGB(70, 130, 180) -- Highlight color
-		selectedButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-	end
 end
 
 -- ====================================
@@ -41,7 +25,6 @@ end
 function UIAlbumManager:LoadAlbums(favoriteSongs, silent)
 	self.favoriteSongs = favoriteSongs or {}
 
-	-- Clear existing albums
 	for _, child in ipairs(self.albumList:GetChildren()) do
 		if child:IsA("TextButton") and child ~= self.albumTemplateBtn then
 			child:Destroy()
@@ -50,72 +33,67 @@ function UIAlbumManager:LoadAlbums(favoriteSongs, silent)
 
 	self.albumButtons = {}
 
-	-- Get all albums
 	local albums = MusicModule:GetAllAlbums(self.favoriteSongs)
 
-	-- Create album buttons
 	for index, albumData in ipairs(albums) do
 		local albumBtn = self.albumTemplateBtn:Clone()
 		albumBtn.Name = "Album_" .. albumData.name
+		albumBtn.LayoutOrder = index
 		albumBtn.Visible = true
-		albumBtn.Text = string.format("%s (%d)", albumData.name, albumData.songCount)
 		albumBtn.Parent = self.albumList
 
-		-- Store button reference
+		local textWrap = albumBtn:FindFirstChild("TextWrap")
+		local titleLabel = textWrap and textWrap:FindFirstChild("AlbumTitle")
+		local countLabel = textWrap and textWrap:FindFirstChild("SongCount")
+		local thumbImg = albumBtn:FindFirstChild("AlbumThumb")
+
+		if titleLabel then
+			titleLabel.Text = albumData.name
+		end
+		if countLabel then
+			countLabel.Text = string.format("%d songs", albumData.songCount)
+		end
+		if thumbImg then
+			thumbImg.Image = albumData.cover or (MusicModule.GetAlbumCover and MusicModule:GetAlbumCover(albumData.name)) or "rbxassetid://100874885625675"
+		end
+
 		self.albumButtons[albumData.name] = albumBtn
 
 		albumBtn.MouseButton1Click:Connect(function()
-			self:SelectAlbum(albumData.name)
+			self:SelectAlbum(albumData.name, false, albumData.songCount)
 		end)
-		
-		-- 🔥 ANTI-FREEZE: Cicil pembuatan UI Album
-		if index % 3 == 0 then
-			task.wait()
-		end
 	end
 
-	-- Restore previous selection or default to "All Songs"
-	if self.albumButtons[self.currentAlbum] then
-		self:SelectAlbum(self.currentAlbum, silent)
-	else
-		self:SelectAlbum("All Songs", silent)
+	-- Restore selection or default to "All Songs"
+	if not silent then
+		self:SelectAlbum(self.currentAlbum or "All Songs", true)
 	end
 end
 
 -- ====================================
 -- SELECT ALBUM
 -- ====================================
-function UIAlbumManager:SelectAlbum(albumName, silent)
-	-- Update current album
+function UIAlbumManager:SelectAlbum(albumName, silent, songCount)
 	self.currentAlbum = albumName
 
-	-- Highlight selected album
-	self:HighlightAlbum(albumName)
+	-- Highlight active card
+	for name, btn in pairs(self.albumButtons) do
+		local stroke = btn:FindFirstChild("UIStroke")
+		if stroke then
+			stroke.Color = (name == albumName) and Color3.fromRGB(46, 210, 115) or Color3.fromRGB(40, 40, 40)
+			stroke.Thickness = (name == albumName) and 1.5 or 1
+		end
+		btn.BackgroundColor3 = (name == albumName) and Color3.fromRGB(32, 32, 32) or Color3.fromRGB(22, 22, 22)
+	end
 
-	-- Callback to update playlist
 	if not silent and self.onAlbumSelectedCallback then
-		self.onAlbumSelectedCallback(albumName)
+		local songs = MusicModule:GetAlbumSongs(albumName, self.favoriteSongs)
+		local count = songCount or (songs and #songs) or 0
+		local cover = (MusicModule.GetAlbumCover and MusicModule:GetAlbumCover(albumName)) or "rbxassetid://100874885625675"
+		self.onAlbumSelectedCallback(albumName, count, cover)
 	end
 end
 
--- ====================================
--- UPDATE FAVORITES (PRESERVE SELECTION)
--- ====================================
-function UIAlbumManager:UpdateFavorites(favoriteSongs)
-	self.favoriteSongs = favoriteSongs
-
-	-- Store current selection
-	local previousAlbum = self.currentAlbum
-
-	-- Reload albums to update "My Favorites" count silently
-	self:LoadAlbums(favoriteSongs, true)
-	
-	-- Note: LoadAlbums will restore the previous selection silently due to the true flag
-end
-
--- ====================================
--- GETTERS
--- ====================================
 function UIAlbumManager:GetCurrentAlbum()
 	return self.currentAlbum
 end
@@ -124,9 +102,11 @@ function UIAlbumManager:GetFavoriteSongs()
 	return self.favoriteSongs
 end
 
--- ====================================
--- CALLBACK SETTER
--- ====================================
+function UIAlbumManager:UpdateFavorites(favoriteSongs)
+	self.favoriteSongs = favoriteSongs or {}
+	self:LoadAlbums(self.favoriteSongs, true)
+end
+
 function UIAlbumManager:OnAlbumSelected(callback)
 	self.onAlbumSelectedCallback = callback
 end

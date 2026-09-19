@@ -32,6 +32,11 @@ local Config = {
 			MinimumHierarchy = 2 -- VIP ke atas
 		},
 		{
+			Name = "Umbrella",
+			Path = ServerStorage.Items.Umbrella,
+			MinimumHierarchy = 3 -- VIP ke atas
+		},
+		{
 			Name = "Sharky",
 			Path = ServerStorage.Items.Sharky,
 			MinimumHierarchy = 3 -- VIP ke atas
@@ -39,7 +44,7 @@ local Config = {
 		{
 			Name = "WaterGun",
 			Path = ServerStorage.Items.WaterGun,
-			MinimumHierarchy = 3 -- VVIP ke atas
+			MinimumHierarchy = 2 -- VIP ke atas
 		},
 		{
 			Name = "Heart",
@@ -50,11 +55,6 @@ local Config = {
 			Name = "Mawar",
 			Path = ServerStorage.Items.Mawar,
 			MinimumHierarchy = 2 -- VIP ke atas
-		},
-		{
-			Name = "Megaphone",
-			Path = ServerStorage.Items.Megaphone,
-			MinimumHierarchy = 3 -- VIP ke atas
 		},
 	}
 }

@@ -1,4 +1,7 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+
+local MusicModule = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("MusicModule"))
 
 local UINotificationManager = {}
 UINotificationManager.__index = UINotificationManager
@@ -84,10 +87,22 @@ function UINotificationManager:ShowNowPlayingPopup(musicData, uploaderName)
 	
 	lastPopupSongId = currentSongId
 	lastPopupTime = os.clock()
-	-- Update now playing popup
+	-- Update now playing popup dengan cover playlist tersinkronisasi
+	local albumName = musicData.album
+	if (not albumName or albumName == "") and musicData.id then
+		local songObj = MusicModule:GetMusicById(musicData.id)
+		if songObj and songObj.album then
+			albumName = songObj.album
+		end
+	end
+
+	local playlistCover = (albumName and MusicModule:GetAlbumCover(albumName))
+		or (musicData.sampul and musicData.sampul ~= "" and musicData.sampul)
+		or MusicModule:GetAlbumCover("All Songs")
+
 	self.npSongTitle.Text = musicData.judul or "Unknown"
 	self.npRequester.Text = uploaderName or "Unknown"
-	self.npImage.Image = musicData.sampul or ""
+	self.npImage.Image = playlistCover
 
 	-- Cleanup previous animation
 	self:CleanupTween()

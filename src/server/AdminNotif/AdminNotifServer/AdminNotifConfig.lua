@@ -9,10 +9,9 @@ MessageConfig.Access = {
 
 	-- Hierarki role (semakin besar angka = semakin tinggi)
 	RoleHierarchy = {
-		Owner     = 6,
-		Admin     = 5,
-		Moderator = 4,
-		VVIP      = 3,
+		Owner     = 5,
+		Admin     = 4,
+		Moderator = 3,
 		VIP       = 2,
 		Player    = 1
 	}
@@ -28,7 +27,6 @@ MessageConfig.Timer = {
 		Owner     = 0,
 		Admin     = 15,
 		Moderator = 30,
-		VVIP      = 60,   -- VVIP harus tunggu 60 detik
 		VIP       = 120,  -- VIP harus tunggu 120 detik
 		Player    = 360
 	},
@@ -52,10 +50,6 @@ MessageConfig.RoleDisplay = {
 	Moderator = {
 		Text  = "Staff",
 		Color = Color3.fromRGB(0, 100, 255),
-	},
-	VVIP = {
-		Text  = "VVIP",
-		Color = Color3.fromRGB(255, 215, 0),
 	},
 	VIP = {
 		Text  = "VIP",

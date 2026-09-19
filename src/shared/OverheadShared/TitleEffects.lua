@@ -10,8 +10,8 @@ function TitleEffects:ApplySolidColor(titleLabel, baseColor)
 	local oldAnimator = titleLabel:FindFirstChild("GradientAnimator")
 	if oldAnimator then oldAnimator:Destroy() end
 
-	-- 3. Terapkan Warna Solid!
-	titleLabel.TextColor3 = baseColor or Color3.fromRGB(255, 255, 255)
+	-- 3. Terapkan Warna Solid (Selalu Putih Bersih)
+	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 end
 
 -- ==========================================================

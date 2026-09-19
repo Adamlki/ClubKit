@@ -17,75 +17,130 @@ if not updateLikeBoardRemote then
 	updateLikeBoardRemote.Parent = ReplicatedStorage
 end
 
--- Cache untuk DisplayName
-local displayNameCache = {}
-local cachedTopLikes = {}
+-- Cache untuk UserInfo (DisplayName & Username)
+local userInfoCache = {}
+local cachedTopLikes = {
+	AllTime = {},
+	Daily = {},
+}
 
-local function updateLeaderboardBoard()
-	-- Tarik data dari OrderedDataStore
+local function resolveUserInfos(userIds)
+	local missingIds = {}
+	for _, id in ipairs(userIds) do
+		if not userInfoCache[id] then
+			local player = Players:GetPlayerByUserId(id)
+			if player then
+				userInfoCache[id] = {
+					DisplayName = player.DisplayName,
+					Username = player.Name,
+				}
+			else
+				table.insert(missingIds, id)
+			end
+		end
+	end
+
+	if #missingIds > 0 then
+		-- Batasi batch maksimal 100 ID per request ke UserService
+		for i = 1, #missingIds, 100 do
+			local batch = {}
+			for j = i, math.min(i + 99, #missingIds) do
+				table.insert(batch, missingIds[j])
+			end
+
+			local success, results = pcall(function()
+				return UserService:GetUserInfosByUserIdsAsync(batch)
+			end)
+
+			if success and results then
+				for _, info in ipairs(results) do
+					userInfoCache[info.Id] = {
+						DisplayName = info.DisplayName,
+						Username = info.Username,
+					}
+				end
+			end
+		end
+
+		-- Fallback untuk ID yang tidak ditemukan oleh UserService (moderasi, banned, atau privasi)
+		for _, id in ipairs(missingIds) do
+			if not userInfoCache[id] then
+				local s, name = pcall(function()
+					return Players:GetNameFromUserIdAsync(id)
+				end)
+				if s and name and name ~= "" then
+					userInfoCache[id] = {
+						DisplayName = name,
+						Username = name,
+					}
+				else
+					userInfoCache[id] = {
+						DisplayName = "Player",
+						Username = "player_" .. tostring(id),
+					}
+				end
+			end
+		end
+	end
+end
+
+local function fetchOrderedLikes(store)
 	local success, pages = pcall(function()
-		return OrderedLikesStore:GetSortedAsync(false, MAX_PLAYERS)
+		return store:GetSortedAsync(false, MAX_PLAYERS)
 	end)
 
 	if not success or not pages then
-		warn("[LikeLeaderboard] Gagal menarik data likes")
-		return false
+		return {}
 	end
 
 	local pageSuccess, pageData = pcall(function() return pages:GetCurrentPage() end)
-	if not pageSuccess or not pageData then return false end
+	if not pageSuccess or not pageData then return {} end
 
-	-- Kumpulkan ID yang belum ada di cache untuk di-batch (mencegah limit API)
-	local missingIds = {}
+	local userIds = {}
 	for _, entry in ipairs(pageData) do
 		local userId = tonumber(entry.key)
 		local likes = entry.value
-		if likes > 0 and not displayNameCache[userId] then
-			local player = Players:GetPlayerByUserId(userId)
-			if player then
-				displayNameCache[userId] = player.DisplayName
-			else
-				table.insert(missingIds, userId)
-			end
+		if userId and likes and likes > 0 then
+			table.insert(userIds, userId)
 		end
 	end
 
-	-- Request batch ke UserService jika ada ID yang missing
-	if #missingIds > 0 then
-		local s, info = pcall(function()
-			return UserService:GetUserInfosByUserIdsAsync(missingIds)
-		end)
-		if s and info then
-			for _, userInfo in ipairs(info) do
-				displayNameCache[userInfo.Id] = userInfo.DisplayName
-			end
-		end
-	end
+	resolveUserInfos(userIds)
 
 	local rank = 1
-	local currentLikesData = {}
+	local results = {}
 	for _, entry in ipairs(pageData) do
 		local userId = tonumber(entry.key)
 		local likes = entry.value
-
-		-- Aturan: Jika like = 0, jangan ditampilin
-		if likes > 0 then
-			local dName = displayNameCache[userId] or ("Player_" .. tostring(userId))
-			table.insert(currentLikesData, { 
-				UserId = userId, 
-				DisplayName = dName,
-				Rank = rank, 
-				Likes = likes 
+		if userId and likes and likes > 0 then
+			local uInfo = userInfoCache[userId] or { DisplayName = "Player", Username = "player" }
+			table.insert(results, {
+				UserId = userId,
+				DisplayName = uInfo.DisplayName,
+				Username = "@" .. uInfo.Username,
+				Rank = rank,
+				Likes = likes,
 			})
 			rank = rank + 1
 		end
 	end
+	return results
+end
 
-	_G.LikesLeaderboardData = currentLikesData
-	cachedTopLikes = currentLikesData
+local function updateLeaderboardBoard()
+	local allTimeLikes = fetchOrderedLikes(OrderedLikesStore)
+	local dailyKey = "PlayerLikes_Daily_" .. os.date("!%Y_%m_%d")
+	local dailyStore = DataStoreService:GetOrderedDataStore(dailyKey)
+	local dailyLikes = fetchOrderedLikes(dailyStore)
+
+	_G.LikesLeaderboardData = allTimeLikes
+	cachedTopLikes = {
+		AllTime = allTimeLikes,
+		Daily   = dailyLikes,
+	}
 
 	-- HANYA FIRING KE CLIENT, TIDAK ADA RENDER DI SERVER
-	updateLikeBoardRemote:FireAllClients(currentLikesData)
+	updateLikeBoardRemote:FireAllClients(cachedTopLikes)
 
 	-- [PERBAIKAN]: Otomatis refresh Overhead semua pemain setiap kali data Leaderboard selesai ditarik.
 	task.spawn(function()
@@ -105,24 +160,41 @@ local function updateLeaderboardBoard()
 end
 
 -- ============================================
--- KETIKA CLIENT MEMINTA DATA (Saat Baru Masuk)
+-- KETIKA CLIENT MEMINTA DATA (Saat Baru Masuk - Rate Limited)
 -- ============================================
+local requestCooldowns = {}
+local REQUEST_COOLDOWN = 5
+
 updateLikeBoardRemote.OnServerEvent:Connect(function(player)
-	if cachedTopLikes and #cachedTopLikes > 0 then
+	if not player or not player.Parent then return end
+	local now = os.clock()
+	if now - (requestCooldowns[player.UserId] or 0) < REQUEST_COOLDOWN then
+		return -- Ignore spam requests
+	end
+	requestCooldowns[player.UserId] = now
+
+	if not cachedTopLikes or not cachedTopLikes.AllTime or #cachedTopLikes.AllTime == 0 then
+		pcall(updateLeaderboardBoard)
+	end
+	if cachedTopLikes and cachedTopLikes.AllTime and #cachedTopLikes.AllTime > 0 then
 		pcall(function()
 			updateLikeBoardRemote:FireClient(player, cachedTopLikes)
 		end)
 	end
 end)
 
+Players.PlayerRemoving:Connect(function(player)
+	requestCooldowns[player.UserId] = nil
+end)
+
 local function startLeaderboardLoop()
-	-- Beri jeda 15 detik di awal agar tidak berbarengan/bentrok dengan Auto-Save LikeManager
-	task.wait(15)
+	task.wait(2) -- Quick initial fetch on server start
+	pcall(updateLeaderboardBoard)
 	
 	-- Loop terus menerus
 	while true do
-		pcall(updateLeaderboardBoard)
 		task.wait(REFRESH_INTERVAL)
+		pcall(updateLeaderboardBoard)
 	end
 end
 

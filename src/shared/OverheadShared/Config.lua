@@ -33,6 +33,13 @@
 	Config.VERIFIED_IMAGE  = "rbxassetid://11478378840"
 
 	-- ====================================
+	-- REGION & FLAGS
+	-- ====================================
+	-- Jika true, semua pemain dari negara Eropa (Jerman, Inggris, Prancis, dll.) akan disatukan memakai bendera Uni Eropa (🇪🇺).
+	-- Jika false, pemain Eropa akan memakai bendera spesifik negara masing-masing (🇩🇪, 🇬🇧, 🇫🇷, dll.).
+	Config.USE_EU_FLAG_FOR_EUROPE = true
+
+	-- ====================================
 	-- AVATAR
 	-- ====================================
 	Config.AVATAR_SIZE = Enum.ThumbnailSize.Size420x420
@@ -46,7 +53,6 @@
 		Admin     = Color3.fromRGB(255, 85, 0),
 		Moderator = Color3.fromRGB(0, 170, 255),
 		Sultan    = Color3.fromRGB(255, 215, 0), -- [TAMBAH INI]
-		VVIP      = Color3.fromRGB(150, 0, 200),
 		VIP       = Color3.fromRGB(0, 255, 0),
 		Player    = Color3.fromRGB(200, 200, 200),
 	}
@@ -91,7 +97,6 @@
 		Admin     = "Head Staff",
 		Moderator = "Staff",
 		Sultan    = "Sultan", -- [TAMBAH INI]
-		VVIP      = "VVIP",
 		VIP       = "VIP",
 		Player    = "Tamu",
 	}
@@ -100,16 +105,11 @@
 	-- LOGO DISPLAY RULES
 	-- ====================================
 	Config.LOGO_DISPLAY = {
-		Owner = { ShowAll = true,
-			Logos = {"OwnerLogo", "DevLogo", "StaffLogo", "PremiumBadge", "VipLogo", "VvipLogo", "VerifiedBadge", "SultanLogo"} },
-		Admin = { ShowAll = true,
-			Logos = {"DevLogo", "StaffLogo", "PremiumBadge", "VipLogo", "VvipLogo", "VerifiedBadge", "SultanLogo"} },
-		Moderator = { ShowAll = true,
-			Logos = {"StaffLogo", "PremiumBadge", "VipLogo", "VvipLogo", "VerifiedBadge", "SultanLogo"} },
-		Sultan    = { ShowAll = true, Logos = {"VvipLogo", "SultanLogo"} },
-		VVIP      = { ShowAll = false, RoleLogo = "VvipLogo" },
-		VIP       = { ShowAll = false, RoleLogo = "VipLogo"  },
-		Player    = { ShowAll = false, RoleLogo = nil        },
+		Owner     = { Verified = true },
+		Admin     = { Verified = true },
+		Moderator = { Verified = true },
+		VIP       = { Verified = false },
+		Player    = { Verified = false },
 	}
 
 	-- ====================================

@@ -155,33 +155,27 @@ function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 		end
 	end
 
-	-- Jalankan sisa callback visual / broadcast
-	local allSuccess = true
+	-- Jalankan sisa callback visual / broadcast secara aman
 	for callbackName, callback in pairs(registeredCallbacks) do
 		if callbackName == "SaveToDataStore" then continue end
 
-		local ok, result = pcall(function()
-			return callback(player, productId, amount, receiptInfo)
+		task.spawn(function()
+			local ok, result = pcall(function()
+				return callback(player, productId, amount, receiptInfo)
+			end)
+			if ok and result == true then
+				debugLog("RECEIPT", "Callback OK:", callbackName)
+			else
+				debugLog("ERROR", "Callback non-fatal failed:", callbackName, result)
+			end
 		end)
-		if ok and result == true then
-			debugLog("RECEIPT", "Callback OK:", callbackName)
-		else
-			debugLog("ERROR", "Callback FAILED:", callbackName)
-			allSuccess = false
-		end
 	end
 
-	if not allSuccess then
-		debugLog("ERROR", "Satu atau lebih callback gagal. Transaksi ditunda.")
-		activeProcessing[purchaseId] = nil
-		return Enum.ProductPurchaseDecision.NotProcessedYet
-	end
-
-	-- Tandai sudah diproses (setelah semua callback selesai)
+	-- Tandai sudah diproses (database sudah aman tersimpan)
 	markReceiptProcessed(purchaseId)
 	activeProcessing[purchaseId] = nil -- Lepas kunci thread
 
-	debugLog("RECEIPT", "Receipt selesai diproses")
+	debugLog("RECEIPT", "Receipt selesai diproses dan diberikan PurchaseGranted")
 	return Enum.ProductPurchaseDecision.PurchaseGranted
 end
 

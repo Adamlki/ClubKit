@@ -1,30 +1,46 @@
+--!native
+--!optimize 2
+-- ==============================================================================
+-- GLOBAL ANTI-COLLISION SYSTEM (ZERO-LAG ARCHITECTURE)
+-- Mengatur CollisionGroup AllPlayers agar pemain tidak saling bertabrakan
+-- Menggunakan Singleton Guard & Fast-Filter Property Checking
+-- ==============================================================================
+
+if _G.__GlobalAntiCollisionLoaded then
+	return
+end
+_G.__GlobalAntiCollisionLoaded = true
+
 local PhysicsService = game:GetService("PhysicsService")
 local Players = game:GetService("Players")
 
 local GROUP_NAME = "AllPlayers"
-PhysicsService:RegisterCollisionGroup(GROUP_NAME)
-PhysicsService:CollisionGroupSetCollidable(GROUP_NAME, GROUP_NAME, false)
 
-local function optimizePart(part)
-    -- 🔥 FIX LAYERED CLOTHING: 
-    -- Pastikan part ini adalah BasePart badannya, BUKAN bagian dari Aksesoris/Baju.
-    if part:IsA("BasePart") and not part:FindFirstAncestorWhichIsA("Accessory") then
-        part.CollisionGroup = GROUP_NAME
-    end
+pcall(function()
+	PhysicsService:RegisterCollisionGroup(GROUP_NAME)
+end)
+pcall(function()
+	PhysicsService:CollisionGroupSetCollidable(GROUP_NAME, GROUP_NAME, false)
+end)
 
-    -- Khusus untuk Accessory, kita cuma matikan shadow supaya game tetap ringan
-    if part:IsA("Accessory") then
-        for _, child in ipairs(part:GetDescendants()) do
-            if child:IsA("BasePart") then
-                child.CastShadow = false
-                -- DILARANG KERAS mengganti child.CollisionGroup di sini!
-                -- Menyentuh CollisionGroup pada aksesoris adalah penyebab utama baju kaku.
-            end
-        end
-    end
+-- Fungsi ultra-cepat: hanya menyentuh properti jika nilainya BERBEDA
+local function optimizeBasePart(part)
+	if not part:IsA("BasePart") then return end
+
+	local isAccessory = part:FindFirstAncestorWhichIsA("Accessory") ~= nil
+	if not isAccessory then
+		-- Hanya ganti CollisionGroup jika belum sama (Mencegah banjir sinyal fisika)
+		if part.CollisionGroup ~= GROUP_NAME then
+			part.CollisionGroup = GROUP_NAME
+		end
+	else
+		-- Khusus aksesori, matikan shadow hanya jika masih aktif
+		if part.CastShadow then
+			part.CastShadow = false
+		end
+	end
 end
 
--- 🔥 ARCHITECT FIX: Simpan connection per-player agar bisa di-disconnect
 local playerConnections = {}
 
 local function cleanupPlayerConnections(player)
@@ -40,40 +56,44 @@ local function cleanupPlayerConnections(player)
 end
 
 local function onCharacterAdded(character, player)
-	-- Bersihkan connection karakter lama dulu
 	cleanupPlayerConnections(player)
 	playerConnections[player] = {}
 
-	-- [OPTIMASI SUPER]: Eksekusi langsung tanpa task.defer agar tidak ada jeda 1 frame (mencegah ledakan fisika saat spawn barengan)
-	for _, part in ipairs(character:GetDescendants()) do
-		-- HANYA eksekusi jika itu Part atau Aksesoris (Lebih ringan)
-		if part:IsA("BasePart") or part:IsA("Accessory") then
-			optimizePart(part)
+	-- 1. Scan awal semua bagian yang sudah ada
+	for _, inst in ipairs(character:GetDescendants()) do
+		if inst:IsA("BasePart") then
+			optimizeBasePart(inst)
 		end
 	end
 
-	-- 🔥 ARCHITECT FIX: Kita TIDAK MEMATIKAN state Humanoid (Ragdoll/Flying/dll) 
-	-- karena mematikan state bawaan Roblox sering membuat karakter nge-glitch 
-	-- saat physics engine mencoba menyelesaikan benturan dengan map yang baru loading (StreamingEnabled).
-
-	-- 🔥 ARCHITECT FIX: FILTER CERDAS ANTI-SPAM + SIMPAN CONNECTION
-	local descendantConn = character.DescendantAdded:Connect(function(part)
-		-- Langsung eksekusi, JANGAN gunakan task.defer karena aksesoris yang punya jeda 1 frame collision bisa memicu tolakan fisika!
-		if part:IsA("BasePart") or part:IsA("Accessory") then
-			optimizePart(part)
+	-- 2. Listener untuk part baru (aksesoris/tool yang baru terpasang)
+	-- Filter ketat: HANYA BasePart, TANPA loop GetDescendants rekursif
+	local conn = character.DescendantAdded:Connect(function(child)
+		if child:IsA("BasePart") then
+			optimizeBasePart(child)
 		end
 	end)
-	table.insert(playerConnections[player], descendantConn)
+	table.insert(playerConnections[player], conn)
 end
 
 Players.PlayerAdded:Connect(function(player)
-	player.CharacterAdded:Connect(function(character)
-		onCharacterAdded(character, player)
+	player.CharacterAdded:Connect(function(char)
+		onCharacterAdded(char, player)
 	end)
-	if player.Character then onCharacterAdded(player.Character, player) end
+	if player.Character then
+		onCharacterAdded(player.Character, player)
+	end
 end)
 
--- 🔥 ARCHITECT FIX: Bersihkan connections saat player keluar
+for _, player in ipairs(Players:GetPlayers()) do
+	player.CharacterAdded:Connect(function(char)
+		onCharacterAdded(char, player)
+	end)
+	if player.Character then
+		onCharacterAdded(player.Character, player)
+	end
+end
+
 Players.PlayerRemoving:Connect(function(player)
 	cleanupPlayerConnections(player)
 end)

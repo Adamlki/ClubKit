@@ -260,15 +260,14 @@ local function fetchPlayerInfo(userId, callerPlayer)
 	end)
 
 	local startTime = os.clock()
-	while completedTasks < 4 and (os.clock() - startTime) < 6 do
+	while completedTasks < 4 and (os.clock() - startTime) < 4.5 do
 		task.wait(0.1)
 	end
 
-	-- JANGAN simpan data ke cache jika gagal/timeout!
-	if completedTasks == 4 then
+	-- 🔥 OPTIMASI 50+ PLAYERS: Simpan data yang berhasil didapat ke cache
+	-- agar request berikutnya instan dari memori dan tidak mengulang request ke Roproxy
+	if completedTasks > 0 then
 		setCached(userId, rawDescription, friendsCount, followersCount, followingCount)
-	else
-		warn("[GetPlayerInfo] Roproxy Timeout untuk user:", userId)
 	end
 
 	return {
@@ -280,43 +279,11 @@ local function fetchPlayerInfo(userId, callerPlayer)
 end
 
 -- ============================================
--- PRE-FETCH SAAT PLAYER JOIN
+-- ON-DEMAND FETCH ONLY (OPTIMASI 50+ PLAYERS)
 -- ============================================
---[[
-    Saat player baru join, fetch & cache data mereka di background
-    setelah 3 detik (agar tidak menahan proses loading).
-
-    Manfaat:
-    - Ketika player lain membuka menu profil player ini, data sudah
-      ada di cache → tampil hampir instan
-    - Request tersebar di waktu join, bukan burst saat menu dibuka
-    - Mengurangi risiko rate limit roproxy
-]]
--- 🔥 NETWORK FIX: Pre-fetch DIAKTIFKAN KEMBALI dengan stagger delay
--- Menghindari burst request ke roproxy saat banyak player join bersamaan
-local function preFetchPlayer(player)
-	-- Stagger delay: 3 detik base + random 0-5 detik jitter per player
-	local staggerDelay = 3 + (player.UserId % 5)
-	task.delay(staggerDelay, function()
-		if not player or not player.Parent then return end
-		task.spawn(function()
-			local ok, err = pcall(fetchPlayerInfo, player.UserId, player)
-			if not ok then
-				-- Silently ignore pre-fetch failures (will be retried on demand)
-			end
-		end)
-	end)
-end
-
-Players.PlayerAdded:Connect(preFetchPlayer)
-
--- Pre-fetch untuk player yang sudah ada saat script pertama jalan
-for i, player in ipairs(Players:GetPlayers()) do
-	task.spawn(function()
-		task.wait(1 + i * 0.5) -- Stagger 500ms antar player
-		pcall(fetchPlayerInfo, player.UserId, player)
-	end)
-end
+-- Pre-fetch otomatis saat join dinonaktifkan agar server tidak memborbardir Roproxy
+-- dengan ratusan request saat 50 pemain bergabung (mencegah HTTP 429 & Timeout).
+-- Data hanya di-fetch secara lazy/on-demand saat ada pemain yang membuka menu profil.
 
 -- ============================================
 -- REMOTE HANDLER

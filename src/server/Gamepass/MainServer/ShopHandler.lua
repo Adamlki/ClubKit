@@ -21,12 +21,6 @@ function ShopHandler:GetShopData(player)
 	local data = {
 		success = true,
 		gamepasses = {
-			VVIP = {
-				ids = self.roleSystem.Config.GamePasses.VVIP,
-				owned = ownership.VVIP,
-				name = "VVIP Pass",
-				price = 79
-			},
 			VIP = {
 				ids = self.roleSystem.Config.GamePasses.VIP,
 				owned = ownership.VIP,
@@ -40,8 +34,8 @@ function ShopHandler:GetShopData(player)
 		}
 	}
 
-	Logger:Debug(string.format("Shop data retrieved for %s (VVIP: %s, VIP: %s)", 
-		player.Name, tostring(ownership.VVIP), tostring(ownership.VIP)))
+	Logger:Debug(string.format("Shop data retrieved for %s (VIP: %s)", 
+		player.Name, tostring(ownership.VIP)))
 
 	return data
 end
@@ -51,7 +45,7 @@ function ShopHandler:PromptPurchase(player, gamepassType)
 		return {success = false, error = "Invalid player"}
 	end
 
-	if gamepassType ~= "VVIP" and gamepassType ~= "VIP" then
+	if gamepassType ~= "VIP" then
 		return {success = false, error = "Invalid gamepass type"}
 	end
 
@@ -97,22 +91,12 @@ function ShopHandler:HandlePurchaseFinished(player, purchasedPassID, purchaseSuc
 
 	-- Determine gamepass type
 	local gamepassType = nil
-	local vvipIds = self.roleSystem.Config.GamePasses.VVIP
 	local vipIds = self.roleSystem.Config.GamePasses.VIP
 
-	for _, id in ipairs(vvipIds) do
+	for _, id in ipairs(vipIds) do
 		if id == purchasedPassID then
-			gamepassType = "VVIP"
+			gamepassType = "VIP"
 			break
-		end
-	end
-
-	if not gamepassType then
-		for _, id in ipairs(vipIds) do
-			if id == purchasedPassID then
-				gamepassType = "VIP"
-				break
-			end
 		end
 	end
 

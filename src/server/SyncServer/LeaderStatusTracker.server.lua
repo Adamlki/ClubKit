@@ -25,18 +25,6 @@ local characterConnections = {}
 local updateScheduled = false
 local lastUpdateTime = 0
 
--- ✨ Buffer untuk update leader status agar tidak spam RemoteEvent
-local pendingLeaderUpdates = {}
-task.spawn(function()
-	while task.wait(2) do
-		for plr, data in pairs(pendingLeaderUpdates) do
-			if plr and plr.Parent then
-				-- UpdateLeaderStatus:FireAllClients(plr, data.isLeader, data.followerCount)
-			end
-		end
-		table.clear(pendingLeaderUpdates)
-	end
-end)
 
 local function debug(...)
 	if CONFIG.DEBUG_ENABLED then
@@ -82,14 +70,12 @@ local function updatePlayerLeaderStatus(player)
 		if currentIsLeader ~= true or currentFollowerCount ~= followerCount then
 			player.Character:SetAttribute("IsLeader", true)
 			player.Character:SetAttribute("FollowerCount", followerCount)
-			pendingLeaderUpdates[player] = {isLeader = true, followerCount = followerCount}
 			debug("Set leader status:", player.Name, "Followers:", followerCount)
 		end
 	else
 		if currentIsLeader or currentFollowerCount > 0 then
 			player.Character:SetAttribute("IsLeader", nil)
 			player.Character:SetAttribute("FollowerCount", nil)
-			pendingLeaderUpdates[player] = {isLeader = false, followerCount = 0}
 			debug("Cleared leader status:", player.Name)
 		end
 	end
@@ -147,9 +133,6 @@ local function setupCharacterTracking(player, character)
 
 			-- ?? NOTE: No manual cache cleanup needed (weak tables auto-cleanup!)
 
-			-- Notify clients
-			pendingLeaderUpdates[player] = {isLeader = false, followerCount = 0}
-
 			-- Cleanup connections
 			cleanupCharacterConnections(character)
 		end)
@@ -192,9 +175,6 @@ Players.PlayerAdded:Connect(function(player)
 		SyncController.clearAllSyncAttributes(character)
 
 		-- ?? NOTE: No manual cache cleanup needed!
-
-		-- Notify clients
-		pendingLeaderUpdates[player] = {isLeader = false, followerCount = 0}
 
 		-- Cleanup connections
 		cleanupCharacterConnections(character)
@@ -317,11 +297,7 @@ task.spawn(function()
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player.Character then
-			-- ?? NOTE: No manual cache cleanup needed!
-
 			SyncController.clearAllSyncAttributes(player.Character)
-
-			task.wait(0.1)
 			setupCharacterTracking(player, player.Character)
 		end
 	end

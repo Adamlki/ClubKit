@@ -120,17 +120,10 @@ local function stopAutoMove()
 end
 
 -- ============================================================
--- STATIC COLOR LOOP — PENGGANTI BEAT LOOP (Sangat Ringan)
+-- NOTE: CLIENT HANDLES ALL LIGHTING VIA SERVER TIME SYNC
+-- GLightsClient.client.lua merender seluruh warna panggung secara deterministik 
+-- via workspace:GetServerTimeNow() tanpa server loop dan tanpa remote network lag.
 -- ============================================================
-local loopVersion = 0
-local function simpleColorLoop(version)
-	while isPlaying and loopVersion == version do
-		task.wait(0.5) -- Ganti warna setiap setengah detik secara konstan
-		if sound.IsPlaying and loopVersion == version then
-			nextColor()
-		end
-	end
-end
 
 -- ============================================================
 -- MUSIC EVENTS
@@ -140,14 +133,12 @@ local function onMusicStarted()
 	colorChaseStep = 0
 	currentStagePhase = 0
 	
-	-- 🔥 FIX: Gunakan Loop Version agar thread lama otomatis mati jika musik di-restart cepat
 	loopVersion = loopVersion + 1
 	local version = loopVersion
 	
 	task.delay(0.3, function()
 		if isPlaying and loopVersion == version then
 			startAutoMove()
-			task.spawn(simpleColorLoop, version) 
 		end
 	end)
 end

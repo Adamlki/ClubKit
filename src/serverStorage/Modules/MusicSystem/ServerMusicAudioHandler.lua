@@ -3,7 +3,7 @@ ServerMusicAudioHandler.__index = ServerMusicAudioHandler
 
 local CONFIG = {
 	Audio = {
-		DefaultVolume = 1,
+		DefaultVolume = 0.85,
 		DefaultPlaybackSpeed = 1.0
 	}
 }
@@ -40,7 +40,7 @@ function ServerMusicAudioHandler:CreateMusicGroup()
 		musicGroup = Instance.new("SoundGroup")
 		musicGroup.Name = "MusicGroup"
 		musicGroup.Parent = soundService
-		musicGroup.Volume = 1
+		musicGroup.Volume = 0.85
 	end
 	self.musicGroup = musicGroup
 
@@ -72,68 +72,62 @@ function ServerMusicAudioHandler:CreateServerSound()
 	self.serverSound = existingSound
 
 	-- ====================================
-	-- 🎛️ AUDIO ENGINEERING: CLUB FX CHAIN
-	-- Filosofi: Jernih, Keras, Tidak Pecah, Vokal Jelas
+	-- 🎛️ AUDIO ENGINEERING: PREMIUM HI-FI / CLUB SOUND SYSTEM
+	-- Filosofi: Bass Empuk & Bulat, Vokal Jernih, Treble Halus Anti-Cempreng, 100% Bebas Clipping
 	-- ====================================
 
-	-- 1. COMPRESSOR (Perata Volume — Anti Pecah & Anti Pelan)
-	-- Menekan bagian yang terlalu keras (anti clipping) dan mengangkat yang pelan.
-	local compressor = existingSound:FindFirstChild("ConcertCompressor")
-	if not compressor then
-		compressor = Instance.new("CompressorSoundEffect")
-		compressor.Name = "ConcertCompressor"
-		compressor.Parent = existingSound
+	-- 1. HAPUS REVERB & ECHO (Menghilangkan suara kaleng / cempreng / metallic secara total)
+	-- Lagu-lagu Roblox sudah memiliki mastering dan reverb studio dari produsernya.
+	-- Efek reverb dan delay di master bus hanya merusak fase frekuensi tinggi (comb filtering)
+	-- yang menyebabkan suara terdengar cempreng, tipis, dan bergaung seperti di dalam kaleng.
+	local oldReverb = existingSound:FindFirstChild("ConcertReverb")
+	if oldReverb then
+		oldReverb:Destroy()
 	end
-	compressor.Attack    = 0.05  -- Cukup cepat menangkap hentak bass/snare, tapi tidak membunuh transient
-	compressor.Release   = 0.15  -- Pemulihan sedang agar lagu tetap bernapas (tidak gepeng)
-	compressor.Ratio     = 4     -- Penekanan 4:1 — standar industri musik untuk mastering
-	compressor.Threshold = -15   -- Menangkap puncak suara keras di atas -15 dB
-	compressor.GainMakeup = 3    -- Kompensasi +3 dB agar volume rata tanpa pecah
 
-	-- 2. EQUALIZER (Keseimbangan Frekuensi — Anti Mendem)
-	-- Bass cukup terasa, vokal jelas, instrumen tinggi berkilau.
+	local oldEcho = existingSound:FindFirstChild("ConcertEcho")
+	if oldEcho then
+		oldEcho:Destroy()
+	end
+
+	-- 2. EQUALIZER (Warm Bass & Smooth Highs - Anti-Cempreng Tuning)
+	-- Bass empuk di low-end, vokal natural jernih di midrange, dan treble dipotong sedikit
+	-- agar simbal & vokal sibilance ("s", "c", "t") tidak menusuk telinga.
 	local eq = existingSound:FindFirstChild("ConcertEQ")
 	if not eq then
 		eq = Instance.new("EqualizerSoundEffect")
 		eq.Name = "ConcertEQ"
 		eq.Parent = existingSound
 	end
-	eq.LowGain  = 4   -- Bass +4 dB: cukup nendang tanpa mendem/clipping (sebelumnya +10, terlalu besar)
-	eq.MidGain  = 2   -- Mid +2 dB: mengangkat vokal & gitar agar tidak tenggelam oleh bass
-	eq.HighGain = 3   -- High +3 dB: menambah kejernihan/presence pada hi-hat, cymbal, vokal atas
+	eq.Priority = 1
+	eq.LowGain  = 3.5   -- Bass +3.5 dB: Dentuman sub-bass & kick empuk, bulat, nendang tapi tidak pecah
+	eq.MidGain  = 0.0   -- Mid 0.0 dB: Vokal dan instrumen tetap jernih dan berartikulasi jelas
+	eq.HighGain = -1.5  -- High -1.5 dB: Treble roll-off halus. Kunci utama mematikan suara cempreng/tajam!
 
-	-- 3. REVERB (Nuansa Ruangan Club — Tipis Saja)
-	local reverb = existingSound:FindFirstChild("ConcertReverb")
-	if not reverb then
-		reverb = Instance.new("ReverbSoundEffect")
-		reverb.Name = "ConcertReverb"
-		reverb.Parent = existingSound
+	-- 3. COMPRESSOR / LIMITER (Transparan, Anti-Clipping & Anti-Pecah)
+	-- Mencegah volume lagu yang di-upload terlalu keras agar tidak menabrak 0 dBFS (digital clipping).
+	local compressor = existingSound:FindFirstChild("ConcertCompressor")
+	if not compressor then
+		compressor = Instance.new("CompressorSoundEffect")
+		compressor.Name = "ConcertCompressor"
+		compressor.Parent = existingSound
 	end
-	reverb.DecayTime = 0.8   -- Gema pendek khas club indoor (bukan stadion)
-	reverb.Density   = 0.5   -- Kepadatan gema sedang
-	reverb.DryLevel  = 0     -- Suara asli utuh (0 dB)
-	reverb.WetLevel  = -14   -- Gema sangat halus di background, tidak mengaburkan vokal
+	compressor.Priority   = 2
+	compressor.Attack     = 0.04  -- Cukup cepat untuk menangkap spike keras, membiarkan transien kick lewat
+	compressor.Release    = 0.15  -- Natural recovery, tanpa efek pumping yang mengganggu
+	compressor.Ratio      = 2.2   -- Gentle mastering ratio (2.2:1), menjaga dinamika lagu tetap luas & hidup
+	compressor.Threshold  = -8.0  -- Ambang batas aman hanya untuk merapikan lagu yang terlalu keras
+	compressor.GainMakeup = 0.0   -- 0 dB makeup: MENJAMIN TIDAK ADA DISTORSI PECAH / DIGITAL CLIPPING!
 
-	-- 4. ECHO (Pantulan Halus — Hampir Tidak Terasa)
-	local echo = existingSound:FindFirstChild("ConcertEcho")
-	if not echo then
-		echo = Instance.new("EchoSoundEffect")
-		echo.Name = "ConcertEcho"
-		echo.Parent = existingSound
-	end
-	echo.Delay    = 0.12  -- Pantulan sangat cepat (slapback khas club)
-	echo.Feedback = 0.05  -- Hanya 1 kali pantul, tidak berulang
-	echo.DryLevel = 0     -- Suara asli utuh (0 dB)
-	echo.WetLevel = -22   -- Sangat tipis, hanya memberi kesan "ruangan hidup"
-
-	-- 5. PITCH SHIFT (Koreksi Vokal saat Speed Diubah)
+	-- 4. PITCH SHIFT (Koreksi Nada/Vokal saat Speed Diubah)
 	local pitchShift = existingSound:FindFirstChild("ConcertPitchShift")
 	if not pitchShift then
 		pitchShift = Instance.new("PitchShiftSoundEffect")
 		pitchShift.Name = "ConcertPitchShift"
 		pitchShift.Parent = existingSound
 	end
-	pitchShift.Octave = 1 -- Normal (diubah otomatis oleh sistem saat PlaybackSpeed berubah)
+	pitchShift.Priority = 3
+	pitchShift.Octave   = 1.0 -- Normal (diatur dinamis oleh playlist saat lagu diputar)
 
 	return existingSound
 end

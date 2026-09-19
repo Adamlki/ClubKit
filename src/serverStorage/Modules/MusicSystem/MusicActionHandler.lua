@@ -42,6 +42,7 @@ function MusicActionHandler.new(config, managers, dispatcher)
 	self.dispatcher = dispatcher
 	self.systemState = managers.systemState
 	self.playNextCallback = managers.playNextCallback
+	self.broadcastPreloadCallback = managers.broadcastPreloadCallback
 
 	return self
 end
@@ -226,6 +227,11 @@ function MusicActionHandler:HandleAddToQueue(player, data)
 		local queuePosition = self.queueManager:GetSize()
 		self.dispatcher:Notify(player, string.format("'%s' added to queue (Position: #%d)", musicData.judul, queuePosition))
 
+		-- 🚀 Jika lagu ini berada di posisi antrean #1 (upcoming), langsung picu preload ke semua client
+		if queuePosition == 1 and self.broadcastPreloadCallback then
+			self.broadcastPreloadCallback()
+		end
+
 		-- Auto-play if nothing is playing (Gunakan variabel isPlaying langsung, jangan method IsPlaying() untuk menghindari bias audio loading)
 		if not self.playbackManager.isPlaying then
 			task.delay(0.5, self.playNextCallback)
@@ -234,7 +240,7 @@ function MusicActionHandler:HandleAddToQueue(player, data)
 end
 
 -- ====================================
--- CONTROL NEXT (SKIP) - ✅ FIXED WITH BLOCK CHECK (VIP/VVIP CAN SKIP)
+-- CONTROL NEXT (SKIP) - ✅ FIXED WITH BLOCK CHECK (VIP CAN SKIP)
 -- ====================================
 function MusicActionHandler:HandleControlNext(player, data)
 	if not validatePlayer(player) then return end
@@ -267,7 +273,7 @@ function MusicActionHandler:HandleControlNext(player, data)
 		return
 	end
 
-	-- Regular skip vote for VIP/VVIP
+	-- Regular skip vote for VIP
 	local currentSong = self.playbackManager:GetCurrentSong()
 	if not currentSong then 
 		self.dispatcher:Notify(player, "No song is currently playing!")

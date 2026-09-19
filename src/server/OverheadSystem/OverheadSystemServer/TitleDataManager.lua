@@ -40,6 +40,40 @@ function TitleDataManager:LoadTitleData(userId)
 	return nil
 end
 
+local function serializeColor(color3)
+	if typeof(color3) == "Color3" then
+		return {
+			R = math.floor(color3.R * 255),
+			G = math.floor(color3.G * 255),
+			B = math.floor(color3.B * 255)
+		}
+	end
+	return { R = 255, G = 255, B = 255 }
+end
+
+function TitleDataManager:SaveTitleData(userId, titleData)
+	local serializedData = {
+		Title = titleData.Title or "",
+		Color = serializeColor(titleData.Color),
+		GradientEnabled = titleData.GradientEnabled or false,
+		GradientEffect = titleData.GradientEffect or "wave"
+	}
+
+	local success, err = pcall(function()
+		TitleDataStore:SetAsync(CONFIG.TITLE_DATASTORE_PREFIX .. userId, serializedData)
+	end)
+
+	if success then
+		playerTitleCache[userId] = titleData
+	end
+
+	return success, err
+end
+
+function TitleDataManager:GetCache(userId)
+	return playerTitleCache[userId]
+end
+
 function TitleDataManager:UpdateCache(userId, titleData)
 	playerTitleCache[userId] = titleData
 end

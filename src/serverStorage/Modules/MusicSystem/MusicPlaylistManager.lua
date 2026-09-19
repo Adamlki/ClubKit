@@ -68,7 +68,11 @@ function MusicPlaylistManager:GetNextSong()
 		nextSong = availableSongs[randomIndex]
 
 	else
-		-- Sequential mode
+		-- Sequential mode (Sanitasi indeks agar tidak pernah nil / out of bounds)
+		if self.playlistIndex < 1 or self.playlistIndex > #playlist then
+			self.playlistIndex = 1
+		end
+
 		nextSong = playlist[self.playlistIndex]
 
 		-- Move to next index
@@ -76,6 +80,12 @@ function MusicPlaylistManager:GetNextSong()
 		if self.playlistIndex > #playlist then
 			self.playlistIndex = 1
 		end
+	end
+
+	-- Fallback jika nextSong nil padahal playlist ada
+	if not nextSong and #playlist > 0 then
+		nextSong = playlist[1]
+		self.playlistIndex = 2
 	end
 
 	-- Mark as played

@@ -17,11 +17,20 @@ local Config = {
 	CameraSpeed = 0.5,     -- Kecepatan putaran
 }
 
-local GlobalEffectRemotes = ReplicatedStorage:WaitForChild("GlobalEffectRemotes")
-local ToggleEffectEvent = GlobalEffectRemotes:WaitForChild("ToggleEffect")
-local CameraEffectEvent = GlobalEffectRemotes:WaitForChild("CameraEffect")
-local CheckOwnerFunction = GlobalEffectRemotes:WaitForChild("CheckOwner")
-local NotificationEvent = GlobalEffectRemotes:WaitForChild("NotificationEvent")
+local GlobalEffectRemotes = ReplicatedStorage:WaitForChild("GlobalEffectRemotes", 15)
+if not GlobalEffectRemotes then
+	warn("[GlobalEffectClient] GlobalEffectRemotes folder not found!")
+	return
+end
+
+local ToggleEffectEvent = GlobalEffectRemotes:WaitForChild("ToggleEffect", 10)
+local CameraEffectEvent = GlobalEffectRemotes:WaitForChild("CameraEffect", 10)
+local CheckOwnerFunction = GlobalEffectRemotes:WaitForChild("CheckOwner", 10)
+local NotificationEvent = GlobalEffectRemotes:WaitForChild("NotificationEvent", 10)
+if not (ToggleEffectEvent and CameraEffectEvent and CheckOwnerFunction and NotificationEvent) then
+	warn("[GlobalEffectClient] One or more GlobalEffectRemotes were not found!")
+	return
+end
 
 local StarterGui = game:GetService("StarterGui")
 

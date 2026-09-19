@@ -1,5 +1,5 @@
 -- ====================================
--- VVIP ACCESSORY GIVER WITH EQUIP/UNEQUIP
+-- ACCESSORY GIVER WITH EQUIP/UNEQUIP
 -- Place in ServerScriptService
 -- ====================================
 
@@ -42,7 +42,7 @@ local Config = {
 	IncludeHigherRoles = true,
 
 	-- Storage
-	StorageTag = "VVIP_AccessoryOwned",
+	StorageTag = "AccessoryOwned",
 
 	-- Timing
 	RoleCheckDelay = 0.1
@@ -199,7 +199,7 @@ end
 -- ====================================
 AccessoryEvent.OnServerEvent:Connect(function(player, action)
 	-- 🔥 ARCHITECT FIX: Anti-Spam Micro-stutters Lag Protection
-	if not RemoteEventManager.checkRateLimit(player, "vvipHatToggle") then return end
+	if not RemoteEventManager.checkRateLimit(player, "accessoryHatToggle") then return end
 
 	if not ownsAccessory(player) then
 		debugPrint(player.Name .. " attempted to toggle without ownership", false)
@@ -228,7 +228,7 @@ if not Config.AccessoryPath then
 	return
 end
 
-debugPrint("VVIP Accessory System Initializing...", true)
+debugPrint("Accessory System Initializing...", true)
 debugPrint("Required Role: " .. Config.RequiredRole .. " | Include Higher: " .. tostring(Config.IncludeHigherRoles), true)
 
 -- Handle existing players
@@ -273,4 +273,4 @@ Players.PlayerRemoving:Connect(function(player)
 	PlayerAccessoryData[player.UserId] = nil
 end)
 
-debugPrint("VVIP Accessory System with Equip/Unequip Loaded Successfully", true)
+debugPrint("Accessory System with Equip/Unequip Loaded Successfully", true)

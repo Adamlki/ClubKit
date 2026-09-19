@@ -52,17 +52,26 @@ function SaweriaAPI:GetDonationData()
 				-- Simpan data terbaru ke ingatan Modul
 				cachedData = result.data or result
 				isFetching = false
+				print(string.format("[SaweriaAPI] ✅ Berhasil mengambil data dari Google Sheets! Total donasi: %d", type(cachedData) == "table" and #cachedData or 0))
 				return cachedData
+			else
+				warn("[SaweriaAPI] ❌ Gagal JSONDecode respon dari Google Sheets:", tostring(response):sub(1, 200))
+			end
+		else
+			local errMsg = tostring(response)
+			if errMsg:find("Http requests are not enabled") then
+				warn("[SaweriaAPI] ❌ HTTP REQUESTS BELUM DIAKTIFKAN DI ROBLOX STUDIO!")
+				warn("[SaweriaAPI] 👉 Cara aktifkan: Buka menu Home > Game Settings > Security > centang 'Allow HTTP Requests' lalu Save!")
+				break
+			else
+				warn(string.format("[SaweriaAPI] ⚠️ Percobaan ke-%d gagal HTTP: %s", attempt, errMsg))
 			end
 		end
 
 		if attempt < 3 then
 			task.wait(2 ^ attempt) -- Exponential Backoff: 2s, 4s
 		else
-			warn("[SaweriaAPI] Gagal mengambil data terbaru dari Google API setelah 3 kali percobaan (Tidak memblokir sistem).")
-			
-			-- FAILSAFE NOTIFICATION (Global Broadcast - Opsional jika ingin memberitahu semua client yang aktif)
-			-- Namun karena instruksi berfokus pada Player yang baru masuk, notifikasinya sudah dihandle penuh oleh RoleSystem (Gamepass).
+			warn("[SaweriaAPI] ❌ Gagal mengambil data terbaru dari Google API setelah 3 kali percobaan.")
 		end
 	end
 

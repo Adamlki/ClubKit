@@ -140,7 +140,10 @@ local function destroyStatue(statue)
 	end)
 end
 
-local function onUpdate(top3Data)
+local function onUpdate(rawTop3Data)
+	local top3Data = (type(rawTop3Data) == "table" and rawTop3Data.AllTime) and rawTop3Data.AllTime or rawTop3Data
+	if not top3Data then return end
+
 	currentRenderVersion = currentRenderVersion + 1
 	local myRenderVersion = currentRenderVersion
 

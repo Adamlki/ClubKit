@@ -4,20 +4,47 @@ local TweenService  = game:GetService("TweenService")
 local TextService   = game:GetService("TextService")
 local workspace     = game:GetService("Workspace")
 
+local RunService    = game:GetService("RunService")
 local DonationConfig = require(script.Parent.DonationConfig)
 
 -- ============================================
 -- REFERENSI WORKSPACE GUI (server side — selalu ketemu)
 -- ============================================
-local BoardModel     = workspace:WaitForChild("ScreenText", 10)
-local gui            = BoardModel and BoardModel:WaitForChild("ScreenMessage", 10)
-local mainframe      = gui and gui:WaitForChild("MainFrame", 10)
-local displayname    = mainframe and mainframe:WaitForChild("DisplayName", 10)
-local displaymessage = mainframe and mainframe:WaitForChild("DisplayMessage", 10)
+local gui = nil
+local mainframe = nil
+local displayname = nil
+local displaymessage = nil
 
-if not displayname or not displaymessage then
-	warn("[ScreenBoardHandler] SurfaceGui elements tidak ditemukan! Periksa struktur Workspace.")
+local function getRobuxScreenGui()
+	local folder = workspace:FindFirstChild("ScreenText")
+	if folder then
+		local part = folder:FindFirstChild("ScreenTextRobux") or folder:FindFirstChild("ScreenText")
+		if part then
+			return part:FindFirstChild("ScreenMessage")
+		end
+	end
+	local part = workspace:FindFirstChild("ScreenTextRobux", true) or workspace:FindFirstChild("ScreenText", true)
+	return part and part:FindFirstChild("ScreenMessage")
 end
+
+local function ensureElements()
+	if displayname and displaymessage and displayname.Parent and displaymessage.Parent then
+		return true
+	end
+
+	gui = getRobuxScreenGui()
+	if gui then
+		mainframe = gui:FindFirstChild("MainFrame") or gui:WaitForChild("MainFrame", 5)
+		if mainframe then
+			displayname = mainframe:FindFirstChild("DisplayName") or mainframe:WaitForChild("DisplayName", 5)
+			displaymessage = mainframe:FindFirstChild("DisplayMessage") or mainframe:WaitForChild("DisplayMessage", 5)
+		end
+	end
+
+	return displayname ~= nil and displaymessage ~= nil
+end
+
+ensureElements()
 
 -- ============================================
 -- REMOTE (tetap dibuat agar tidak error, tapi tidak dipakai untuk sync)
@@ -59,7 +86,7 @@ local FADE_OUT_TIME = 0.3
 local FADE_IN_TIME  = 0.4
 
 local function animateUpdate(newName, newMessage)
-	if not displayname or not displaymessage then return end
+	if not ensureElements() then return end
 
 	if isAnimating then
 		-- Langsung update tanpa animasi jika sedang transisi
@@ -124,8 +151,8 @@ local function filterMessage(message, fromPlayer)
 	end)
 
 	if not ok1 or not filterResult then
-		debugLog("FilterStringAsync gagal:", err1, "- pakai default message")
-		return DonationConfig.SCREEN_BOARD.DEFAULT_MESSAGE
+		debugLog("FilterStringAsync gagal:", err1, "- pakai fallback")
+		return RunService:IsStudio() and message or DonationConfig.SCREEN_BOARD.DEFAULT_MESSAGE
 	end
 
 	local filteredText
@@ -134,8 +161,8 @@ local function filterMessage(message, fromPlayer)
 	end)
 
 	if not ok2 or filteredText == nil then
-		debugLog("GetNonChatStringForBroadcastAsync gagal:", err2, "- pakai default message")
-		return DonationConfig.SCREEN_BOARD.DEFAULT_MESSAGE
+		debugLog("GetNonChatStringForBroadcastAsync gagal:", err2, "- pakai fallback")
+		return RunService:IsStudio() and message or DonationConfig.SCREEN_BOARD.DEFAULT_MESSAGE
 	end
 
 	local trimmed = filteredText:match("^%s*(.-)%s*$")
@@ -203,14 +230,23 @@ end
 -- INISIALISASI: Tampilkan pesan default saat server start
 -- ============================================
 task.spawn(function()
-	task.wait(1)
-	if displayname then
+	task.wait(1.5)
+	if ensureElements() then
 		displayname.Text = DonationConfig.SCREEN_BOARD.DEFAULT_NAME
-	end
-	if displaymessage then
 		displaymessage.Text = DonationConfig.SCREEN_BOARD.DEFAULT_MESSAGE
+		debugLog("Screen board Robux diinisialisasi dengan pesan default")
+	else
+		warn("[ScreenBoardHandler] ⚠️ ScreenTextRobux belum ditemukan saat inisialisasi awal.")
 	end
-	debugLog("Screen board diinisialisasi dengan pesan default")
 end)
+
+-- Shortcut test dari console/command bar
+_G.TestRobuxScreen = function(name, amount, msg)
+	ScreenBoardHandler:ShowDonationMessage(
+		{ UserId = 1, Name = name or "AdamRobux", DisplayName = name or "AdamRobux" },
+		amount or 100,
+		msg or "Keren banget clubnya king!"
+	)
+end
 
 return ScreenBoardHandler

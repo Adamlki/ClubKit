@@ -3,8 +3,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SoundService = game:GetService("SoundService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local ContentProvider = game:GetService("ContentProvider")
 local BridgeNet = require(game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet"))
 
+local MusicModule = require(ReplicatedStorage.Modules.MusicModule)
 local UIManager = require(script.Parent.UIManager)
 
 local MusicPlayer = {}
@@ -31,9 +33,14 @@ function MusicPlayer.new()
 	self.musicGroup = nil
 	self:SetupVolumeControl()
 
-	-- UI setup
-	local playerGui = self.player:WaitForChild("PlayerGui",30)
-	local musicGui = playerGui:WaitForChild("MusicPlayer",60)
+	-- UI setup: ambil GUI dari PlayerGui (yang otomatis di-clone oleh Roblox dari StarterGui)
+	local playerGui = self.player:WaitForChild("PlayerGui", 30)
+	local musicGui = playerGui and (playerGui:FindFirstChild("MusicPlayer") or playerGui:WaitForChild("MusicPlayer", 30))
+	if not musicGui then
+		warn("[MusicPlayer] MusicPlayer GUI tidak ditemukan di PlayerGui!")
+		return self
+	end
+
 	self.uiManager = UIManager.new(musicGui)
 
 	-- State
@@ -52,6 +59,15 @@ function MusicPlayer.new()
 	self.lastTimePosition = 0 
 	self.absoluteStartTime = 0 -- ⏱️ THE HIVE MIND: Mencatat waktu absolut server
 	self.expectedSoundId = "" -- 🔒 KUNCI ID LAGU
+	self.expectedDuration = 180 -- Fallback durasi untuk UI progress bar
+	self.lastSongChangeTime = 0 -- Catat kapan lagu terakhir berganti untuk toleransi transisi di HP
+	self.lastAutoRecoveryTime = 0
+	self._isAutoRecovering = false
+
+	-- 🚀 SMART BACKGROUND AUDIO PRELOADER (ANTI-DELAY DI HP)
+	self.preloadedCache = {}
+	self.isPreloading = false
+	self.preloadFolder = nil
 
 	-- Setup
 	self:SetupUICallbacks()
@@ -60,52 +76,117 @@ function MusicPlayer.new()
 	self:SetupChatCommands()
 	self:SetupRoleWatcher() -- ✅ NEW: Watch for role changes
 
-	-- ⏱️ THE HIVE MIND: Watchdog Pengawas Audio & Anti-Drift 0ms
+	-- 🎧 LISTENER EVENT LOADED & SOUNDID (FIX HP / MOBILE STREAMING)
+	local function bindServerSoundListeners()
+		local serverSound = SoundService:FindFirstChild("ServerMusicSound")
+		if not serverSound then return end
+
+		if not self._soundLoadedConn then
+			self._soundLoadedConn = serverSound.Loaded:Connect(function()
+				if self.expectedIsPlaying then
+					self:ForceAudioSync({
+						ServerTime = self.absoluteStartTime,
+						Duration = self.expectedDuration
+					})
+				end
+			end)
+		end
+
+		if not self._soundIdConn then
+			self._soundIdConn = serverSound:GetPropertyChangedSignal("SoundId"):Connect(function()
+				if self.expectedIsPlaying then
+					task.defer(function()
+						if serverSound.IsLoaded then
+							self:ForceAudioSync({
+								ServerTime = self.absoluteStartTime,
+								Duration = self.expectedDuration
+							})
+						end
+					end)
+				end
+			end)
+		end
+	end
+
+	bindServerSoundListeners()
+	SoundService.ChildAdded:Connect(function(child)
+		if child.Name == "ServerMusicSound" then
+			task.wait(0.2)
+			bindServerSoundListeners()
+		end
+	end)
+
+	-- ⏱️ THE HIVE MIND: Watchdog Pengawas Audio & Anti-Drift 0ms (HP / Mobile Friendly)
 	local timeSinceLastUpdate = 0
 	RunService.Heartbeat:Connect(function(dt)
 		timeSinceLastUpdate = timeSinceLastUpdate + dt
 		
-		-- Cek setiap 0.5 detik (lebih responsif mencegah lag, tidak memberatkan performa)
+		-- Cek setiap 0.5 detik
 		if timeSinceLastUpdate >= 0.5 then 
 			timeSinceLastUpdate = 0
 			
 			local serverSound = SoundService:FindFirstChild("ServerMusicSound")
 			if not serverSound then return end
 
-			-- 🔒 CEK KESESUAIAN ID (AMBIL ANGKANYA SAJA AGAR COCOK)
+			-- 🔒 CEK KESESUAIAN ID DENGAN TOLERANSI TRANSISI 3 DETIK (Mencegah stop prematur di HP)
 			local currentID = string.match(tostring(serverSound.SoundId), "%d+")
 			local expectedID = string.match(tostring(self.expectedSoundId), "%d+")
 
 			if expectedID and currentID and expectedID ~= "" then
 				if currentID ~= expectedID then
-					-- Jika ID lagu beda karena delay jaringan, STOP agar tidak bocor!
-					if serverSound.IsPlaying then
-						serverSound:Stop()
+					-- HANYA stop jika perbedaan ID bertahan lebih dari 3 detik (bukan lag jeda replikasi)
+					if (os.clock() - (self.lastSongChangeTime or 0)) > 3.0 then
+						if serverSound.IsPlaying then
+							serverSound:Stop()
+						end
 					end
-					return -- Jangan lakukan apa-apa sampai lagunya benar-benar berganti
+					return
 				end
 			end
 
 			if self.expectedIsPlaying and self.absoluteStartTime > 0 then
-				-- Kalkulasi matematis persis seperti sistem Anti-Drift Dance
 				local currentServerTime = workspace:GetServerTimeNow()
 				local realTimeElapsed = currentServerTime - self.absoluteStartTime
 				local expectedTimePos = realTimeElapsed * (serverSound.PlaybackSpeed or 1)
 
 				local maxDuration = serverSound.TimeLength
+				if maxDuration <= 0 then
+					maxDuration = self.expectedDuration or 180
+				end
 				
-				-- Validasi jika lagu masih berjalan
+				-- Validasi jika lagu masih dalam batas durasi putar
 				if maxDuration > 0 and expectedTimePos < maxDuration then
-					local currentPos = serverSound.TimePosition
-					local desync = math.abs(currentPos - expectedTimePos)
+					-- Jika sound sudah dimuat (TimeLength > 0 dan IsLoaded)
+					if serverSound.TimeLength > 0 and serverSound.IsLoaded then
+						local currentPos = serverSound.TimePosition
+						local desync = math.abs(currentPos - expectedTimePos)
 
-					-- SNAP! Jika tertinggal/mendahului > 0.15 detik, ATAU lagunya mati (buffering)
-					if desync > 0.15 or not serverSound.IsPlaying then
-						serverSound.TimePosition = math.max(0, expectedTimePos)
-						if not serverSound.IsPlaying then
-							serverSound:Play()
+						-- SNAP jika desync atau lagunya mati
+						if desync > 0.25 or not serverSound.IsPlaying then
+							pcall(function()
+								serverSound.TimePosition = math.clamp(expectedTimePos, 0, maxDuration - 0.1)
+								if not serverSound.IsPlaying then
+									serverSound:Play()
+								end
+							end)
 						end
-						-- print(string.format("[Hive Mind Music] Auto-Snap ke %.2f (Desync: %.3f)", expectedTimePos, desync))
+					else
+						-- 🚨 AUTO SELF-HEALING DI HP: Jika audio buffering/silent playback > 2.5s
+						if not serverSound.IsPlaying and (os.clock() - (self.lastSongChangeTime or 0)) > 2.5 then
+							if not self._isAutoRecovering and (os.clock() - (self.lastAutoRecoveryTime or 0)) > 6.0 then
+								self.lastAutoRecoveryTime = os.clock()
+								self._isAutoRecovering = true
+								task.spawn(function()
+									pcall(function()
+										if not serverSound.IsPlaying then
+											serverSound:Play()
+										end
+									end)
+									task.wait(0.5)
+									self._isAutoRecovering = false
+								end)
+							end
+						end
 					end
 				end
 				
@@ -147,10 +228,10 @@ function MusicPlayer:WaitForRemotes()
 	end
 
 	return {
-		DispatchEvent = remoteFolder:WaitForChild("DispatchEvent"),
-		MusicAction = remoteFolder:WaitForChild("MusicAction"),
-		MusicBroadcast = remoteFolder:WaitForChild("MusicBroadcast"),
-		MusicUpdate = remoteFolder:WaitForChild("MusicUpdate"),
+		DispatchEvent = remoteFolder:WaitForChild("DispatchEvent", 10),
+		MusicAction = remoteFolder:WaitForChild("MusicAction", 10),
+		MusicBroadcast = remoteFolder:WaitForChild("MusicBroadcast", 10),
+		MusicUpdate = remoteFolder:WaitForChild("MusicUpdate", 10),
 	}
 end
 
@@ -165,10 +246,9 @@ function MusicPlayer:SetupRoleWatcher()
 
 			-- Role hierarchy (same as server)
 			local roleHierarchyMap = {
-				Owner = 6,
-				Admin = 5,
-				Moderator = 4,
-				VVIP = 3,
+				Owner = 5,
+				Admin = 4,
+				Moderator = 3,
 				VIP = 2,
 				Player = 1
 			}
@@ -364,6 +444,11 @@ function MusicPlayer:SetupUICallbacks()
 		self:SendAction("CONTROL_NEXT", {})
 	end)
 
+	-- Reload button
+	self.uiManager:OnReload(function()
+		self:RetryAudio()
+	end)
+
 	-- Volume change (CLIENT-SIDE ONLY)
 	self.uiManager:OnVolumeChange(function(percent)
 		self.currentVolume = percent
@@ -417,6 +502,70 @@ function MusicPlayer:SetupRemoteListeners()
 end
 
 -- ====================================
+-- 🚀 SMART BACKGROUND AUDIO PRELOADER (ANTI-DELAY DI HP)
+-- ====================================
+function MusicPlayer:PreloadSong(soundId)
+	if not soundId or soundId == "" then return end
+	local idStr = string.match(tostring(soundId), "%d+")
+	if not idStr or idStr == "" then return end
+
+	-- 1. Cek apakah sudah pernah di-preload (langsung tandai true agar tidak duplikat saat event masuk beruntun)
+	if self.preloadedCache[idStr] then
+		return
+	end
+	self.preloadedCache[idStr] = true
+
+	-- 2. Jalankan secara asynchronous (task.defer) agar TIDAK MENYEBABKAN STUTTER / FREEZE
+	task.defer(function()
+		-- Hindari download bersamaan yang memberatkan koneksi HP
+		if self.isPreloading then
+			task.wait(1)
+		end
+
+		self.isPreloading = true
+
+		pcall(function()
+			if not self.preloadFolder or not self.preloadFolder.Parent then
+				local existing = SoundService:FindFirstChild("ClientAudioPreloadCache")
+				if existing and existing:IsA("Folder") then
+					self.preloadFolder = existing
+				else
+					local f = Instance.new("Folder")
+					f.Name = "ClientAudioPreloadCache"
+					f.Parent = SoundService
+					self.preloadFolder = f
+				end
+			end
+
+			-- Jangan buat jika sudah ada instance sound dengan ID yang sama
+			local existingSound = self.preloadFolder:FindFirstChild("Preload_" .. idStr)
+			if existingSound then
+				self.isPreloading = false
+				return
+			end
+
+			-- Batasi maksimal 3 sound cache agar hemat RAM di HP
+			local existingSounds = self.preloadFolder:GetChildren()
+			if #existingSounds >= 3 then
+				existingSounds[1]:Destroy()
+			end
+
+			-- Buat sound instance tersembunyi & tanpa suara (Volume = 0)
+			local preloadSound = Instance.new("Sound")
+			preloadSound.Name = "Preload_" .. idStr
+			preloadSound.SoundId = "rbxassetid://" .. idStr
+			preloadSound.Volume = 0
+			preloadSound.Parent = self.preloadFolder
+
+			-- Minta ContentProvider memuat aset ke memori lokal di background
+			ContentProvider:PreloadAsync({ preloadSound })
+		end)
+
+		self.isPreloading = false
+	end)
+end
+
+-- ====================================
 -- HANDLE DISPATCH EVENT (✅ FIXED WITH NEW EVENTS)
 -- ====================================
 function MusicPlayer:HandleDispatchEvent(data)
@@ -428,16 +577,27 @@ function MusicPlayer:HandleDispatchEvent(data)
 	if eventType == "NOTIFY" then
 		self.uiManager:ShowNotification(payload.message)
 
+	elseif eventType == "PRELOAD_SONG" then
+		-- 🚀 Terima instruksi preload dari server
+		if payload.soundId then
+			self:PreloadSong(payload.soundId)
+		end
+
 	elseif eventType == "SYNC_STATE" then
 		self:SyncState(payload)
 
 	elseif eventType == "QUEUE_UPDATE" then
 		self.uiManager:UpdateQueue(payload.queue or {})
 		
-		-- 🔥 AUDIO PRELOAD DINONAKTIFKAN
-		-- Menggunakan PreloadAsync pada Sound object seringkali membuat Roblox nge-freeze/stutter
-		-- karena memaksa client mendecode audio berat di main thread.
-		-- Roblox sudah punya sistem auto-streaming bawaan yang lebih mulus tanpa PreloadAsync.
+		-- 🚀 SMART BACKGROUND AUDIO PRELOAD UNTUK ANTREAN #1
+		local queue = payload.queue or {}
+		if #queue > 0 and queue[1] then
+			local nextItem = queue[1]
+			local nextData = nextItem.musicData or nextItem
+			if nextData and nextData.id then
+				self:PreloadSong(nextData.id)
+			end
+		end
 
 	elseif eventType == "SKIP_VOTE_START" then
 		self.uiManager:ShowSkipVote(payload.initiator, payload.songTitle, payload.totalVoters)
@@ -474,11 +634,17 @@ end
 -- ====================================
 function MusicPlayer:HandleMusicBroadcast(eventType, payload)
 	if eventType == "SongUpdate" then
+		-- Simpan durasi yang dibroadcast server
+		if payload.Duration and payload.Duration > 0 then
+			self.expectedDuration = payload.Duration
+		end
+
 		-- Update UI
 		self:UpdateMusicUI(payload)
 
 		-- HANYA SINKRONISASI JIKA BUKAN KOREKSI DURASI
 		if not payload.IsCorrection then
+			self.lastSongChangeTime = os.clock()
 			-- ⏱️ SIMPAN WAKTU SERVER SEBAGAI ACUAN UTAMA (Dengan Fallback)
 			self.absoluteStartTime = payload.ServerTime or workspace:GetServerTimeNow()
 			
@@ -511,38 +677,40 @@ function MusicPlayer:ForceAudioSync(payload)
 		-- 1. Tunggu audio selesai dimuat ke memori perangkat (mencegah error di HP)
 		if not serverSound.IsLoaded then
 			local t = os.clock()
-			while not serverSound.IsLoaded and (os.clock() - t) < 5 do task.wait(0.1) end
+			while not serverSound.IsLoaded and (os.clock() - t) < 8 do
+				task.wait(0.1)
+			end
 		end
 
-		if not payload.ServerTime then return end
+		if not payload.ServerTime or not self.expectedIsPlaying then return end
 
 		-- 2. Hitung waktu absolut server
 		local currentServerTime = workspace:GetServerTimeNow()
 		local realTimeElapsed = currentServerTime - payload.ServerTime
-		local expectedTimePos = realTimeElapsed * (serverSound.PlaybackSpeed or 1) -- 👈 Dikalikan Speed
+		local expectedTimePos = realTimeElapsed * (serverSound.PlaybackSpeed or 1)
 
 		local maxDuration = payload.Duration or serverSound.TimeLength
 		if maxDuration <= 0 then maxDuration = 9999 end
 
 		-- 3. Validasi apakah lagu masih dalam durasi putar
-		if expectedTimePos > 0 and expectedTimePos < maxDuration then
-			
+		if expectedTimePos >= 0 and expectedTimePos < maxDuration then
 			local currentPos = serverSound.TimePosition
 			local desync = math.abs(currentPos - expectedTimePos)
 
-			if desync > 0.15 then
-				serverSound.TimePosition = math.max(0, expectedTimePos)
-				-- print(string.format("[Audio Sync] Snap ke %.2f (Desync: %.3f)", expectedTimePos, desync))
-			end
+			pcall(function()
+				if (desync > 0.25 or not serverSound.IsPlaying) and serverSound.IsLoaded and serverSound.TimeLength > 0 then
+					serverSound.TimePosition = math.clamp(expectedTimePos, 0, maxDuration - 0.1)
+				end
 
-			-- Mainkan lagu jika belum menyala di sisi client
-			if not serverSound.IsPlaying then
-				serverSound:Play()
-			end
+				-- Mainkan lagu jika belum menyala di sisi client
+				if not serverSound.IsPlaying then
+					serverSound:Play()
+				end
+			end)
 		else
 			-- Jika lagu sudah habis waktunya, pastikan dimatikan
 			if serverSound.IsPlaying then
-				serverSound:Stop()
+				pcall(function() serverSound:Stop() end)
 			end
 		end
 	end)
@@ -557,6 +725,16 @@ function MusicPlayer:SyncState(state)
 	-- Update queue
 	self.uiManager:UpdateQueue(state.queue or {})
 
+	-- 🚀 SMART BACKGROUND AUDIO PRELOAD UNTUK ANTREAN #1
+	local queue = state.queue or {}
+	if #queue > 0 and queue[1] then
+		local nextItem = queue[1]
+		local nextData = nextItem.musicData or nextItem
+		if nextData and nextData.id then
+			self:PreloadSong(nextData.id)
+		end
+	end
+
 	-- Update favorites
 	if state.favoriteSongs then
 		self.uiManager:UpdateFavorites(state.favoriteSongs)
@@ -564,6 +742,7 @@ function MusicPlayer:SyncState(state)
 
 	-- Update now playing (without popup)
 	if state.currentSong then
+		self.expectedDuration = (state.currentSong and state.currentSong.Duration) or state.duration or 180
 		self.uiManager:UpdateNowPlaying(state.currentSong, state.currentUploader, false)
 		self.uiManager:UpdateSongDuration(
 			state.duration or 0,
@@ -603,10 +782,16 @@ end
 -- ====================================
 function MusicPlayer:UpdateMusicUI(data)
 	-- Update UI with popup
+	local songObj = MusicModule:GetMusicById(data.SoundId)
+	local albumName = (songObj and songObj.album) or data.Album
+	local albumCover = albumName and MusicModule:GetAlbumCover(albumName)
+	local cover = albumCover or (songObj and songObj.sampul) or data.AlbumCover or CONFIG.DEFAULT_COVER
+
 	local musicData = {
 		id = data.SoundId,
 		judul = data.Title,
-		sampul = data.AlbumCover or CONFIG.DEFAULT_COVER,
+		album = albumName,
+		sampul = cover,
 		Duration = data.Duration or 0
 	}
 
@@ -625,10 +810,16 @@ end
 -- ====================================
 function MusicPlayer:SyncMusicUI(data)
 	-- Update UI without popup
+	local songObj = MusicModule:GetMusicById(data.SoundId)
+	local albumName = (songObj and songObj.album) or data.Album
+	local albumCover = albumName and MusicModule:GetAlbumCover(albumName)
+	local cover = albumCover or (songObj and songObj.sampul) or data.AlbumCover or CONFIG.DEFAULT_COVER
+
 	local musicData = {
 		id = data.SoundId,
 		judul = data.Title,
-		sampul = data.AlbumCover or CONFIG.DEFAULT_COVER,
+		album = albumName,
+		sampul = cover,
 		Duration = data.Duration or 0
 	}
 

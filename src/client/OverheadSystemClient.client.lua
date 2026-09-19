@@ -80,42 +80,60 @@ local function setupTextSizeConstraint(textLabel)
 	return c
 end
 
-local function updateLogos(labelFrame, player, role)
-	local allLogoNames = {
-		"StaffLogo", "DevLogo", "OwnerLogo",
-		"PremiumBadge", "VipLogo", "VvipLogo", "VerifiedBadge", "SultanLogo"
-	}
+local EUROPEAN_COUNTRIES = {
+	["AL"] = true, ["AD"] = true, ["AT"] = true, ["BY"] = true, ["BE"] = true,
+	["BA"] = true, ["BG"] = true, ["HR"] = true, ["CY"] = true, ["CZ"] = true,
+	["DK"] = true, ["EE"] = true, ["FI"] = true, ["FR"] = true, ["DE"] = true,
+	["GR"] = true, ["HU"] = true, ["IS"] = true, ["IE"] = true, ["IT"] = true,
+	["LV"] = true, ["LI"] = true, ["LT"] = true, ["LU"] = true, ["MT"] = true,
+	["MD"] = true, ["MC"] = true, ["ME"] = true, ["NL"] = true, ["MK"] = true,
+	["NO"] = true, ["PL"] = true, ["PT"] = true, ["RO"] = true, ["RU"] = true,
+	["SM"] = true, ["RS"] = true, ["SK"] = true, ["SI"] = true, ["ES"] = true,
+	["SE"] = true, ["CH"] = true, ["UA"] = true, ["GB"] = true, ["VA"] = true,
+	["XK"] = true, ["EU"] = true,
+}
 
-	local logos = {}
-	for _, name in ipairs(allLogoNames) do
-		logos[name] = labelFrame:FindFirstChild(name)
+local function getFlagEmoji(countryCode)
+	if not countryCode or #countryCode ~= 2 then return "🇮🇩" end
+	countryCode = string.upper(countryCode)
+
+	-- Jika pemain berasal dari negara Eropa dan fitur bendera Eropa aktif, tampilkan bendera Uni Eropa (🇪🇺)
+	local useEU = Config.USE_EU_FLAG_FOR_EUROPE
+	if useEU == nil then useEU = true end
+
+	if useEU and EUROPEAN_COUNTRIES[countryCode] then
+		return utf8.char(0x1F1EA, 0x1F1FA) -- 🇪🇺 European Union
 	end
 
-	for _, logo in pairs(logos) do
-		if logo then logo.Visible = false end
+	local b1 = string.byte(countryCode, 1)
+	local b2 = string.byte(countryCode, 2)
+	if b1 >= 65 and b1 <= 90 and b2 >= 65 and b2 <= 90 then
+		return utf8.char(0x1F1E6 + (b1 - 65), 0x1F1E6 + (b2 - 65))
 	end
+	return "🇮🇩"
+end
 
-	local roleConfig = Config.LOGO_DISPLAY[role]
-	if roleConfig then
-		if roleConfig.ShowAll and roleConfig.Logos then
-			for _, logoName in ipairs(roleConfig.Logos) do
-				if logos[logoName] then
-					logos[logoName].Visible = true
-				end
-			end
-		elseif not roleConfig.ShowAll and roleConfig.RoleLogo then
-			if logos[roleConfig.RoleLogo] then
-				logos[roleConfig.RoleLogo].Visible = true
-			end
+local function isStaffMember(role, player)
+	if role == "Owner" or role == "Admin" or role == "Moderator" then
+		return true
+	end
+	if player and player.Team then
+		local tn = string.lower(player.Team.Name)
+		if tn:find("owner") or tn:find("admin") or tn:find("staff") or tn:find("mod") or tn:find("dev") or tn:find("co%-owner") then
+			return true
 		end
 	end
+	return false
+end
 
-	if logos.PremiumBadge and checkPremium(player) then
-		logos.PremiumBadge.Visible = true
+local function checkVIP(player, role)
+	if role == "VIP" or player:GetAttribute("Overhead_HasVIP") == true then
+		return true
 	end
-	if logos.VerifiedBadge and checkGroupMember(player) then
-		logos.VerifiedBadge.Visible = true
+	if player and player.Team and string.lower(player.Team.Name):find("vip") then
+		return true
 	end
+	return false
 end
 
 local function applyTitleEffect(titleFrame, titleLabel, player, character)
@@ -125,8 +143,9 @@ local function applyTitleEffect(titleFrame, titleLabel, player, character)
 	local base = Color3.new(r, g, b)
 	
 	titleFrame.BackgroundColor3 = base
-
-	local gradientEnabled = player:GetAttribute("Overhead_TitleGradient")
+	if titleLabel then
+		titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	end
 	if not gradientEnabled then return end
 
 	local effectType = player:GetAttribute("Overhead_TitleEffect") or "wave"
@@ -153,124 +172,151 @@ end
 local function updateOverhead(player, character, overhead)
 	if not player or not character or not overhead then return end
 	
-	local mainFrame     = overhead:FindFirstChild("MainFrame")
+	local mainFrame = overhead:FindFirstChild("MainFrame")
 	if not mainFrame then return end
-	
-	local borderFrame   = mainFrame:FindFirstChild("BorderFrame")
-	local editableFrame = borderFrame and borderFrame:FindFirstChild("EditableFrame")
-	local textContainer = mainFrame:FindFirstChild("TextContainer")
-	if not textContainer then return end
-	
-	local nameFrame     = textContainer:FindFirstChild("NameFrame")
-	local playerName    = nameFrame and nameFrame:FindFirstChild("PlayerName")
-	local labelFrame    = textContainer:FindFirstChild("labelFrame")
-	local playerRole    = textContainer:FindFirstChild("PlayerRole")
-	local levelLabel    = textContainer:FindFirstChild("LevelLabel")
-	
-	-- 1. Player Name & Likes
-	local totalLikes = player:GetAttribute("TotalLikes") or 0
-	if playerName then
-		playerName.Text = player.DisplayName .. " | ❤️ " .. tostring(totalLikes)
-		playerName.TextScaled = true
-		playerName.AutomaticSize = Enum.AutomaticSize.X
-		setupTextSizeConstraint(playerName)
+
+	-- Elements from hierarchy
+	local titleFrame      = mainFrame:FindFirstChild("TitleFrame")
+	local topTags         = mainFrame:FindFirstChild("TopTagsContainer") or safeFind(mainFrame, "BorderFrame")
+	local nameContainer   = mainFrame:FindFirstChild("NameContainer") or mainFrame:FindFirstChild("TextContainer")
+	local roleLevelLabel  = mainFrame:FindFirstChild("RoleLevelLabel") or mainFrame:FindFirstChild("PlayerRole") or (nameContainer and nameContainer:FindFirstChild("PlayerRole"))
+	local legacyLevel     = mainFrame:FindFirstChild("LevelLabel") or (nameContainer and nameContainer:FindFirstChild("LevelLabel"))
+
+	if legacyLevel and legacyLevel ~= roleLevelLabel then
+		legacyLevel.Visible = false
 	end
 
-	-- 2. Role & Team
-	local role = player:GetAttribute("Overhead_Role") or "Player"
-	local roleLabel = getDisplayText(role, player)
-	if playerRole then
-		playerRole.Text = roleLabel
-		playerRole.TextColor3 = getRoleColor(role, player)
-		playerRole.Visible = roleLabel ~= ""
+	local playerName      = nameContainer and (nameContainer:FindFirstChild("PlayerName") or safeFind(nameContainer, "PlayerName"))
+	local leftGroup       = nameContainer and nameContainer:FindFirstChild("LeftGroup")
+	local countryLabel    = (leftGroup and leftGroup:FindFirstChild("CountryFlag")) or (playerName and playerName:FindFirstChild("CountryFlag")) or (nameContainer and nameContainer:FindFirstChild("CountryFlag"))
+	local rightGroup      = nameContainer and nameContainer:FindFirstChild("RightGroup")
+	local badgesContainer = rightGroup or (playerName and playerName:FindFirstChild("BadgesContainer")) or (nameContainer and (nameContainer:FindFirstChild("BadgesContainer") or nameContainer:FindFirstChild("labelFrame")))
+
+	local verifiedBadge = badgesContainer and badgesContainer:FindFirstChild("VerifiedBadge")
+	local vipLogo       = badgesContainer and badgesContainer:FindFirstChild("VipLogo")
+	local premiumBadge  = badgesContainer and badgesContainer:FindFirstChild("PremiumBadge")
+
+	-- 1. TITLE DI PALING ATAS SENDIRI (LayoutOrder = 1)
+	if not titleFrame and topTags then
+		titleFrame = safeFind(topTags, "TitleFrame")
+	end
+	local titleText = player:GetAttribute("Overhead_TitleText") or ""
+	if titleFrame then
+		if titleText ~= "" then
+			titleFrame.Visible = true
+			local label = titleFrame:FindFirstChild("TitleLabel") or safeFind(titleFrame, "TitleLabel")
+			if label then
+				label.Text = titleText
+				label.TextColor3 = Color3.fromRGB(255, 255, 255)
+				task.spawn(function() applyTitleEffect(titleFrame, label, player, character) end)
+			end
+		else
+			titleFrame.Visible = false
+		end
 	end
 
-	-- 3. Level
-	if levelLabel then
-		local level = player:GetAttribute("Overhead_Level") or 1
-		levelLabel.Text = string.format(Config.LEVEL_FORMAT, level)
-		levelLabel.Visible = true
-	end
+	-- 2. TOP DONATUR TAGS MENYAMPING / HORIZONTAL (LayoutOrder = 2)
+	if topTags then
+		local topRupiahFrame = safeFind(topTags, "TopRupiahFrame")
+		local topRobuxFrame  = safeFind(topTags, "TopRobuxFrame")
+		local topLikesFrame  = safeFind(topTags, "TopLikesFrame")
 
-	-- 4. Logos
-	if labelFrame then
-		updateLogos(labelFrame, player, role)
-	end
+		local anyTagVisible = false
 
-	-- 5. Editable Frame (Ranks & Titles)
-	if editableFrame then
-		local titleFrame      = safeFind(editableFrame, "TitleFrame") or safeFind(borderFrame, "TitleFrame")
-		local topLikesFrame   = safeFind(editableFrame, "TopLikesFrame")
-		local topRobuxFrame   = safeFind(editableFrame, "TopRobuxFrame")
-		local topRupiahFrame  = safeFind(editableFrame, "TopRupiahFrame")
-
-		-- Top Likes
-		local likesRank = player:GetAttribute("Overhead_LikesRank") or 0
-		if topLikesFrame then
-			if likesRank > 0 and likesRank <= 30 then
-				topLikesFrame.Visible = true
-				local likesLabel = safeFind(topLikesFrame, "TopLikesLabel")
-				if likesLabel then likesLabel.Text = "Likes #" .. likesRank end
-				local colorIndex = math.min(likesRank, 10)
-				local colors = Config.TOP_DONATUR_COLORS and Config.TOP_DONATUR_COLORS[colorIndex] or Config.TOP_DONATUR_COLORS[10]
-				if colors and colors.Frame then topLikesFrame.BackgroundColor3 = colors.Frame end
+		-- Top Rupiah (Saweria)
+		local saweriaRank = player:GetAttribute("Overhead_SaweriaRank") or 0
+		if topRupiahFrame then
+			if saweriaRank > 0 and saweriaRank <= (Config.SAWERIA_TOP_RANKS or 10) then
+				topRupiahFrame.Visible = true
+				anyTagVisible = true
+				local label = topRupiahFrame:FindFirstChild("TopRupiahLabel") or safeFind(topRupiahFrame, "TopRupiahLabel")
+				if label then label.Text = "👑 DONATUR #" .. saweriaRank end
 			else
-				topLikesFrame.Visible = false
+				topRupiahFrame.Visible = false
 			end
 		end
 
 		-- Top Robux
 		local robuxRank = player:GetAttribute("Overhead_RobuxRank") or 0
 		if topRobuxFrame then
-			if robuxRank > 0 and robuxRank <= Config.DONATION_TOP_RANKS then
+			if robuxRank > 0 and robuxRank <= (Config.DONATION_TOP_RANKS or 10) then
 				topRobuxFrame.Visible = true
-				local robuxLabel = safeFind(topRobuxFrame, "TopRobuxLabel")
-				if robuxLabel then robuxLabel.Text = "Robux #" .. robuxRank end
-				local colorIndex = math.min(robuxRank, 10)
-				local colors = Config.TOP_SPENDER_COLORS and Config.TOP_SPENDER_COLORS[colorIndex] or Config.TOP_SPENDER_COLORS[10]
-				if colors and colors.Frame then topRobuxFrame.BackgroundColor3 = colors.Frame end
+				anyTagVisible = true
+				local label = topRobuxFrame:FindFirstChild("TopRobuxLabel") or safeFind(topRobuxFrame, "TopRobuxLabel")
+				if label then label.Text = "💎 TOP ROBUX #" .. robuxRank end
 			else
 				topRobuxFrame.Visible = false
 			end
 		end
 
-		-- Top Rupiah (Saweria)
-		local saweriaRank = player:GetAttribute("Overhead_SaweriaRank") or 0
-		if topRupiahFrame then
-			if saweriaRank > 0 and saweriaRank <= Config.SAWERIA_TOP_RANKS then
-				topRupiahFrame.Visible = true
-				local rupiahLabel = safeFind(topRupiahFrame, "TopRupiahLabel")
-				if rupiahLabel then rupiahLabel.Text = "Rupiah #" .. saweriaRank end
-				local colorIndex = math.min(saweriaRank, 10)
-				local colors = Config.TOP_DONATUR_COLORS and Config.TOP_DONATUR_COLORS[colorIndex] or Config.TOP_DONATUR_COLORS[10]
-				if colors and colors.Frame then topRupiahFrame.BackgroundColor3 = colors.Frame end
+		-- Top Likes
+		local likesRank = player:GetAttribute("Overhead_LikesRank") or 0
+		if topLikesFrame then
+			if likesRank > 0 and likesRank <= 10 then
+				topLikesFrame.Visible = true
+				anyTagVisible = true
+				local label = topLikesFrame:FindFirstChild("TopLikesLabel") or safeFind(topLikesFrame, "TopLikesLabel")
+				if label then label.Text = "❤️ TOP LIKE #" .. likesRank end
 			else
-				topRupiahFrame.Visible = false
+				topLikesFrame.Visible = false
 			end
 		end
 
-		-- Title Custom
-		local titleText = player:GetAttribute("Overhead_TitleText") or ""
-		if titleFrame then
-			if titleText ~= "" then
-				titleFrame.Visible = true
-				local titleLabel = safeFind(titleFrame, "TitleLabel")
-				if titleLabel then
-					titleLabel.Text = titleText
-					task.spawn(function() applyTitleEffect(titleFrame, titleLabel, player, character) end)
-				end
-			else
-				titleFrame.Visible = false
-			end
-		end
+		topTags.Visible = anyTagVisible
+	end
 
-		-- Auto-hide editable frame if empty
-		local isAnyVisible = false
-		if topLikesFrame and topLikesFrame.Visible then isAnyVisible = true end
-		if topRobuxFrame and topRobuxFrame.Visible then isAnyVisible = true end
-		if topRupiahFrame and topRupiahFrame.Visible then isAnyVisible = true end
-		if titleFrame and titleFrame.Visible then isAnyVisible = true end
-		editableFrame.Visible = isAnyVisible
+	-- 3. COUNTRY FLAG & PLAYER NAME (LayoutOrder = 3)
+	if countryLabel then
+		local countryCode = player:GetAttribute("Overhead_CountryCode") or "ID"
+		countryLabel.Text = getFlagEmoji(countryCode)
+		countryLabel.Visible = true
+	end
+
+	if playerName then
+		playerName.Text = player.DisplayName
+		playerName.Visible = true
+	end
+
+	-- 4. BADGES FILTER
+	local role = player:GetAttribute("Overhead_Role") or "Player"
+	local isStaff = isStaffMember(role, player)
+	local hasVIP = checkVIP(player, role)
+
+	if verifiedBadge then
+		verifiedBadge.Visible = isStaff
+	end
+	if vipLogo then
+		vipLogo.Visible = hasVIP
+	end
+	if premiumBadge then
+		premiumBadge.Visible = checkPremium(player)
+	end
+
+	-- 5. COMBINED ROLE & LEVEL (LayoutOrder = 4)
+	-- Format: OWNER | Level 100, ADMIN | Level 100, VIP | Level 100, PLAYER | Level 100
+	local level = player:GetAttribute("Overhead_Level") or 1
+	local roleText = ""
+	local roleColor = Color3.fromRGB(215, 220, 230)
+
+	if isStaff then
+		local rawText = getDisplayText(role, player)
+		if rawText == "" or rawText == "Player" or rawText == "Tamu" then
+			rawText = role
+		end
+		roleText = string.upper(rawText)
+		roleColor = getRoleColor(role, player)
+	elseif hasVIP then
+		roleText = "VIP"
+		roleColor = Color3.fromRGB(255, 215, 0)
+	else
+		roleText = "PLAYER"
+		roleColor = Color3.fromRGB(215, 220, 230)
+	end
+
+	if roleLevelLabel then
+		roleLevelLabel.Text = string.format("%s | Level %s", roleText, tostring(level))
+		roleLevelLabel.TextColor3 = roleColor
+		roleLevelLabel.Visible = true
 	end
 end
 

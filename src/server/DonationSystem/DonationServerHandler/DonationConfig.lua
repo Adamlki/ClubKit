@@ -79,7 +79,7 @@ DonationConfig.SCREEN_BOARD = {
 	ENABLED         = true,
 	MIN_DONATION    = 13,    -- donasi minimal untuk tampil di screen board
 	NAME_FORMAT     = "%s  |  %d Robux",  -- %s = DisplayName, %d = amount
-	DEFAULT_NAME    = "NIGHTBEAT PARTY",
+	DEFAULT_NAME    = "RASA NADA",
 	DEFAULT_MESSAGE = "KATA KATA HARI INI KING!!!",
 }
 

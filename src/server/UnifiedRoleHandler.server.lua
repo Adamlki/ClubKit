@@ -75,7 +75,6 @@ local ADMIN_ROLES = { Owner = true, Admin = true, Moderator = true }
 -- "Player" berarti REMOVE role (kembalikan ke Player default)
 local VALID_ROLE_TYPES = {
 	VIP       = true,
-	VVIP      = true,
 	Moderator = true,
 	Admin     = true,
 	Player    = true,  -- Give "Player" = hapus givenPass, kembali ke default
@@ -92,25 +91,25 @@ end
 -- CEK PERMISSION UNTUK GIVE ROLE
 -- ====================================
 -- Hierarki give permission:
---   Owner     → bisa give VIP, VVIP, Moderator, Admin, Player (semua)
---   Admin     → bisa give VIP, VVIP, Moderator, Player
+--   Owner     → bisa give VIP, Moderator, Admin, Player (semua)
+--   Admin     → bisa give VIP, Moderator, Player
 --   Moderator → bisa give VIP, Player
 -- "Player" = remove givenPass dari target (downgrade ke Player default)
 -- Owner TIDAK bisa di-give role apapun (protected)
 local function canGiveRole(player, roleType)
 	local playerRole = RoleSystem:GetPlayerRole(player)
 
-	-- Owner bisa give semua (VIP, VVIP, Moderator, Admin, Player)
+	-- Owner bisa give semua (VIP, Moderator, Admin, Player)
 	if playerRole == "Owner" then
 		return true, nil
 	end
 
-	-- Admin bisa give VIP, VVIP, Moderator, Player — tapi TIDAK Admin
+	-- Admin bisa give VIP, Moderator, Player — tapi TIDAK Admin
 	if playerRole == "Admin" then
-		if roleType == "VIP" or roleType == "VVIP" or roleType == "Moderator" or roleType == "Player" then
+		if roleType == "VIP" or roleType == "Moderator" or roleType == "Player" then
 			return true, nil
 		else
-			return false, "Admin hanya dapat memberikan VIP, VVIP, Moderator, atau Player role"
+			return false, "Admin hanya dapat memberikan VIP, Moderator, atau Player role"
 		end
 	end
 
@@ -264,7 +263,7 @@ giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
 			if roleType == "Player" then
 				success, result = RoleSystem:RemovePassFromPlayer(targetUserId)
 			else
-				-- Give VIP / VVIP / Moderator / Admin
+				-- Give VIP / Moderator / Admin
 				success, result = RoleSystem:GivePassToPlayer(targetUserId, roleType, player.UserId)
 			end
 
@@ -388,12 +387,12 @@ end)
 debugPrint("============================================================")
 debugPrint("Unified Role Handler Initialized")
 debugPrint("Config: Embedded (GiveRoleConfig module removed)")
-debugPrint("DataStore: PlayerGiveGamePasses_v1 (VIP/VVIP/Moderator/Admin)")
+debugPrint("DataStore: PlayerGiveGamePasses_v1 (VIP/Moderator/Admin)")
 debugPrint("DataStore: GiveRoleTransactions_v1 (Transaction history)")
 debugPrint("Admin Panel: Direct give (NO payment required)")
 debugPrint("Permissions:")
-debugPrint("  - Owner     : Give VIP, VVIP, Moderator, Admin, Player + RemoveRole")
-debugPrint("  - Admin     : Give VIP, VVIP, Moderator, Player")
+debugPrint("  - Owner     : Give VIP, Moderator, Admin, Player + RemoveRole")
+debugPrint("  - Admin     : Give VIP, Moderator, Player")
 debugPrint("  - Moderator : Give VIP, Player")
 debugPrint("  - 'Player' roleType = RemovePass (downgrade ke Player default)")
 debugPrint("============================================================")

@@ -23,10 +23,6 @@ globalEvent.OnServerEvent:Connect(function(player, toolName, isShooting)
 	local tool = player.Character and player.Character:FindFirstChild(toolName)
 	if not tool or not tool:IsA("Tool") then return end
 
-	-- ROUTING: Broadcast ke klien lain beserta nama senjatanya
-	for _, otherPlayer in ipairs(Players:GetPlayers()) do
-		if otherPlayer ~= player then
-			globalEvent:FireClient(otherPlayer, player, toolName, isShooting)
-		end
-	end
+	-- ROUTING: Native multicast broadcast (klien lokal sudah memfilter dirinya sendiri via shooterPlayer == localPlayer)
+	globalEvent:FireAllClients(player, toolName, isShooting)
 end)

@@ -3,7 +3,7 @@ local CollectionService = game:GetService("CollectionService")
 local player = Players.LocalPlayer
 
 local ALLOWED_ROLES = {
-	["VIP"] = true, ["VVIP"] = true, ["Moderator"] = true,
+	["VIP"] = true, ["Moderator"] = true,
 	["Admin"] = true, ["Owner"] = true, ["Sultan"] = true,
 	["Head Staff"] = true, ["Staff"] = true
 }

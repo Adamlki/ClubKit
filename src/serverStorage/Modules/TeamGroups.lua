@@ -40,11 +40,9 @@ TeamGroups.Config = {
 		Owner     = { TeamName = "Owner",      ColorName = "Merah",   PaletteIndex = 40, Order = 1 },
 		Admin     = { TeamName = "Head Staff", ColorName = "Oranye",  PaletteIndex = 41, Order = 2 },
 		Moderator = { TeamName = "Staff",      ColorName = "Biru",    PaletteIndex = 42, Order = 3 },
-		-- Tim Sultan (Prioritas di atas VVIP)
 		Sultan    = { TeamName = "Sultan",     ColorName = "Emas",    PaletteIndex = 46, Order = 4 }, 
-		VVIP      = { TeamName = "VVIP",       ColorName = "Ungu",    PaletteIndex = 43, Order = 5 },
-		VIP       = { TeamName = "VIP",        ColorName = "Hijau",   PaletteIndex = 44, Order = 6 },
-		Player    = { TeamName = "Tamu",       ColorName = "Abu-abu", PaletteIndex = 45, Order = 7 },
+		VIP       = { TeamName = "VIP",        ColorName = "Hijau",   PaletteIndex = 44, Order = 5 },
+		Player    = { TeamName = "Tamu",       ColorName = "Abu-abu", PaletteIndex = 45, Order = 6 },
 	},
 	TEAM_PALETTE_START   = 40,
 	CUSTOM_PALETTE_START = 50,
@@ -129,7 +127,7 @@ local function assignByRole(player)
 		end
 	end
 
-	-- Logika normal (Untuk Staff, VVIP, VIP, atau Player biasa)
+	-- Logika normal (Untuk Staff, VIP, atau Player biasa)
 	local team = teamObjects[role] or teamObjects["Player"]
 	if team and team.Parent then
 		player.Team = team

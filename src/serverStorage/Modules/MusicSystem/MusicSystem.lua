@@ -32,8 +32,7 @@ local CONFIG = {
 		Owner = 999,      -- No limit
 		Admin = 999,      -- No limit
 		Moderator = 999,  -- No limit
-		VVIP = 2,         -- 2 songs max
-		VIP = 1,          -- 1 song max
+		VIP = 2,          -- 2 songs max
 		Player = 0        -- Cannot add songs
 	},
 
@@ -45,8 +44,7 @@ local CONFIG = {
 		Owner = 0,
 		Admin = 0,
 		Moderator = 0,
-		VVIP = 60,
-		VIP = 300,
+		VIP = 120,
 		Player = 30
 	},
 
@@ -84,7 +82,8 @@ function MusicSystem.new()
 		queueManager = self.queueManager,
 		playbackManager = self.playbackManager,
 		favoriteManager = self.favoriteManager,
-		systemState = self.systemState
+		systemState = self.systemState,
+		playlistManager = self.playlistManager
 	})
 
 	-- Initialize action handler
@@ -96,7 +95,8 @@ function MusicSystem.new()
 		favoriteManager = self.favoriteManager,
 		dispatcher = self.dispatcher,
 		systemState = self.systemState,
-		playNextCallback = function() self:PlayNext() end
+		playNextCallback = function() self:PlayNext() end,
+		broadcastPreloadCallback = function() self:BroadcastPreloadNext() end
 	}, self.dispatcher)
 
 	-- Initialize player manager
@@ -113,6 +113,13 @@ function MusicSystem.new()
 	-- Setup auto-next callback
 	self.playbackManager.autoNextCallback = function()
 		self:PlayNext()
+	end
+
+	-- Setup song failed callback (Anti-Stuck Notification)
+	self.playbackManager.onSongFailed = function(songTitle, reason)
+		pcall(function()
+			self.dispatcher:NotifyAll(string.format("⚠️ Lagu '%s' tidak dapat diputar (Error/Banned). Melewati...", songTitle or "Unknown"))
+		end)
 	end
 
 	return self
@@ -151,80 +158,139 @@ end
 -- PLAY NEXT SONG
 -- ====================================
 function MusicSystem:PlayNext()
-	if self.isTransitioning then return end
-	self.isTransitioning = true
-
-	-- Check if there's a song in queue
-	local nextSong = self.queueManager:GetNext()
-
-	if nextSong then
-		-- Play from queue
-		local success, err = self.playbackManager:Play(
-			self.remotes,
-			nextSong,
-			nextSong.uploader,
-			false -- Not from playlist
-		)
-
-		if not success then
-			warn("[MusicSystem] Failed to play queued song:", err)
-			-- Try next song
+	-- 🛡️ ANTI-DEADLOCK: Cek apakah lock transisi macet lebih dari 5 detik
+	if self.isTransitioning then 
+		if self._transitionStartTime and (os.clock() - self._transitionStartTime) > 5 then
+			warn("[MusicSystem] ⚠️ Transition lock timeout (>5s). Me-reset paksa isTransitioning...")
+			self.isTransitioning = false
+		else
+			-- Jadwalkan retry 1 detik lagi jika sistem sedang transisi agar panggilan auto-next tidak hilang
 			task.delay(1, function()
-				self.isTransitioning = false
-				self:PlayNext()
+				if not self.playbackManager:IsPlaying() and not self.isTransitioning then
+					self:PlayNext()
+				end
 			end)
 			return
 		end
+	end
 
-		-- Sync queue to all players
-		self.dispatcher:SyncState()
-		self.isTransitioning = false
-		
-		-- 🔥 BROADCAST PRELOAD UNTUK LAGU BERIKUTNYA
-		self:BroadcastPreloadNext()
+	self.isTransitioning = true
+	self._transitionStartTime = os.clock()
 
-	else
-		-- Queue is empty, play from auto-playlist
-		local playlistSong = self.playlistManager:GetNextSong()
+	local success, err = pcall(function()
+		-- Check if there's a song in queue
+		local nextSong = self.queueManager:GetNext()
 
-		if playlistSong then
-			local success, err = self.playbackManager:Play(
+		if nextSong then
+			-- Play from queue
+			local playSuccess, playErr = self.playbackManager:Play(
 				self.remotes,
-				playlistSong,
-				"Auto-Playlist",
-				true -- From playlist
+				nextSong,
+				nextSong.uploader,
+				false -- Not from playlist
 			)
 
-			if not success then
-				warn("[MusicSystem] Failed to play playlist song:", err)
+			if not playSuccess then
+				warn("[MusicSystem] Failed to play queued song:", playErr)
 				-- Try next song
 				task.delay(1, function()
 					self.isTransitioning = false
 					self:PlayNext()
 				end)
-			else
-				self.dispatcher:SyncState()
-				self.isTransitioning = false
-				
-				-- 🔥 BROADCAST PRELOAD UNTUK LAGU BERIKUTNYA
-				self:BroadcastPreloadNext()
+				return
 			end
-		else
-			warn("[MusicSystem] No songs available in queue or playlist!")
-			self.playbackManager:Stop(self.remotes)
+
+			-- Sync queue to all players
+			self.dispatcher:SyncState()
 			self.isTransitioning = false
+			
+			-- 🔥 BROADCAST PRELOAD UNTUK LAGU BERIKUTNYA
+			self:BroadcastPreloadNext()
+
+		else
+			-- Queue is empty, play from auto-playlist
+			local playlistSong = self.playlistManager:GetNextSong()
+
+			if playlistSong then
+				local playSuccess, playErr = self.playbackManager:Play(
+					self.remotes,
+					playlistSong,
+					"Auto-Playlist",
+					true -- From playlist
+				)
+
+				if not playSuccess then
+					warn("[MusicSystem] Failed to play playlist song:", playErr)
+					-- Try next song
+					task.delay(1, function()
+						self.isTransitioning = false
+						self:PlayNext()
+					end)
+				else
+					self.dispatcher:SyncState()
+					self.isTransitioning = false
+					
+					-- 🔥 BROADCAST PRELOAD UNTUK LAGU BERIKUTNYA
+					self:BroadcastPreloadNext()
+				end
+			else
+				warn("[MusicSystem] No songs available in queue or playlist! Resetting playlist index...")
+				self.playlistManager:ResetPlaylist()
+				local retrySong = self.playlistManager:GetNextSong()
+				if retrySong then
+					local playSuccess, playErr = self.playbackManager:Play(
+						self.remotes,
+						retrySong,
+						"Auto-Playlist",
+						true
+					)
+					if playSuccess then
+						self.dispatcher:SyncState()
+					end
+				else
+					self.playbackManager:Stop(self.remotes)
+				end
+				self.isTransitioning = false
+			end
 		end
+	end)
+
+	if not success then
+		warn("[MusicSystem] Error during PlayNext:", err)
+		self.isTransitioning = false
 	end
 end
 
 -- ====================================
--- BROADCAST PRELOAD NEXT SONG
+-- BROADCAST PRELOAD NEXT SONG (SMART BACKGROUND BUFFER)
 -- ====================================
 function MusicSystem:BroadcastPreloadNext()
-	-- 🔥 ARCHITECT FIX: Fungsi ini sengaja dikosongkan untuk mengikuti Best Practice Roblox.
-	-- Menggunakan ContentProvider:PreloadAsync pada file Audio besar sangat rentan 
-	-- menyebabkan ping spike atau stuttering pada koneksi klien (terutama HP).
-	-- Pemuatan audio kini sepenuhnya diserahkan pada fitur Auto-Streaming bawaan Roblox.
+	local nextSongId = nil
+	local nextSongTitle = nil
+
+	-- 1. Cek antrean (Queue) terlebih dahulu
+	local queue = self.queueManager:GetQueue()
+	if queue and #queue > 0 and queue[1] then
+		local queuedItem = queue[1]
+		local musicData = queuedItem.musicData or queuedItem
+		nextSongId = musicData.id
+		nextSongTitle = musicData.judul
+	else
+		-- 2. Jika antrean kosong, intip lagu berikutnya dari auto-playlist
+		local playlistSong = self.playlistManager:PeekNextSong()
+		if playlistSong then
+			nextSongId = playlistSong.id
+			nextSongTitle = playlistSong.judul
+		end
+	end
+
+	if nextSongId and tostring(nextSongId) ~= "" then
+		local soundIdStr = tostring(nextSongId)
+		self.dispatcher:SendToAll("PRELOAD_SONG", {
+			soundId = soundIdStr,
+			title = nextSongTitle or "Upcoming Track"
+		})
+	end
 end
 
 -- ====================================

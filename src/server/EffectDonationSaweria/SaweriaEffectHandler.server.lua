@@ -89,9 +89,9 @@ local function getEffectTier(amount)
 		return nil -- Hanya notif UI biasa, tidak ada efek 3D map
 	elseif amount < 50000 then
 		return "Nuke", 10 -- Nama efek & jeda antrean (detik)
-	elseif amount < 200000 then
+	elseif amount < 300000 then
 		return "Smite", 15 -- Giant Hammer
-	elseif amount < 500000 then
+	elseif amount < 50000000 then
 		return "BlackHole", 20 -- Black Hole
 	else
 		return "Starfall", 25 -- Winged Giant 10M

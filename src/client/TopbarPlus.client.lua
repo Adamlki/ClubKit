@@ -35,10 +35,13 @@ local ICON_CONFIGS = {
 	Music        = { enabled = true, image = "rbxassetid://123643550590893", label = "", alignment = "left", order = 1, animate = false },
 
 	-- Dropdown / Sub-menu Icons (Inside Menu)
-	Dance        = { enabled = true, image = "rbxassetid://113394514826547", label = "", order = 1 },
+	-- Dance diputuskan dari topbar karena sudah ada tombol sendiri di GUI
+	Dance        = { enabled = false, image = "rbxassetid://113394514826547", label = "", order = 1 },
 	Setting      = { enabled = true, image = "rbxassetid://116292866711662", label = "", order = 2 }, 
 	FreeCam      = { enabled = true, image = "rbxassetid://134750039859396", label = "", order = 3 }, 
-	CustomTitle  = { enabled = true, image = "", label = "🏷️", order = 4 },
+	Cinematic    = { enabled = true, image = "", label = "🎬", order = 4 },
+	CustomTitle  = { enabled = true, image = "", label = "🏷️", order = 5 },
+	ServerList   = { enabled = true, image = "", label = "🌐", caption = "Server List", order = 6 },
 	Broadcast    = { enabled = true, image = "rbxassetid://124033060370841", label = "" },
 	MyHat        = { enabled = true, image = "rbxassetid://120495411505696", label = "" },
 	GlobalEffect = { enabled = true, image = "rbxassetid://84595853614117", label = "" },
@@ -173,6 +176,7 @@ local function createRawIcon(name)
 	local cfg = getCfg(name)
 	if not cfg.enabled then return nil end
 	local icon = Icon.new()
+	icon:setName(name)
 	applyConfig(icon, cfg)
 	applyStroke(icon)
 	return icon
@@ -189,6 +193,7 @@ local refreshIcon = createRawIcon("Refresh")
 local menuCfg = getCfg("Menu")
 if menuCfg.enabled then
 	menuIcon = Icon.new()
+	menuIcon:setName("Menu")
 	applyConfig(menuIcon, menuCfg)
 	applyStroke(menuIcon)
 	menuIcon:autoDeselect(false)
@@ -198,10 +203,12 @@ end
 local danceIcon     = createRawIcon("Dance")
 local setIcon       = createRawIcon("Setting")
 local freecamIcon   = createRawIcon("FreeCam")
-local titleIcon     = createRawIcon("CustomTitle")
-local broadcastIcon = createRawIcon("Broadcast")
-local hatIcon       = createRawIcon("MyHat")
-local effectIcon    = createRawIcon("GlobalEffect")
+local cinematicIcon  = createRawIcon("Cinematic")
+local titleIcon      = createRawIcon("CustomTitle")
+local serverListIcon = createRawIcon("ServerList")
+local broadcastIcon  = createRawIcon("Broadcast")
+local hatIcon        = createRawIcon("MyHat")
+local effectIcon     = createRawIcon("GlobalEffect")
 
 -- Initially disable network-dependent icons until verified
 if broadcastIcon then broadcastIcon:setEnabled(false) end
@@ -212,7 +219,9 @@ if menuIcon then
 	if danceIcon then table.insert(activeMenu, danceIcon) end
 	if setIcon then table.insert(activeMenu, setIcon) end
 	if freecamIcon then table.insert(activeMenu, freecamIcon) end
+	if cinematicIcon then table.insert(activeMenu, cinematicIcon) end
 	if titleIcon then table.insert(activeMenu, titleIcon) end
+	if serverListIcon then table.insert(activeMenu, serverListIcon) end
 	
 	-- Menu Spesial (Network)
 	if broadcastIcon then table.insert(activeMenu, broadcastIcon) end
@@ -326,11 +335,13 @@ end
 -- SPAWN GUI FETCHING
 -- ============================================================
 
+-- Dance diputuskan dari topbar karena sudah ada button sendiri buat dancenya.
+-- Pastikan tombol asli di EmoteGui tetap terlihat jika sebelumnya sempat di-hide.
 task.spawn(function()
 	local gui = playerGui:WaitForChild("EmoteGui", 5)
 	if gui then
-		local frame = gui:WaitForChild("MainFrame", 5)
-		bindIconLogic("Dance", danceIcon, gui, frame, {"Header", "CloseBtn"}, "Dance")
+		local btn = gui:FindFirstChild("DanceToggleButton") or gui:FindFirstChild("Dance")
+		if btn then btn.Visible = true end
 	end
 end)
 
@@ -377,6 +388,28 @@ task.spawn(function()
 		if frame and titleIcon then
 			local cp = frame:FindFirstChild("Header") and {"Header","CloseBtn"} or {"CloseBtn"}
 			bindIconLogic("CustomTitle", titleIcon, gui, frame, cp)
+		end
+	end
+end)
+
+task.spawn(function()
+	local gui = playerGui:WaitForChild("CinematicCamGui", 10)
+	if gui then
+		local frame = gui:WaitForChild("MainFrame", 5)
+		if frame and cinematicIcon then
+			local cp = frame:FindFirstChild("Header") and {"Header","CloseBtn"} or {"CloseBtn"}
+			bindIconLogic("Cinematic", cinematicIcon, gui, frame, cp)
+		end
+	end
+end)
+
+task.spawn(function()
+	local gui = playerGui:WaitForChild("ServerListGui", 10)
+	if gui then
+		local frame = gui:WaitForChild("MainFrame", 5)
+		if frame and serverListIcon then
+			local cp = frame:FindFirstChild("Header") and {"Header","RightControls","CloseBtn"} or {"CloseBtn"}
+			bindIconLogic("ServerList", serverListIcon, gui, frame, cp)
 		end
 	end
 end)

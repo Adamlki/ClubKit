@@ -78,8 +78,8 @@ MessageConfig.Validation = {
 -- NOTIFICATION CONFIGURATION (Client)
 -- ====================================
 MessageConfig.Notification = {
-	Duration   = 10,
-	MaxVisible = 3,
+	Duration   = 8,
+	MaxVisible = 4,
 	Animation  = {
 		DropSpeed      = 0.5,
 		EasingStyle    = Enum.EasingStyle.Back,

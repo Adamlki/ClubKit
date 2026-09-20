@@ -3,9 +3,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CONFIG = {
 	Animations = {
-		Top1 = "rbxassetid://140349022227594",
-		Top2 = "rbxassetid://140349022227594",
-		Top3 = "rbxassetid://140349022227594",
+		Top1 = "rbxassetid://118956645124495",
+		Top2 = "rbxassetid://118956645124495",
+		Top3 = "rbxassetid://118956645124495",
 	},
 	PosNames = { [1] = "Saweria_Pos1", [2] = "Saweria_Pos2", [3] = "Saweria_Pos3" },
 	RankColors = {

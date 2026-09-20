@@ -41,7 +41,7 @@ function ClientUI.formatNumber(num)
 	local formatted = tostring(num)
 	while true do
 		local k
-		formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", "%1,%2")
+		formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", "%1.%2")
 		if k == 0 then break end
 	end
 	return formatted
@@ -182,13 +182,13 @@ local Debris = game:GetService("Debris")
 -- ============================================
 
 local activeNotificationTween = nil
-local NOTIF_DISPLAY_TIME = 5.0
+local NOTIF_DISPLAY_TIME = 10
 local NOTIF_TARGET_POS = UDim2.new(0.5, 0, 0.05, 0)
 local NOTIF_HIDDEN_POS = UDim2.new(0.5, 0, -0.2, 0)
 
 local function playRobuxDonationSound()
 	pcall(function()
-		local soundId = (ClientConfig.NOTIFICATION and ClientConfig.NOTIFICATION.SOUND_ID) or "rbxassetid://82038059105956"
+		local soundId = (ClientConfig.NOTIFICATION and ClientConfig.NOTIFICATION.SOUND_ID) or "rbxassetid://79392333090964"
 		local sound = Instance.new("Sound")
 		sound.SoundId = soundId
 		sound.Volume = (ClientConfig.NOTIFICATION and ClientConfig.NOTIFICATION.SOUND_VOLUME) or 0.6
@@ -205,7 +205,7 @@ function ClientUI.initNotification(notificationFrame)
 	end
 end
 
-function ClientUI.showNotification(notificationFrame, displayName, amount, message, onComplete)
+function ClientUI.showNotification(notificationFrame, displayName, amount, message, onComplete, userId, totalAmount)
 	if not ClientConfig.NOTIFICATION.ENABLED then
 		if onComplete then onComplete() end
 		return
@@ -223,24 +223,41 @@ function ClientUI.showNotification(notificationFrame, displayName, amount, messa
 		end
 		_G.__ActiveDonationNotification = true
 
-		-- 1. Isi data langsung ke GUI manual Roblox Studio
-		local headerFrame = notificationFrame:FindFirstChild("HeaderFrame") or notificationFrame
-		local nameLabel = headerFrame:FindFirstChild("PlayerName") or headerFrame:FindFirstChild("UsernameLabel")
-		local amountLabel = headerFrame:FindFirstChild("RobuxAmount") or headerFrame:FindFirstChild("AmountLabel")
-		local messageLabel = notificationFrame:FindFirstChild("NotificationText") or notificationFrame:FindFirstChild("MessageLabel")
+		-- 1. Isi data ke GUI
+		local nameLabel = notificationFrame:FindFirstChild("NameLabel") or notificationFrame:FindFirstChild("PlayerName")
+		local messageBox = notificationFrame:FindFirstChild("MessageBox")
+		local messageLabel = (messageBox and messageBox:FindFirstChild("MessageLabel")) or notificationFrame:FindFirstChild("NotificationText")
+		local footerFrame = notificationFrame:FindFirstChild("FooterFrame") or notificationFrame
+		local donateLabel = footerFrame:FindFirstChild("DonateLabel") or notificationFrame:FindFirstChild("RobuxAmount")
+		local totalLabel = footerFrame:FindFirstChild("TotalLabel")
+		local avatarImg = notificationFrame:FindFirstChild("Avatar")
+		local closeBtn = notificationFrame:FindFirstChild("CloseBtn")
 
 		if nameLabel then
 			nameLabel.Text = tostring(displayName or "Player")
 		end
 
-		if amountLabel then
-			amountLabel.Text = ClientUI.formatNumber(amount) .. " Robux"
+		if avatarImg and avatarImg:IsA("ImageLabel") then
+			if userId and tonumber(userId) and tonumber(userId) > 0 then
+				avatarImg.Image = string.format("rbxthumb://type=AvatarBust&id=%d&w=150&h=150", tonumber(userId))
+			else
+				avatarImg.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
+			end
+		end
+
+		if donateLabel then
+			donateLabel.Text = "Donate: " .. ClientUI.formatNumber(amount)
+		end
+
+		if totalLabel then
+			local tot = totalAmount or amount
+			totalLabel.Text = "Total : " .. ClientUI.formatNumber(tot)
 		end
 
 		if messageLabel then
 			local clean = message and message:match("^%s*(.-)%s*$") or ""
 			if clean ~= "" and clean ~= "N/A" and clean ~= "nil" and clean ~= "default" then
-				messageLabel.Text = '"' .. clean .. '"'
+				messageLabel.Text = clean
 			else
 				messageLabel.Text = "Terima kasih banyak atas donasinya!"
 			end
@@ -266,12 +283,22 @@ function ClientUI.showNotification(notificationFrame, displayName, amount, messa
 		activeNotificationTween = slideIn
 		slideIn:Play()
 
-		-- 4. Tahan selama 5 detik lalu keluar (Slide Out ke atas)
-		task.delay(NOTIF_DISPLAY_TIME, function()
-			if not notificationFrame or not notificationFrame.Visible then
-				_G.__ActiveDonationNotification = false
-				if onComplete then onComplete() end
-				return
+		-- 4. Dismiss Handler (Otomatis 5 detik atau saat tombol Close diklik)
+		local isClosed = false
+		local closeConn = nil
+
+		local function dismissNotif()
+			if isClosed then return end
+			isClosed = true
+
+			if closeConn then
+				closeConn:Disconnect()
+				closeConn = nil
+			end
+
+			if activeNotificationTween then
+				activeNotificationTween:Cancel()
+				activeNotificationTween = nil
 			end
 
 			local slideOut = TweenService:Create(
@@ -290,6 +317,16 @@ function ClientUI.showNotification(notificationFrame, displayName, amount, messa
 					onComplete()
 				end
 			end)
+		end
+
+		if closeBtn and closeBtn:IsA("GuiButton") then
+			closeConn = closeBtn.MouseButton1Click:Once(dismissNotif)
+		end
+
+		task.delay(NOTIF_DISPLAY_TIME, function()
+			if not isClosed then
+				dismissNotif()
+			end
 		end)
 	end)
 end

@@ -144,7 +144,7 @@ end
     Kirim broadcast ke semua player yang bisa menerima chat.
     [WAJIB Roblox] Periksa CanUserChatAsync() per penerima.
 --]]
-local function fireBroadcastToAll(displayName, amount, message)
+local function fireBroadcastToAll(displayName, amount, message, userId, totalAmount)
 	for _, targetPlayer in ipairs(Players:GetPlayers()) do
 		task.spawn(function()
 			local canChat = false
@@ -153,7 +153,7 @@ local function fireBroadcastToAll(displayName, amount, message)
 			end)
 			-- Jika pengecekan gagal (error jaringan), tetap kirim agar broadcast tidak hilang
 			if not ok or canChat then
-				receiveRemote:FireClient(targetPlayer, displayName, amount, message)
+				receiveRemote:FireClient(targetPlayer, displayName, amount, message, userId, totalAmount)
 			end
 		end)
 	end
@@ -166,7 +166,17 @@ local function processQueue()
 	while #broadcastQueue > 0 do
 		local item = table.remove(broadcastQueue, 1)
 		debugLog("BROADCAST", "Broadcasting:", item.displayName, item.amount)
-		fireBroadcastToAll(item.displayName, item.amount, item.message)
+
+		local totalAmount = item.amount
+		pcall(function()
+			local robuxData = DonationDataStore:GetPlayerDonation(item.userId)
+			if robuxData then
+				local tot = (robuxData["Donated - Studio"] or 0) + (robuxData["Donated - Experience"] or 0)
+				if tot > 0 then totalAmount = tot end
+			end
+		end)
+
+		fireBroadcastToAll(item.displayName, item.amount, item.message, item.userId, totalAmount)
 
 		-- ============================================
 		-- SCREEN BOARD UPDATE (FITUR BARU)

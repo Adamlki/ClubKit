@@ -343,7 +343,9 @@ local function processDonationQueue()
 		function()
 			isDisplayingNotif = false
 			processDonationQueue()
-		end
+		end,
+		current.userId,
+		current.total
 	)
 end
 
@@ -354,7 +356,7 @@ local function setupBroadcastListener()
 		return
 	end
 
-	receiveRemote.OnClientEvent:Connect(function(displayName, amount, message)
+	receiveRemote.OnClientEvent:Connect(function(displayName, amount, message, userId, totalAmount)
 		debugLog("Broadcast diterima:", displayName, amount)
 		ClientUI.sendDonationChatMessage(displayName, amount)
 
@@ -362,7 +364,9 @@ local function setupBroadcastListener()
 			table.insert(donationQueue, {
 				displayName = displayName,
 				amount = amount,
-				message = message
+				message = message,
+				userId = userId,
+				total = totalAmount or amount
 			})
 			processDonationQueue()
 		end

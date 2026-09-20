@@ -28,6 +28,7 @@ local showDonationNotif = ReplicatedStorage:WaitForChild("EffectsRemotes"):WaitF
 -- ========== ANTI DOUBLE-TRIGGER (DEBOUNCE) ==========
 local lastSaweriaTime = {}
 local lastCoinTime = {}
+local lastStageTime = {}
 
 -- ========== HELPER ==========
 
@@ -71,6 +72,52 @@ local function isOwner(player)
 		if okRank and rank == 255 then
 			return true
 		end
+	end
+
+	return false
+end
+
+-- Pengecekan Staff (Owner, Admin, Moderator)
+-- VIP dan Player BIASA TIDAK BISA AKSES!
+local function hasStaffPermission(player)
+	if not player or typeof(player) ~= "Instance" or not player:IsA("Player") then 
+		return false 
+	end
+
+	-- 1. Studio playtest mode
+	if RunService:IsStudio() then 
+		return true 
+	end
+
+	-- 2. Hardcoded Owner / Staff ID
+	if player.UserId == 8978185974 or player.UserId == 7979929622 then 
+		return true 
+	end
+
+	-- 3. Cek Pemilik Game (User / Group Rank >= 250)
+	if game.CreatorType == Enum.CreatorType.User and player.UserId == game.CreatorId then
+		return true
+	elseif game.CreatorType == Enum.CreatorType.Group and game.CreatorId > 0 then
+		local okRank, rank = pcall(function()
+			return player:GetRankInGroup(game.CreatorId)
+		end)
+		if okRank and rank >= 250 then
+			return true
+		end
+	end
+
+	-- 4. Cek RoleSystem: Owner (5), Admin (4), Moderator (3) DIIZINKAN. VIP (2) & Player (1) DITOLAK!
+	local okRole, role = pcall(function()
+		return RoleSystem:GetPlayerRole(player)
+	end)
+	if okRole and (role == "Owner" or role == "Admin" or role == "Moderator") then 
+		return true 
+	end
+
+	-- 5. Cek atribut / Value "Role" jika ada di Player
+	local roleVal = player:FindFirstChild("Role")
+	if roleVal and (roleVal.Value == "Owner" or roleVal.Value == "Admin" or roleVal.Value == "Moderator") then
+		return true
 	end
 
 	return false
@@ -225,6 +272,87 @@ local function handleSaweriaCommand(player, args)
 	end
 end
 
+-- ========== COMMAND HANDLER: /stage (Stage Effects - Owner & Admin Only) ==========
+
+local function handleStageCommand(player, args)
+	if not hasStaffPermission(player) then
+		debugPrint(player.Name, "bukan Owner/Admin, command /stage ditolak!")
+		sendFeedback(player, "Akses Ditolak", "Perintah /stage hanya untuk Owner & jajaran Admin!")
+		return
+	end
+
+	-- ANTI DOUBLE-TRIGGER (1 detik debounce)
+	local now = os.clock()
+	if lastStageTime[player.UserId] and (now - lastStageTime[player.UserId]) < 1.0 then
+		return
+	end
+	lastStageTime[player.UserId] = now
+
+	local subCmd = args[1] and string.lower(args[1])
+	if subCmd == "off" or subCmd == "stop" then
+		if _G.StopStageEffects then
+			_G.StopStageEffects()
+		else
+			local stageEffectsFolder = Workspace:FindFirstChild("StageEffects")
+			if stageEffectsFolder then
+				for _, fx in ipairs(stageEffectsFolder:GetDescendants()) do
+					if fx:IsA("ParticleEmitter") or fx:IsA("Smoke") then
+						fx.Enabled = false
+					end
+				end
+			end
+		end
+		sendFeedback(player, "Stage Effects", "Stage effects dimatikan.")
+		return
+	end
+
+	-- Durasi default: ikuti setingan yang ada (15 detik), atau custom jika admin input angka
+	local defaultDuration = (_G.GetStageFXDuration and _G.GetStageFXDuration()) or 15
+	local customSeconds = tonumber(args[1])
+	local duration = customSeconds and math.clamp(customSeconds, 1, 60) or defaultDuration
+
+	if _G.IsStageFiring and _G.IsStageFiring() then
+		sendFeedback(player, "Stage Effects", "Stage effects saat ini sudah aktif menyala!")
+		return
+	end
+
+	if _G.TriggerStageEffects then
+		_G.TriggerStageEffects(duration)
+	else
+		task.spawn(function()
+			local stageEffectsFolder = Workspace:FindFirstChild("StageEffects")
+			if not stageEffectsFolder then return end
+
+			for _, stageFX in ipairs(stageEffectsFolder:GetChildren()) do
+				if stageFX:IsA("BasePart") then
+					local sound = stageFX:FindFirstChild("HissSound")
+					if sound then sound:Play() end
+					for _, fx in ipairs(stageFX:GetChildren()) do
+						if fx:IsA("ParticleEmitter") or fx:IsA("Smoke") then
+							fx.Enabled = true
+						end
+					end
+				end
+			end
+
+			task.wait(duration)
+
+			for _, stageFX in ipairs(stageEffectsFolder:GetChildren()) do
+				if stageFX:IsA("BasePart") then
+					for _, fx in ipairs(stageFX:GetChildren()) do
+						if fx:IsA("ParticleEmitter") or fx:IsA("Smoke") then
+							fx.Enabled = false
+						end
+					end
+				end
+			end
+		end)
+	end
+
+	sendFeedback(player, "Stage Effects", string.format("Stage effects aktif selama %d detik!", duration))
+	print(string.format("[ADMIN CMD] Stage effects dinyalakan oleh %s selama %d detik", player.Name, duration))
+end
+
 -- ========== TEXTCHATSERVICE SETUP (ROBLOX MODERN CHAT) ==========
 task.spawn(function()
 	local ok, tcCommands = pcall(function()
@@ -281,7 +409,29 @@ task.spawn(function()
 			end)
 		end
 
-		debugPrint("TextChatCommands berhasil didaftarkan di TextChatService")
+		-- Daftarkan /stage dan /stagefx
+		local stageCmd = tcCommands:FindFirstChild("StageTestCommand")
+		if not stageCmd then
+			stageCmd = Instance.new("TextChatCommand")
+			stageCmd.Name = "StageTestCommand"
+			stageCmd.PrimaryAlias = "/stage"
+			stageCmd.SecondaryAlias = "/stagefx"
+			stageCmd.Parent = tcCommands
+
+			stageCmd.Triggered:Connect(function(textSource, rawText)
+				local player = Players:GetPlayerByUserId(textSource.UserId)
+				if not player then return end
+
+				local args = {}
+				for word in rawText:gmatch("%S+") do
+					table.insert(args, word)
+				end
+				table.remove(args, 1) -- hapus /stage
+				handleStageCommand(player, args)
+			end)
+		end
+
+		debugPrint("TextChatCommands berhasil didaftarkan di TextChatService (/saweria, /coin, /stage)")
 	end
 end)
 
@@ -308,6 +458,13 @@ local function onPlayerChatted(player, message)
 		end
 		table.remove(args, 1)
 		handleSaweriaCommand(player, args)
+	elseif message:sub(1, 6):lower() == "/stage" or message:sub(1, 8):lower() == "/stagefx" then
+		local args = {}
+		for word in message:gmatch("%S+") do
+			table.insert(args, word)
+		end
+		table.remove(args, 1)
+		handleStageCommand(player, args)
 	end
 end
 
@@ -325,6 +482,7 @@ Players.PlayerAdded:Connect(setupPlayer)
 Players.PlayerRemoving:Connect(function(player)
 	lastSaweriaTime[player.UserId] = nil
 	lastCoinTime[player.UserId] = nil
+	lastStageTime[player.UserId] = nil
 end)
 
 -- ========== CONSOLE HELPER UNTUK ROBLOX STUDIO ==========
@@ -347,4 +505,13 @@ _G.TestCoin = function(amount, donatorName, message)
 	end
 end
 
-debugPrint("DonationAdminCommands siap: /saweria & /coin aktif untuk Owner")
+_G.TestStage = function(duration)
+	if _G.TriggerStageEffects then
+		_G.TriggerStageEffects(duration)
+		print("[TEST] Fired Stage Effects for", duration or 15, "seconds")
+	else
+		warn("[TEST] _G.TriggerStageEffects tidak ditemukan!")
+	end
+end
+
+debugPrint("DonationAdminCommands siap: /saweria, /coin, & /stage aktif untuk Owner & Admin")

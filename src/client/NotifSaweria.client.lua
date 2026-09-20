@@ -32,7 +32,7 @@ notifGui.Enabled = true
 local notifFrame = notifGui:WaitForChild("NotifFrame")
 local NOTIF_TARGET_POS = UDim2.new(0.5, 0, 0.05, 0)
 local NOTIF_HIDDEN_POS = UDim2.new(0.5, 0, -0.2, 0)
-local NOTIF_DISPLAY_TIME = 5.0
+local NOTIF_DISPLAY_TIME = 10
 
 notifFrame.Position = NOTIF_HIDDEN_POS
 notifFrame.Visible = false
@@ -58,7 +58,7 @@ end
 local function playSaweriaSound()
 	pcall(function()
 		local sound = Instance.new("Sound")
-		sound.SoundId = "rbxassetid://120816380864913"
+		sound.SoundId = "rbxassetid://79392333090964"
 		sound.Volume = 0.7
 		sound.Parent = workspace
 		sound:Play()
@@ -87,23 +87,40 @@ local function processQueue()
 		_G.__ActiveDonationNotification = true
 
 		-- Isi data ke GUI manual Roblox Studio
-		local headerFrame = notifFrame:FindFirstChild("HeaderFrame") or notifFrame
-		local nameLabel = headerFrame:FindFirstChild("UsernameLabel") or headerFrame:FindFirstChild("PlayerName")
-		local amountLabel = headerFrame:FindFirstChild("AmountLabel")
-		local messageLabel = notifFrame:FindFirstChild("MessageLabel") or notifFrame:FindFirstChild("NotificationText")
+		local nameLabel = notifFrame:FindFirstChild("NameLabel") or notifFrame:FindFirstChild("UsernameLabel") or notifFrame:FindFirstChild("PlayerName")
+		local messageBox = notifFrame:FindFirstChild("MessageBox")
+		local messageLabel = (messageBox and messageBox:FindFirstChild("MessageLabel")) or notifFrame:FindFirstChild("MessageLabel") or notifFrame:FindFirstChild("NotificationText")
+		local footerFrame = notifFrame:FindFirstChild("FooterFrame") or notifFrame
+		local donateLabel = footerFrame:FindFirstChild("DonateLabel") or notifFrame:FindFirstChild("AmountLabel")
+		local totalLabel = footerFrame:FindFirstChild("TotalLabel")
+		local avatarImg = notifFrame:FindFirstChild("Avatar")
+		local closeBtn = notifFrame:FindFirstChild("CloseBtn")
 
 		if nameLabel then
 			nameLabel.Text = tostring(current.donator or "Anonymous")
 		end
 
-		if amountLabel then
-			amountLabel.Text = "Rp " .. formatIDR(current.amount)
+		if avatarImg and avatarImg:IsA("ImageLabel") then
+			if current.userId and tonumber(current.userId) and tonumber(current.userId) > 0 then
+				avatarImg.Image = string.format("rbxthumb://type=AvatarBust&id=%d&w=150&h=150", tonumber(current.userId))
+			else
+				avatarImg.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
+			end
+		end
+
+		if donateLabel then
+			donateLabel.Text = "Donate: Rp " .. formatIDR(current.amount)
+		end
+
+		if totalLabel then
+			local tot = current.total or current.amount
+			totalLabel.Text = "Total : Rp " .. formatIDR(tot)
 		end
 
 		if messageLabel then
 			local clean = current.message and current.message:match("^%s*(.-)%s*$") or ""
 			if clean ~= "" and clean ~= "N/A" and clean ~= "nil" and clean ~= "default" then
-				messageLabel.Text = '"' .. clean .. '"'
+				messageLabel.Text = clean
 			else
 				messageLabel.Text = "Terima kasih banyak atas donasinya!"
 			end
@@ -129,13 +146,22 @@ local function processQueue()
 		activeTween = slideIn
 		slideIn:Play()
 
-		-- Tahan selama 5 detik lalu Slide Out
-		task.delay(NOTIF_DISPLAY_TIME, function()
-			if not notifFrame or not notifFrame.Visible then
-				_G.__ActiveDonationNotification = false
-				isDisplayingNotif = false
-				processQueue()
-				return
+		-- Dismiss Handler (Otomatis 5 detik atau saat tombol Close diklik)
+		local isClosed = false
+		local closeConn = nil
+
+		local function dismissNotif()
+			if isClosed then return end
+			isClosed = true
+
+			if closeConn then
+				closeConn:Disconnect()
+				closeConn = nil
+			end
+
+			if activeTween then
+				activeTween:Cancel()
+				activeTween = nil
 			end
 
 			local slideOut = TweenService:Create(
@@ -153,6 +179,16 @@ local function processQueue()
 				isDisplayingNotif = false
 				processQueue()
 			end)
+		end
+
+		if closeBtn and closeBtn:IsA("GuiButton") then
+			closeConn = closeBtn.MouseButton1Click:Once(dismissNotif)
+		end
+
+		task.delay(NOTIF_DISPLAY_TIME, function()
+			if not isClosed then
+				dismissNotif()
+			end
 		end)
 	end)
 end
@@ -171,13 +207,18 @@ donationEvent.OnClientEvent:Connect(function(data)
 
 	local donatorName = tostring(data.donator or "Anonymous")
 	local amount = parseClientAmount(data.amount)
+	local total = parseClientAmount(data.total)
+	if total <= 0 then total = amount end
 	local message = tostring(data.message or "")
+	local userId = data.userId
 
-	debugPrint("🔔 Donasi Saweria masuk antrean:", donatorName, "| Rp", amount)
+	debugPrint("🔔 Donasi Saweria masuk antrean:", donatorName, "| Rp", amount, "| Total: Rp", total)
 
 	table.insert(donationQueue, {
 		donator = donatorName,
+		userId = userId,
 		amount = amount,
+		total = total,
 		message = message,
 	})
 

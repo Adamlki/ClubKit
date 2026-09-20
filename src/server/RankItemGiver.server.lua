@@ -34,12 +34,12 @@ local Config = {
 		{
 			Name = "Umbrella",
 			Path = ServerStorage.Items.Umbrella,
-			MinimumHierarchy = 3 -- VIP ke atas
+			MinimumHierarchy = 2 -- VIP ke atas
 		},
 		{
 			Name = "Sharky",
 			Path = ServerStorage.Items.Sharky,
-			MinimumHierarchy = 3 -- VIP ke atas
+			MinimumHierarchy = 2 -- VIP ke atas
 		},
 		{
 			Name = "WaterGun",

@@ -203,10 +203,22 @@ local function fetchDonationData()
 					totalAmount = totalAmount + amt
 				end
 			end
-			if totalAmount <= 0 then totalAmount = rpAmount end
+			local donatorUserId = nil
+			for _, p in ipairs(Players:GetPlayers()) do
+				if p.Name:lower() == rawDonator:lower() or p.DisplayName:lower() == rawDonator:lower() then
+					donatorUserId = p.UserId
+					break
+				end
+			end
+			if not donatorUserId then
+				pcall(function()
+					donatorUserId = Players:GetUserIdFromNameAsync(rawDonator)
+				end)
+			end
 
 			local notifData = {
 				donator = rawDonator,
+				userId = donatorUserId,
 				amount = rpAmount,
 				total = totalAmount,
 				message = rawMessage,
@@ -248,8 +260,22 @@ _G.TestSaweria = function(donatorName, amount, message)
 	local rpAmount = parseAmount(amount)
 	if rpAmount <= 0 then rpAmount = 50000 end
 
+	local donatorUserId = nil
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p.Name:lower() == donatorName:lower() or p.DisplayName:lower() == donatorName:lower() then
+			donatorUserId = p.UserId
+			break
+		end
+	end
+	if not donatorUserId then
+		pcall(function()
+			donatorUserId = Players:GetUserIdFromNameAsync(donatorName)
+		end)
+	end
+
 	local notifData = {
 		donator = donatorName,
+		userId = donatorUserId,
 		amount = rpAmount,
 		total = rpAmount,
 		message = message,

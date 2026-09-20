@@ -14,22 +14,52 @@ local Players           = game:GetService("Players")
 local DataStoreService  = game:GetService("DataStoreService")
 local TextService       = game:GetService("TextService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage     = game:GetService("ServerStorage")
 local RunService        = game:GetService("RunService")
 
 -- Module references
 local TitleDataManager = require(script.Parent.OverheadSystemServer.TitleDataManager)
 local OverheadManager  = require(script.Parent.OverheadSystemServer.OverheadManager)
 
+local LevelSystem = nil
+pcall(function()
+	LevelSystem = require(ServerStorage.Modules.LevelSystem)
+end)
+
 -- ====================================
 -- CONFIGURATION
 -- ====================================
 local CONFIG = {
-	MAX_CHANCES        = 3,
-	MAX_TITLE_LENGTH   = 50,
-	PREVIEW_DURATION   = 5,
-	CHANCES_DATASTORE  = "CustomTitleChances_V1",
-	CHANCES_PREFIX     = "Chances_",
+	MAX_CHANCES                = 3,
+	MAX_TITLE_LENGTH           = 50,
+	PREVIEW_DURATION           = 5,
+	CHANCES_DATASTORE          = "CustomTitleChances_V1",
+	CHANCES_PREFIX             = "Chances_",
+	UNLIMITED_LEVEL_THRESHOLD  = 50, -- Level 50+ mendapat custom title unlimited
 }
+
+-- ====================================
+-- LEVEL CHECK HELPER
+-- ====================================
+local function getPlayerLevel(player)
+	if not player then return 1 end
+	if LevelSystem and LevelSystem.GetPlayerLevel then
+		local ok, lvl = pcall(function() return LevelSystem:GetPlayerLevel(player) end)
+		if ok and type(lvl) == "number" then return lvl end
+	end
+	local leaderstats = player:FindFirstChild("leaderstats")
+	if leaderstats then
+		local levelVal = leaderstats:FindFirstChild("Level")
+		if levelVal and type(levelVal.Value) == "number" then
+			return levelVal.Value
+		end
+	end
+	return 1
+end
+
+local function hasUnlimitedTitle(player)
+	return getPlayerLevel(player) >= CONFIG.UNLIMITED_LEVEL_THRESHOLD
+end
 
 -- ====================================
 -- DATASTORE & CACHE
@@ -107,10 +137,15 @@ getCustomTitleDataRemote.OnServerInvoke = function(player)
 
 	local chances = getPlayerChances(userId)
 	local currentTitle = TitleDataManager:LoadTitleData(userId)
+	local isUnlimited = hasUnlimitedTitle(player)
+	local currentLevel = getPlayerLevel(player)
 
 	return {
 		Chances = chances,
 		MaxChances = CONFIG.MAX_CHANCES,
+		IsUnlimited = isUnlimited,
+		Level = currentLevel,
+		UnlimitedThreshold = CONFIG.UNLIMITED_LEVEL_THRESHOLD,
 		CurrentTitle = currentTitle or {
 			Title = "",
 			Color = Color3.fromRGB(255, 255, 255),
@@ -216,9 +251,11 @@ applyCustomTitleRemote.OnServerInvoke = function(player, titleData)
 
 	local userId = player.UserId
 	local chances = getPlayerChances(userId)
+	local isUnlimited = hasUnlimitedTitle(player)
+	local currentLvl = getPlayerLevel(player)
 
-	if chances <= 0 then
-		return false, "Kesempatan custom title kamu sudah habis (0/3)!", 0
+	if not isUnlimited and chances <= 0 then
+		return false, string.format("Kesempatan custom title kamu sudah habis (0/%d)! Capai Level %d untuk Custom Title Unlimited!", CONFIG.MAX_CHANCES, CONFIG.UNLIMITED_LEVEL_THRESHOLD), 0, false
 	end
 
 	local rawTitle = tostring(titleData.Title or "")
@@ -228,7 +265,7 @@ applyCustomTitleRemote.OnServerInvoke = function(player, titleData)
 	end
 
 	if rawTitle == "" then
-		return false, "Title tidak boleh kosong!", chances
+		return false, "Title tidak boleh kosong!", chances, isUnlimited
 	end
 
 	-- Cancel any ongoing preview timer
@@ -253,8 +290,11 @@ applyCustomTitleRemote.OnServerInvoke = function(player, titleData)
 		GradientEffect  = "none",
 	}
 
-	-- Deduct 1 chance
-	local remaining = setPlayerChances(userId, chances - 1)
+	-- Deduct 1 chance only if player is not unlimited (level < 50)
+	local remaining = chances
+	if not isUnlimited then
+		remaining = setPlayerChances(userId, chances - 1)
+	end
 
 	-- Save permanently to DataStore
 	TitleDataManager:SaveTitleData(userId, finalTitleData)
@@ -265,9 +305,14 @@ applyCustomTitleRemote.OnServerInvoke = function(player, titleData)
 		OverheadManager:CreateOverhead(player, player.Character)
 	end
 
-	print(string.format("[CustomTitle] Player %s applied title '%s'. Sisa kesempatan: %d/%d", player.Name, filteredTitle, remaining, CONFIG.MAX_CHANCES))
+	local successMsg = isUnlimited
+		and string.format("Title berhasil dipasang! (👑 Unlimited - Level %d)", currentLvl)
+		or string.format("Title berhasil dipasang! (Sisa kesempatan: %d/%d)", remaining, CONFIG.MAX_CHANCES)
 
-	return true, string.format("Title berhasil dipasang! (Sisa kesempatan: %d/%d)", remaining, CONFIG.MAX_CHANCES), remaining
+	print(string.format("[CustomTitle] Player %s (Level: %d, Unlimited: %s) applied title '%s'. Sisa kesempatan: %d/%d", 
+		player.Name, currentLvl, tostring(isUnlimited), filteredTitle, remaining, CONFIG.MAX_CHANCES))
+
+	return true, successMsg, remaining, isUnlimited
 end
 
 -- ====================================

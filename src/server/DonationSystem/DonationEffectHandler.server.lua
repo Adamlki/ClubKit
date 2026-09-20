@@ -85,8 +85,12 @@ local function triggerStageEffects(duration)
 		end
 	end
 
-	-- 2. TUNGGU DURASI
-	task.wait(duration)
+	-- 2. TUNGGU DURASI (Bisa distop lebih awal jika dipanggil stop)
+	local elapsed = 0
+	while elapsed < duration and isStageFiring do
+		task.wait(0.25)
+		elapsed += 0.25
+	end
 
 	-- 3. MATIKAN DENGAN "SMOOTH"
 	for _, stageFX in ipairs(stageEffectsFolder:GetChildren()) do
@@ -389,3 +393,57 @@ end
 SaweriaEffectEvent.Event:Connect(function(playerOrName, rpAmount)
 	grantSaweriaEffect(playerOrName, rpAmount)
 end)
+
+-- ============================================================
+-- GLOBAL STAGE EFFECTS CONTROLLER (ADMIN & SCRIPT ACCESS)
+-- ============================================================
+local StageEffectEvent = SS:FindFirstChild("StageEffectEvent")
+if not StageEffectEvent then
+	StageEffectEvent = Instance.new("BindableEvent")
+	StageEffectEvent.Name = "StageEffectEvent"
+	StageEffectEvent.Parent = SS
+end
+
+StageEffectEvent.Event:Connect(function(action, duration)
+	if action == "stop" then
+		isStageFiring = false
+		local stageEffectsFolder = Workspace:FindFirstChild("StageEffects")
+		if stageEffectsFolder then
+			for _, fx in ipairs(stageEffectsFolder:GetDescendants()) do
+				if fx:IsA("ParticleEmitter") or fx:IsA("Smoke") then
+					fx.Enabled = false
+				end
+			end
+		end
+	else
+		task.spawn(function()
+			triggerStageEffects(duration or CONFIG.STAGE_FX_DURATION)
+		end)
+	end
+end)
+
+_G.TriggerStageEffects = function(duration)
+	task.spawn(function()
+		triggerStageEffects(duration or CONFIG.STAGE_FX_DURATION)
+	end)
+end
+
+_G.StopStageEffects = function()
+	isStageFiring = false
+	local stageEffectsFolder = Workspace:FindFirstChild("StageEffects")
+	if stageEffectsFolder then
+		for _, fx in ipairs(stageEffectsFolder:GetDescendants()) do
+			if fx:IsA("ParticleEmitter") or fx:IsA("Smoke") then
+				fx.Enabled = false
+			end
+		end
+	end
+end
+
+_G.GetStageFXDuration = function()
+	return CONFIG.STAGE_FX_DURATION
+end
+
+_G.IsStageFiring = function()
+	return isStageFiring
+end

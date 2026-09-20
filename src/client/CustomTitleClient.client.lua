@@ -58,6 +58,9 @@ local state = {
 	color = Color3.fromRGB(255, 255, 255),
 	chances = 3,
 	maxChances = 3,
+	isUnlimited = false,
+	level = 1,
+	unlimitedThreshold = 50,
 	isPreviewing = false,
 }
 
@@ -81,13 +84,30 @@ end
 
 -- Update Chances UI
 local function updateChancesUI()
-	chancesText.Text = string.format("Sisa Kesempatan: %d / %d", state.chances, state.maxChances)
-	if state.chances > 1 then
-		chancesText.TextColor3 = Color3.fromRGB(70, 230, 140)
-	elseif state.chances == 1 then
-		chancesText.TextColor3 = Color3.fromRGB(255, 180, 50)
+	local chanceIcon = chancesBadge:FindFirstChild("ChanceIcon")
+	if state.isUnlimited then
+		chancesText.Text = string.format("Kesempatan: Unlimited (Level %d+)", state.unlimitedThreshold)
+		chancesText.TextColor3 = Color3.fromRGB(255, 215, 0) -- Emas / Gold
+		if chanceIcon and chanceIcon:IsA("TextLabel") then
+			chanceIcon.Text = "👑"
+		end
 	else
-		chancesText.TextColor3 = Color3.fromRGB(255, 80, 80)
+		if state.chances > 0 then
+			chancesText.Text = string.format("Sisa Kesempatan: %d / %d (Level %d+ Unlimited)", state.chances, state.maxChances, state.unlimitedThreshold)
+		else
+			chancesText.Text = string.format("Kesempatan: 0 / %d (Capai Level %d untuk Unlimited)", state.maxChances, state.unlimitedThreshold)
+		end
+
+		if chanceIcon and chanceIcon:IsA("TextLabel") then
+			chanceIcon.Text = "✨"
+		end
+		if state.chances > 1 then
+			chancesText.TextColor3 = Color3.fromRGB(70, 230, 140)
+		elseif state.chances == 1 then
+			chancesText.TextColor3 = Color3.fromRGB(255, 180, 50)
+		else
+			chancesText.TextColor3 = Color3.fromRGB(255, 80, 80)
+		end
 	end
 end
 
@@ -226,8 +246,8 @@ end
 local applyDebounce = false
 applyBtn.MouseButton1Click:Connect(function()
 	if applyDebounce then return end
-	if state.chances <= 0 then
-		showNotification("Kesempatan Habis", "Kesempatan custom title kamu sudah habis (0/3)!", 4)
+	if not state.isUnlimited and state.chances <= 0 then
+		showNotification("Kesempatan Habis", string.format("Kesempatan custom title kamu sudah habis (0/%d)! Capai Level %d untuk Custom Title Unlimited!", state.maxChances, state.unlimitedThreshold), 4)
 		return
 	end
 
@@ -240,7 +260,7 @@ applyBtn.MouseButton1Click:Connect(function()
 	applyDebounce = true
 	applyBtn.Text = "Menyimpan..."
 
-	local ok, success, msg, remaining = pcall(function()
+	local ok, success, msg, remaining, isUnlimited = pcall(function()
 		return applyCustomTitleRemote:InvokeServer({
 			Title = trimmed,
 			Color = state.color,
@@ -253,7 +273,12 @@ applyBtn.MouseButton1Click:Connect(function()
 	applyBtn.Text = "Simpan Title"
 
 	if ok and success then
-		state.chances = remaining or math.max(0, state.chances - 1)
+		if isUnlimited ~= nil then
+			state.isUnlimited = isUnlimited
+		end
+		if not state.isUnlimited then
+			state.chances = remaining or math.max(0, state.chances - 1)
+		end
 		updateChancesUI()
 		showNotification("Sukses!", msg or "Title kamu berhasil disimpan!", 5)
 		mainFrame.Visible = false
@@ -275,6 +300,15 @@ local function loadInitialData()
 		if ok and data then
 			state.chances = data.Chances or 3
 			state.maxChances = data.MaxChances or 3
+			if data.IsUnlimited ~= nil then
+				state.isUnlimited = data.IsUnlimited
+			end
+			if data.Level ~= nil then
+				state.level = data.Level
+			end
+			if data.UnlimitedThreshold ~= nil then
+				state.unlimitedThreshold = data.UnlimitedThreshold
+			end
 			updateChancesUI()
 
 			if data.CurrentTitle and data.CurrentTitle.Title and data.CurrentTitle.Title ~= "" then
@@ -288,6 +322,26 @@ local function loadInitialData()
 	end
 end
 
+-- Real-time Level listener from leaderstats
+local function setupLevelListener()
+	local leaderstats = player:FindFirstChild("leaderstats") or player:WaitForChild("leaderstats", 10)
+	if leaderstats then
+		local levelVal = leaderstats:FindFirstChild("Level") or leaderstats:WaitForChild("Level", 5)
+		if levelVal and levelVal:IsA("IntValue") then
+			local function onLevelChanged(lvl)
+				state.level = lvl
+				state.isUnlimited = (lvl >= state.unlimitedThreshold)
+				updateChancesUI()
+			end
+			onLevelChanged(levelVal.Value)
+			levelVal:GetPropertyChangedSignal("Value"):Connect(function()
+				onLevelChanged(levelVal.Value)
+			end)
+		end
+	end
+end
+
+task.spawn(setupLevelListener)
 task.spawn(loadInitialData)
 setColor(Color3.fromRGB(255, 255, 255))
 updateChancesUI()

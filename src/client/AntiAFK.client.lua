@@ -1,41 +1,124 @@
 --!strict
 -- ============================================================
--- ANTI-AFK 24/7 SYSTEM (CLIENT)
+-- ANTI-AFK 24/7 AUTO-REJOIN & RESTORE POSITION (CLIENT)
 -- ============================================================
--- Prevents Roblox 20-minute idle kicks so players can stay
--- in the map indefinitely (24/7 AFK).
+-- Sistem murni berjalan di background (100% silent tanpa GUI).
+-- Memantau aktivitas pemain (keyboard, mouse, touchscreen).
+-- Pada menit ke-18 tidak ada aktivitas, otomatis me-rejoin
+-- server dan mengembalikan posisi karakter sebelum batas
+-- 20 menit Roblox (Error 278) tercapai.
 -- ============================================================
 
 local Players = game:GetService("Players")
-local VirtualUser = game:GetService("VirtualUser")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 
--- Method 1: Intercept player.Idled signal
--- Fired by Roblox engine when user has been idle
-player.Idled:Connect(function(timeIdled)
-	pcall(function()
-		VirtualUser:CaptureController()
-		VirtualUser:ClickButton2(Vector2.zero)
-	end)
-	pcall(function()
-		VirtualUser:Button2Down(Vector2.zero)
-		task.wait(0.1)
-		VirtualUser:Button2Up(Vector2.zero)
-	end)
-	print(string.format("[AntiAFK] 🛡️ 20-minute idle kick prevented! (Inactivity reset after %s seconds)", tostring(math.floor(timeIdled or 0))))
-end)
+-- ============================================================
+-- KONFIGURASI
+-- ============================================================
+local IDLE_THRESHOLD_SECONDS = 18 * 60 -- 18 Menit (1080 detik)
 
--- Method 2: Proactive keep-alive heartbeat every 10 minutes
--- Guarantees the engine idle counter is refreshed well before 20 minutes
-task.spawn(function()
-	while true do
-		task.wait(600) -- every 10 minutes
-		pcall(function()
-			VirtualUser:CaptureController()
-			VirtualUser:ClickButton2(Vector2.zero)
-		end)
+-- State
+local lastActivityTime = os.clock()
+local isRejoining = false
+
+-- RemoteEvent Setup
+local remotesFolder = ReplicatedStorage:WaitForChild("Remotes", 10)
+local antiAFKRejoinEvent: RemoteEvent? = nil
+if remotesFolder then
+	antiAFKRejoinEvent = remotesFolder:WaitForChild("AntiAFKRejoin", 10) :: RemoteEvent?
+end
+
+-- Bersihkan sisa GUI lama jika ada
+local playerGui = player:FindFirstChild("PlayerGui")
+if playerGui then
+	local oldGui = playerGui:FindFirstChild("AntiAfkGui")
+	if oldGui then
+		oldGui:Destroy()
+	end
+end
+
+-- ============================================================
+-- RESET AKTIVITAS
+-- ============================================================
+local function resetActivity()
+	lastActivityTime = os.clock()
+end
+
+-- ============================================================
+-- EKSEKUSI REJOIN OTOMATIS
+-- ============================================================
+local function executeRejoin()
+	if isRejoining then return end
+	isRejoining = true
+
+	print("[AntiAFK] 🚀 Pemain idle 18 menit. Menjalankan Auto-Rejoin & menyimpan posisi di background...")
+
+	if not antiAFKRejoinEvent then
+		antiAFKRejoinEvent = ReplicatedStorage:FindFirstChild("Remotes")
+			and ReplicatedStorage.Remotes:FindFirstChild("AntiAFKRejoin") :: RemoteEvent?
+	end
+
+	if antiAFKRejoinEvent then
+		antiAFKRejoinEvent:FireServer()
+	else
+		warn("[AntiAFK] RemoteEvent AntiAFKRejoin tidak ditemukan di ReplicatedStorage.Remotes!")
+	end
+end
+
+-- ============================================================
+-- DETEKSI INPUT AKTIVITAS FISIK PEMAIN
+-- ============================================================
+UserInputService.InputBegan:Connect(function()
+	if not isRejoining then
+		resetActivity()
 	end
 end)
 
-print("[AntiAFK] ✅ 24/7 Anti-AFK system activated.")
+UserInputService.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement then
+		if not isRejoining then
+			resetActivity()
+		end
+	end
+end)
+
+-- Cadangan deteksi via sinyal engine player.Idled
+player.Idled:Connect(function(timeIdled)
+	if timeIdled and timeIdled >= IDLE_THRESHOLD_SECONDS and not isRejoining then
+		executeRejoin()
+	end
+end)
+
+-- ============================================================
+-- HEARTBEAT PENGECEKAN IDLE (Setiap 2 detik)
+-- ============================================================
+task.spawn(function()
+	while true do
+		task.wait(2)
+
+		if not isRejoining then
+			local idleDuration = os.clock() - lastActivityTime
+			if idleDuration >= IDLE_THRESHOLD_SECONDS then
+				executeRejoin()
+			end
+		end
+	end
+end)
+
+-- ============================================================
+-- TESTING TRIGGER (Opsional untuk Developer)
+-- ============================================================
+-- Bisa dipicu untuk pengetesan cepat via Console/Studio:
+-- game.Players.LocalPlayer:SetAttribute("TestAFK", true)
+player:GetAttributeChangedSignal("TestAFK"):Connect(function()
+	if player:GetAttribute("TestAFK") == true then
+		player:SetAttribute("TestAFK", nil)
+		print("[AntiAFK] 🧪 Simulasi AFK dipicu via Attribute TestAFK.")
+		executeRejoin()
+	end
+end)
+
+print("[AntiAFK] ✅ 24/7 Anti-AFK Background System active (Silent mode, 18m threshold).")

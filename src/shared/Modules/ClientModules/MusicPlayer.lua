@@ -128,6 +128,11 @@ function MusicPlayer.new()
 			local serverSound = SoundService:FindFirstChild("ServerMusicSound")
 			if not serverSound then return end
 
+			-- 🎛️ Pastikan SoundGroup selalu terhubung ke MusicGroup
+			if self.musicGroup and serverSound.SoundGroup ~= self.musicGroup then
+				serverSound.SoundGroup = self.musicGroup
+			end
+
 			-- 🔒 CEK KESESUAIAN ID DENGAN TOLERANSI TRANSISI 3 DETIK (Mencegah stop prematur di HP)
 			local currentID = string.match(tostring(serverSound.SoundId), "%d+")
 			local expectedID = string.match(tostring(self.expectedSoundId), "%d+")
@@ -161,13 +166,17 @@ function MusicPlayer.new()
 						local currentPos = serverSound.TimePosition
 						local desync = math.abs(currentPos - expectedTimePos)
 
-						-- SNAP jika desync atau lagunya mati
-						if desync > 0.25 or not serverSound.IsPlaying then
+						-- 🛡️ ANTI-KEPREK: JANGAN PERNAH micro-seek saat lagu sedang berputar normal!
+						-- Toleransi dinaikkan dari 0.25s ke 2.5s agar tidak ada stutter/klik/pecah akibat micro-seek berulang
+						if not serverSound.IsPlaying then
 							pcall(function()
 								serverSound.TimePosition = math.clamp(expectedTimePos, 0, maxDuration - 0.1)
-								if not serverSound.IsPlaying then
-									serverSound:Play()
-								end
+								serverSound:Play()
+							end)
+						elseif desync > 2.5 then
+							-- Hanya snap jika terjadi lag parah / app freeze (>2.5 detik)
+							pcall(function()
+								serverSound.TimePosition = math.clamp(expectedTimePos, 0, maxDuration - 0.1)
 							end)
 						end
 					else
@@ -698,7 +707,8 @@ function MusicPlayer:ForceAudioSync(payload)
 			local desync = math.abs(currentPos - expectedTimePos)
 
 			pcall(function()
-				if (desync > 0.25 or not serverSound.IsPlaying) and serverSound.IsLoaded and serverSound.TimeLength > 0 then
+				-- Hanya set TimePosition jika lagu belum menyala atau desync sangat jauh (>2.5s)
+				if (not serverSound.IsPlaying or desync > 2.5) and serverSound.IsLoaded and serverSound.TimeLength > 0 then
 					serverSound.TimePosition = math.clamp(expectedTimePos, 0, maxDuration - 0.1)
 				end
 

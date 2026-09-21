@@ -86,9 +86,9 @@ MessageConfig.Notification = {
 		EasingDirection = Enum.EasingDirection.Out
 	},
 	Sound = {
-		Enabled       = true,
-		SoundId       = "rbxassetid://17208361335",
-		Volume        = 0.5,
+		Enabled       = false,
+		SoundId       = "",
+		Volume        = 0,
 		PlaybackSpeed = 1
 	}
 }

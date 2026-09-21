@@ -8,7 +8,6 @@ local Players      = game:GetService("Players")
 local RS           = game:GetService("ReplicatedStorage")
 local TS           = game:GetService("TweenService")
 local SG           = game:GetService("StarterGui")
-local TextService  = game:GetService("TextService")
 
 local player       = Players.LocalPlayer
 local playerGui    = player:WaitForChild("PlayerGui")
@@ -20,7 +19,6 @@ local RemoteFolder         = RS:WaitForChild("Message")
 local SendMessageRemote    = RemoteFolder:WaitForChild("SendMessage")
 local ReceiveMessageRemote = RemoteFolder:WaitForChild("ReceiveMessage")
 local CheckTimerRemote     = RemoteFolder:WaitForChild("CheckTimer")
-local CheckAccessRemote    = RemoteFolder:WaitForChild("CheckAccess")
 
 -- ====================================
 -- UI REFERENCES
@@ -46,17 +44,10 @@ messageFrame.Visible = false
 -- ====================================
 local Config = {
 	Notification = {
-		Duration   = 7, -- 8 detik display time
+		Duration   = 8, -- 8 detik display time
 		MaxVisible = 2, -- Maksimal notifikasi bersamaan agar tidak menutupi seluruh layar
-		Sound = {
-			Enabled       = true,
-			SoundId       = "rbxassetid://17208361335",
-			Volume        = 0.5,
-			PlaybackSpeed = 1
-		}
 	},
 	Timer = {
-		UpdateInterval   = 1,
 		ShowNotification = true
 	}
 }
@@ -197,25 +188,6 @@ local function refreshTimerData()
 end
 
 -- ====================================
--- SOUND
--- ====================================
-local function playNotificationSound()
-	if not Config.Notification.Sound.Enabled then return end
-
-	local sound              = Instance.new("Sound")
-	sound.SoundId            = Config.Notification.Sound.SoundId
-	sound.Volume             = Config.Notification.Sound.Volume
-	sound.PlaybackSpeed      = Config.Notification.Sound.PlaybackSpeed
-	sound.RollOffMaxDistance = 0
-	sound.Parent             = workspace
-
-	sound:Play()
-	sound.Ended:Connect(function()
-		sound:Destroy()
-	end)
-end
-
--- ====================================
 -- NOTIFICATION CREATION & STACKING
 -- ====================================
 local function createNotification(messageData)
@@ -249,8 +221,10 @@ local function createNotification(messageData)
 		local isGlobal = rawMessage:find("%[GLOBAL%]") ~= nil
 		local cleanMessage = rawMessage:gsub("%[[Gg][Ll][Oo][Bb][Aa][Ll]%]%s*:?%s*", "")
 
+		-- SenderName di-sanitize di client karena belum di-escape oleh server
 		local safeSender = sanitizeHtml(messageData.SenderName or "Admin")
-		local safeMsg = sanitizeHtml(cleanMessage)
+		-- cleanMessage SUDAH di-sanitize oleh server, jangan di-sanitize ulang agar tidak double escape (&amp;amp;)
+		local safeMsg = cleanMessage
 
 		local prefixTag = isGlobal and "[GLOBAL] " or ""
 		messageLabel.Text = string.format('<font color="#FFCC00"><b>%s%s</b></font> 📢 : <b>%s</b>', prefixTag, safeSender, safeMsg)
@@ -327,8 +301,6 @@ local function createNotification(messageData)
 		Size = UDim2.new(0, 580, 0, 46),
 		BackgroundTransparency = 0.05
 	}):Play()
-
-	playNotificationSound()
 
 	-- Durasi tampil tepat 8 detik sesuai permintaan
 	task.delay(Config.Notification.Duration, function()

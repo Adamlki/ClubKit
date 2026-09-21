@@ -155,15 +155,14 @@ local function setAnimateEnabled(character, enabled)
 	character:SetAttribute("AnimateDisabled", not enabled)
 end
 
-local function killGhostAnimation(animator, fade)
+local function killGhostAnimation(animator, fade, excludeTrack)
 	local f = fade or FADE_TIME
 	pcall(function()
 		if not animator or not animator.Parent then return end
 		if animator.Parent.Parent ~= player.Character then return end 
 
 		for _, t in ipairs(animator:GetPlayingAnimationTracks()) do
-			if t.Animation and emoteIdCache[t.Animation.AnimationId] then
-				t:AdjustSpeed(1) 
+			if t ~= excludeTrack and t.Animation and emoteIdCache[t.Animation.AnimationId] then
 				t:Stop(f)
 			end
 		end
@@ -270,7 +269,7 @@ trackConnection(syncNotificationRE.OnClientEvent:Connect(function(notifType, lea
 		if player.Character then
 			restoreCharacterAnimations(player.Character)
 			if localSyncTrack then 
-				localSyncTrack:Stop(0.5) 
+				localSyncTrack:Stop(FADE_TIME) 
 				localSyncTrack = nil 
 			end
 		end
@@ -319,17 +318,44 @@ local function saveFavoritedAnimations()
 	updateFavoritedAnimationsEventRE:FireServer(HttpService:JSONEncode(favoritedAnimations)) 
 end
 
+local animByIdCache = {}
 local function findAnimById(danceId)
+	if not danceId or danceId == "" then return nil end
+	if animByIdCache[danceId] then return animByIdCache[danceId] end
+
+	local numId = tostring(danceId):match("%d+")
+
 	for _, anim in ipairs(emotesFolder:GetChildren()) do
-		if anim:IsA("Animation") and anim.AnimationId == danceId then return anim end
+		if anim:IsA("Animation") and anim.AnimationId == danceId then 
+			animByIdCache[danceId] = anim
+			return anim 
+		end
 	end
 	local poseFolder = emotesFolder:FindFirstChild("Pose")
 	if poseFolder then
 		for _, anim in ipairs(poseFolder:GetChildren()) do
-			if anim:IsA("Animation") and anim.AnimationId == danceId then return anim end
+			if anim:IsA("Animation") and anim.AnimationId == danceId then 
+				animByIdCache[danceId] = anim
+				return anim 
+			end
 		end
 	end
-	return nil
+
+	if numId then
+		for _, anim in ipairs(emotesFolder:GetDescendants()) do
+			if anim:IsA("Animation") and anim.AnimationId:match("%d+") == numId then
+				animByIdCache[danceId] = anim
+				return anim
+			end
+		end
+	end
+
+	-- Fallback instance agar sync tidak pernah gagal
+	local fallbackAnim = Instance.new("Animation")
+	fallbackAnim.Name = "DynamicSyncAnim"
+	fallbackAnim.AnimationId = danceId
+	animByIdCache[danceId] = fallbackAnim
+	return fallbackAnim
 end
 
 -- ============================================
@@ -337,19 +363,10 @@ end
 -- ============================================
 local globalSyncListeners = setmetatable({}, { __mode = "k" })
 
-local lastApplyDanceTime = 0 -- Tambahan variabel untuk deteksi spam ganti dance (Follower POV)
-
 local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
 	if char ~= player.Character then return end 
 
-	-- [FIX] Deteksi spam ganti dance untuk follower
-	local currentTime = os.clock()
-	if danceId and not isSpam then
-		if (currentTime - lastApplyDanceTime) < 0.7 then
-			isSpam = true
-		end
-		lastApplyDanceTime = currentTime
-	end
+	speed = speed or 1
 
 	local animator = char:FindFirstChild("Humanoid") and char.Humanoid:FindFirstChild("Animator")
 	if not animator then return end
@@ -370,7 +387,8 @@ local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
 		end
 	end
 
-	if not danceId then
+	-- 🛑 KASUS STOP DANCE (danceId kosong/nil)
+	if not danceId or danceId == "" then
 		if localSyncTrack then
 			localSyncTrack:Stop(actualFade)
 			localSyncTrack = nil
@@ -383,7 +401,7 @@ local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
 			if savedLocalEmoteData then
 				local saved = savedLocalEmoteData
 				savedLocalEmoteData = nil
-				task.delay(0.1, function()
+				task.delay(0.05, function()
 					if isScriptActive then animationStarted(saved.animation, saved.button) end
 				end)
 			end
@@ -394,27 +412,51 @@ local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
 	local targetAnim = findAnimById(danceId)
 	if not targetAnim then return end
 
+	local track = AnimatorUtils.getOrCreateTrack(animator, targetAnim)
+	if not track then setAnimateEnabled(char, true) return end
+
+	-- ⚡ JIKA DANCE INI SUDAH BERPUTAR: Jangan restart dari 0! Cukup sinkronkan TimePosition & speed
+	if localSyncTrack == track and track.IsPlaying then
+		if startTime and track.Length > 0 then
+			local exactPos = ((workspace:GetServerTimeNow() - startTime) * speed) % track.Length
+			if math.abs(track.TimePosition - exactPos) > 0.03 then
+				pcall(function() track.TimePosition = exactPos end)
+			end
+		end
+		track:AdjustSpeed(speed)
+		return
+	end
+
+	-- Matikan default animate Roblox agar pose berdiri tidak menyusup
+	setAnimateEnabled(char, false)
+
+	local oldSyncTrack = localSyncTrack
 	if localAnimTrack then
 		localAnimTrack:Stop(actualFade)
 		localAnimTrack = nil
 	end
 
-	setAnimateEnabled(char, false)
-	killGhostAnimation(animator, actualFade)
-
-	local track = AnimatorUtils.getOrCreateTrack(animator, targetAnim)
-	if not track then setAnimateEnabled(char, true) return end
-
-	if localSyncTrack then localSyncTrack:Stop(actualFade) end
 	localSyncTrack = track
-
 	track.Priority = Enum.AnimationPriority.Action3
-	-- [FIX] Mainkan di target speed, bukan 0. Ini mencegah stuck diam!
+
+	-- 🔥 SETELAH / SEBELUM PLAY: Hitung exactPos lebih awal agar langsung menari di detik yang sama
+	if startTime and track.Length > 0 then
+		local exactPos = ((workspace:GetServerTimeNow() - startTime) * speed) % track.Length
+		pcall(function() track.TimePosition = exactPos end)
+	end
+
+	-- Putar track baru SECARA INSTAN
 	track:Play(actualFade, 1, speed) 
+
+	-- Hentikan track lama SETELAH track baru berputar (Crossfade murni: 0 detik berdiri diam)
+	if oldSyncTrack and oldSyncTrack ~= track then
+		oldSyncTrack:Stop(actualFade)
+	end
+	killGhostAnimation(animator, actualFade, track)
 
 	local capturedTicket = applyTicket
 	task.spawn(function()
-		local timeout = os.clock() + 5
+		local timeout = os.clock() + 3
 		while track and track.Length == 0 and os.clock() < timeout do 
 			if not isScriptActive then return end
 			RunService.RenderStepped:Wait() 
@@ -424,15 +466,14 @@ local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
 		if startTime and track.Length > 0 then
 			local finalTime = workspace:GetServerTimeNow()
 			local exactPos = ((finalTime - startTime) * speed) % track.Length
-			-- Update TimePosition hanya jika perbedaannya kentara
-			if exactPos > 0 and math.abs(track.TimePosition - exactPos) > 0.03 then
+			if math.abs(track.TimePosition - exactPos) > 0.03 then
 				pcall(function() track.TimePosition = exactPos end)
 			end
 		end
 
 		track:AdjustSpeed(speed) 
 
-		task.delay(actualFade + 0.05, function()
+		task.delay(actualFade + 0.02, function()
 			if not isScriptActive or char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
 			suppressNativeAnimations(animator, 0)
 		end)
@@ -453,12 +494,12 @@ local function monitorPlayerCharacter(targetPlayer)
 
 		local function forceSnapCharacterDance(track)
 			if not track or track.Length == 0 then return end
-			-- [Sama seperti fungsi aslinya]
 			local startTime = char:GetAttribute("DanceStartTime")
 			local speed = char:GetAttribute("DanceSpeed") or 1
 			local currentDanceId = char:GetAttribute("CurrentDanceID")
 			local syncingTo = char:GetAttribute("Syncing")
 
+			-- 🔥 Jangan snap follower di sini: biarkan Anti-Drift loop yang menyelaraskan dengan catchUpSpeed secara mulus tanpa sentakan patah
 			if syncingTo == player.Name then return end 
 
 			if currentDanceId and track.Animation and track.Animation.AnimationId ~= currentDanceId then return end
@@ -560,6 +601,7 @@ local function monitorPlayerCharacter(targetPlayer)
 
 		char:GetAttributeChangedSignal("Syncing"):Connect(syncToLeader)
 		char:GetAttributeChangedSignal("CurrentDanceID"):Connect(function() broadcastLeaderState(false) end)
+		char:GetAttributeChangedSignal("DanceStartTime"):Connect(function() broadcastLeaderState(false) end)
 		char:GetAttributeChangedSignal("DanceSpeed"):Connect(function() broadcastLeaderState(false) end)
 		char:GetAttributeChangedSignal("SpamNonce"):Connect(function() broadcastLeaderState(true) end)
 
@@ -930,31 +972,33 @@ function animationStarted(animation, button)
 			animationStartRE:FireServer(animation.AnimationId, false, currentSpeed, 0, false, workspace:GetServerTimeNow())
 		end
 	else
-		if character then
-			restoreCharacterAnimations(character)
-		end
+		-- 🔥 GANTI DANCE KE PILIHAN BARU (Jangan panggil restoreCharacterAnimations agar tidak ada flicker pose berdiri)
 		savedLocalEmoteData = nil
 		currentAnimation = button
 		lastEmoteClickTime = os.clock()
 		updateButtonVisuals()
 
-		-- [FIX] Hapus delay fade jika leader spam ganti dance yang beda (ABC)
-		local actualFade = isSpamming and 0 or FADE_TIME
+		-- 🔥 GANTI DANCE KE PILIHAN BARU (Smooth crossfade tanpa patah, tanpa flicker pose berdiri)
+		local actualFade = FADE_TIME
 
 		if animator then
 			local isPose = isCurrentAnimPose()
 			local char = character
 			setAnimateEnabled(character, false)
-			if localAnimTrack then 
-				localAnimTrack:Stop(actualFade) 
-			end
+			
+			local oldAnimTrack = localAnimTrack
 			localAnimTrack = AnimatorUtils.getOrCreateTrack(animator, animation)
 			if localAnimTrack then
 				localAnimTrack.Priority = Enum.AnimationPriority.Action3
 				localAnimTrack:Play(actualFade, 1, currentSpeed)
+				
+				if oldAnimTrack and oldAnimTrack ~= localAnimTrack then
+					oldAnimTrack:Stop(actualFade)
+				end
+
 				local capturedTicket = (char:GetAttribute("ApplyTicket") or 0)
 				task.spawn(function()
-					task.wait(actualFade + 0.05)
+					task.wait(actualFade + 0.02)
 					if not isScriptActive or char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
 					freezeHumanoidForPose(char, isPose)
 				end)

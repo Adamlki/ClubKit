@@ -14,7 +14,7 @@ local module = {}
 -- ============================================
 -- CONFIG & ANTI-SPAM
 -- ============================================
-local FADE_OUT = 0.5
+local FADE_OUT = 0.1
 local DANCE_WALK_SPEED = 5
 local ANIMATION_PRIORITY = Enum.AnimationPriority.Action4
 

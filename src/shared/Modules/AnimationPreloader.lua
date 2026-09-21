@@ -82,18 +82,41 @@ function module.preloadAnimations(animationFolder)
 end
 
 -- ============================================
--- 🔄 GET PRELOADED TRACK (Just-In-Time Loading)
+-- 🔄 GET PRELOADED TRACK (Cached Just-In-Time Loading)
 -- ============================================
+local loadedTrackCache = setmetatable({}, { __mode = "k" })
+
 function module.getPreloadedTrack(animation)
 	local animator = getAnimator()
 	if not animator then return nil end
+
+	local perAnimator = loadedTrackCache[animator]
+	if not perAnimator then
+		perAnimator = setmetatable({}, { __mode = "k" })
+		loadedTrackCache[animator] = perAnimator
+	end
+
+	local cachedTrack = perAnimator[animation]
+	if cachedTrack then
+		local isValid = false
+		pcall(function()
+			isValid = cachedTrack.Parent == animator and cachedTrack.Animation ~= nil and typeof(cachedTrack.Length) == "number"
+		end)
+		if isValid then
+			return cachedTrack
+		else
+			pcall(function() cachedTrack:Destroy() end)
+			perAnimator[animation] = nil
+		end
+	end
 
 	-- Load JIT (Just-In-Time) saat tarian benar-benar akan diputar
 	local success, track = pcall(function()
 		return animator:LoadAnimation(animation)
 	end)
 	
-	if success then
+	if success and track then
+		perAnimator[animation] = track
 		return track
 	else
 		warn("[AnimPreloader] Failed to load animation:", animation.Name)
@@ -105,7 +128,14 @@ end
 -- 🗑️ INVALIDATE TRACK (CLEANUP)
 -- ============================================
 function module.invalidateTrack(animation)
-	-- Tidak ada cache manual yang perlu dihapus lagi karena kita JIT loading
+	local animator = getAnimator()
+	if animator and loadedTrackCache[animator] then
+		local t = loadedTrackCache[animator][animation]
+		if t then
+			pcall(function() t:Destroy() end)
+		end
+		loadedTrackCache[animator][animation] = nil
+	end
 end
 
 -- ============================================
@@ -121,6 +151,7 @@ end
 function module.clearCache()
 	debug("🗑️ Clearing preload state...")
 	isPreloaded = false
+	table.clear(loadedTrackCache)
 	debug("✅ State cleared")
 end
 

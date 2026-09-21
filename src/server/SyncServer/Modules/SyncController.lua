@@ -23,7 +23,7 @@ local module = {}
 -- ============================================
 -- CONFIG
 -- ============================================
-local FADE_OUT = 0.5
+local FADE_OUT = 0.1
 local MAX_SYNC_DEPTH = 10
 local DANCE_WALK_SPEED = 5 
 
@@ -287,8 +287,19 @@ function module.handleSyncRequest(player, targetPlayer, condition, loadedAnimati
 			local oldTargetName = player.Character and player.Character:GetAttribute("Syncing")
 
 			if player.Character then
-				safeSetAttr(player.Character, "CurrentDanceID", nil)
-				safeSetAttr(player.Character, "DanceStartTime", nil)
+				local leaderChar = trueLeaderOfTarget.Character
+				local leaderDanceId = leaderChar and leaderChar:GetAttribute("CurrentDanceID")
+				local leaderStartTime = leaderChar and leaderChar:GetAttribute("DanceStartTime")
+				local leaderSpeed = leaderChar and leaderChar:GetAttribute("DanceSpeed")
+
+				if leaderDanceId and leaderDanceId ~= "" then
+					safeSetAttr(player.Character, "CurrentDanceID", leaderDanceId)
+					safeSetAttr(player.Character, "DanceStartTime", leaderStartTime or workspace:GetServerTimeNow())
+					safeSetAttr(player.Character, "DanceSpeed", leaderSpeed or 1)
+				else
+					safeSetAttr(player.Character, "CurrentDanceID", nil)
+					safeSetAttr(player.Character, "DanceStartTime", nil)
+				end
 				player.Character:SetAttribute("Syncing", trueLeaderOfTarget.Name)
 			end
 

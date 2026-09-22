@@ -32,13 +32,10 @@ local UI = {
 	notificationFrame = gui:WaitForChild("NotificationFrame"),
 	container         = gui:WaitForChild("MainFrame"):WaitForChild("RightPanel"):WaitForChild("Container"),
 	templateBtn       = gui:WaitForChild("MainFrame"):WaitForChild("RightPanel"):WaitForChild("Container"):WaitForChild("RobuxBtn"),
-	saweriaFrame      = gui:WaitForChild("MainFrame"):WaitForChild("LeftPanel"):WaitForChild("SawriaFrame"),
+	saweriaFrame      = gui:WaitForChild("MainFrame"):WaitForChild("LeftPanel"):FindFirstChild("SawriaFrame"),
 	statsFrame        = gui:WaitForChild("MainFrame"):WaitForChild("LeftPanel"):WaitForChild("StatsFrame"),
 	closeBtn          = gui:WaitForChild("MainFrame"):WaitForChild("CloseBtn"),
 }
-
-local saweriaTextBox = UI.saweriaFrame:WaitForChild("SaweriaTextBox")
-local copyBtn        = UI.saweriaFrame:WaitForChild("CopyBtn")
 
 -- ============================================
 -- STATE
@@ -85,13 +82,11 @@ local function updatePlayerStats()
 				end
 				local rupiahLbl = UI.statsFrame:FindFirstChild("TotalRupiahLabel")
 				if rupiahLbl then
-					local r = tostring(math.floor(tonumber(stats.rupiah) or 0))
-					local k
-					while true do  
-						r, k = string.gsub(r, "^(-?%d+)(%d%d%d)", '%1.%2')
-						if k == 0 then break end
+					if rupiahLbl.Parent and rupiahLbl.Parent ~= UI.statsFrame and (rupiahLbl.Parent.Name:lower():find("rupiah") or rupiahLbl.Parent.Name:lower():find("saweria")) then
+						rupiahLbl.Parent.Visible = false
+					else
+						rupiahLbl.Visible = false
 					end
-					rupiahLbl.Text = "Rp " .. r
 				end
 			end
 		end)
@@ -104,6 +99,9 @@ end
 local function openFrame(frame)
 	frame.Visible = true
 	if frame == UI.mainFrame then
+		if _G.CloseSaweria then
+			pcall(_G.CloseSaweria)
+		end
 		UI.container.CanvasPosition = Vector2.new(0, 0)
 		updatePlayerProfile()
 		updatePlayerStats()
@@ -112,6 +110,13 @@ end
 
 local function closeFrame(frame)
 	frame.Visible = false
+end
+
+_G.CloseRobuxDonation = function()
+	closeFrame(UI.mainFrame)
+	if donationIcon and donationIcon.isSelected then
+		pcall(function() donationIcon:deselect() end)
+	end
 end
 
 -- ============================================
@@ -309,7 +314,7 @@ pcall(function()
 
 	donationIcon = Icon.new()
 		:setName("DonationBoardIcon")
-		:setLabel("Donate")
+		:setLabel("Robux")
 		:setOrder(2)
 
 	donationIcon.selected:Connect(function()
@@ -397,17 +402,10 @@ UI.templateBtn.Visible       = false
 UI.messageFrame.Visible      = false
 UI.notificationFrame.Visible = false
 
--- Saweria Setup
-saweriaTextBox.Text             = "https://saweria.co/JeksAl"
-saweriaTextBox.TextEditable     = false
-saweriaTextBox.ClearTextOnFocus = false
-
-copyBtn.MouseButton1Click:Connect(function()
-	saweriaTextBox:CaptureFocus()
-	saweriaTextBox.SelectionStart = 1
-	saweriaTextBox.CursorPosition = #saweriaTextBox.Text + 1
-	ClientUI.notify("Link Siap Disalin!", "Teks dipilih, tekan Ctrl+C untuk menyalin.", 3)
-end)
+-- Sembunyikan Saweria Frame dari Robux Donation Board (karena Saweria sudah dipisah mandiri)
+if UI.saweriaFrame then
+	UI.saweriaFrame.Visible = false
+end
 
 -- Close Button MainFrame
 UI.closeBtn.MouseButton1Click:Connect(function()

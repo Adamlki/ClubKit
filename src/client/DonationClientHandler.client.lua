@@ -305,7 +305,7 @@ pcall(function()
 
 	donationIcon = Icon.new()
 		:setName("DonationBoardIcon")
-		:setImage("rbxassetid://11560341841")
+		:setImage("rbxassetid://11560341824")
 		:setLabel("")
 		:setOrder(2)
 

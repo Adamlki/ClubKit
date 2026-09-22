@@ -199,7 +199,7 @@ pcall(function()
 
 	saweriaIcon = Icon.new()
 		:setName("SaweriaDonationIcon")
-		:setImage("rbxassetid://15040641396")
+		:setImage("rbxassetid://15040641378")
 		:setLabel("")
 		:setOrder(3) -- Berdampingan di sebelah Robux Donate (Order 2)
 

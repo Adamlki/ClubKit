@@ -305,7 +305,8 @@ pcall(function()
 
 	donationIcon = Icon.new()
 		:setName("DonationBoardIcon")
-		:setLabel("Robux")
+		:setImage("rbxassetid://11560341841")
+		:setLabel("")
 		:setOrder(2)
 
 	donationIcon.selected:Connect(function()

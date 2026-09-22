@@ -32,7 +32,6 @@ local UI = {
 	notificationFrame = gui:WaitForChild("NotificationFrame"),
 	container         = gui:WaitForChild("MainFrame"):WaitForChild("RightPanel"):WaitForChild("Container"),
 	templateBtn       = gui:WaitForChild("MainFrame"):WaitForChild("RightPanel"):WaitForChild("Container"):WaitForChild("RobuxBtn"),
-	saweriaFrame      = gui:WaitForChild("MainFrame"):WaitForChild("LeftPanel"):FindFirstChild("SawriaFrame"),
 	statsFrame        = gui:WaitForChild("MainFrame"):WaitForChild("LeftPanel"):WaitForChild("StatsFrame"),
 	closeBtn          = gui:WaitForChild("MainFrame"):WaitForChild("CloseBtn"),
 }
@@ -79,14 +78,6 @@ local function updatePlayerStats()
 				local robuxLbl = UI.statsFrame:FindFirstChild("TotalRobuxLabel")
 				if robuxLbl then
 					robuxLbl.Text = ClientUI.formatNumber(stats.robux or 0)
-				end
-				local rupiahLbl = UI.statsFrame:FindFirstChild("TotalRupiahLabel")
-				if rupiahLbl then
-					if rupiahLbl.Parent and rupiahLbl.Parent ~= UI.statsFrame and (rupiahLbl.Parent.Name:lower():find("rupiah") or rupiahLbl.Parent.Name:lower():find("saweria")) then
-						rupiahLbl.Parent.Visible = false
-					else
-						rupiahLbl.Visible = false
-					end
 				end
 			end
 		end)
@@ -401,11 +392,6 @@ UI.mainFrame.Visible         = false
 UI.templateBtn.Visible       = false
 UI.messageFrame.Visible      = false
 UI.notificationFrame.Visible = false
-
--- Sembunyikan Saweria Frame dari Robux Donation Board (karena Saweria sudah dipisah mandiri)
-if UI.saweriaFrame then
-	UI.saweriaFrame.Visible = false
-end
 
 -- Close Button MainFrame
 UI.closeBtn.MouseButton1Click:Connect(function()

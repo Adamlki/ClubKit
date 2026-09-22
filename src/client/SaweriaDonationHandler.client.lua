@@ -71,17 +71,17 @@ local function updateStats()
 	displayNameLabel.Text = player.DisplayName
 	usernameLabel.Text = "@" .. player.Name
 
-	-- Perbarui instruksi dengan username pemain asli berwarna oranye
+	-- Perbarui instruksi dengan username pemain asli berwarna merah
 	instructionsLabel.Text = string.format(
 		"1. Tekan <b>COPY LINK</b> lalu buka link donasinya.\n" ..
 		"2. Masukkan nominal donasi (CASH).\n" ..
 		"3. Di kolom <b>Nama / Dari</b>, isi <b>username Roblox</b> kamu:\n" ..
-		"   <font color=\"rgb(255, 100, 20)\"><b>%s</b></font>\n" ..
+		"   <font color=\"rgb(235, 50, 50)\"><b>%s</b></font>\n" ..
 		"4. Selesaikan pembayaran — CASH masuk otomatis.",
 		player.Name
 	)
 
-	usernameHighlight.Text = string.format("Username : <font color=\"rgb(255, 100, 20)\"><b>%s</b></font>", player.Name)
+	usernameHighlight.Text = string.format("Username : <font color=\"rgb(235, 50, 50)\"><b>%s</b></font>", player.Name)
 
 	-- Ambil total donasi riil pemain dari server
 	local getStatsRemote = ReplicatedStorage:FindFirstChild("GetPlayerDonationStats")
@@ -101,7 +101,7 @@ local function updateStats()
 end
 
 -- ==============================================================================
--- OPEN & CLOSE CONTROLLER
+-- OPEN & CLOSE CONTROLLER (Instan Tanpa Animasi Sesuai Permintaan)
 -- ==============================================================================
 local function openSaweria()
 	if isOpen then return end
@@ -114,20 +114,11 @@ local function openSaweria()
 
 	updateStats()
 
+	backdrop.BackgroundTransparency = 0.5
 	backdrop.Visible = true
-	backdrop.BackgroundTransparency = 1
+	mainCard.BackgroundTransparency = 0
+	mainCard.Size = UDim2.new(0, 760, 0, 480)
 	mainCard.Visible = true
-	mainCard.Size = UDim2.new(0, 640, 0, 400)
-	mainCard.BackgroundTransparency = 0.5
-
-	TweenService:Create(backdrop, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-		BackgroundTransparency = 0.5
-	}):Play()
-
-	TweenService:Create(mainCard, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-		Size = UDim2.new(0, 760, 0, 480),
-		BackgroundTransparency = 0
-	}):Play()
 
 	if saweriaIcon and not saweriaIcon.isSelected then
 		pcall(function() saweriaIcon:select() end)
@@ -138,22 +129,8 @@ local function closeSaweria()
 	if not isOpen then return end
 	isOpen = false
 
-	TweenService:Create(backdrop, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-		BackgroundTransparency = 1
-	}):Play()
-
-	local tween = TweenService:Create(mainCard, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-		Size = UDim2.new(0, 640, 0, 400),
-		BackgroundTransparency = 1
-	})
-	tween:Play()
-
-	task.delay(0.2, function()
-		if not isOpen then
-			backdrop.Visible = false
-			mainCard.Visible = false
-		end
-	end)
+	backdrop.Visible = false
+	mainCard.Visible = false
 
 	if saweriaIcon and saweriaIcon.isSelected then
 		pcall(function() saweriaIcon:deselect() end)

@@ -105,22 +105,11 @@ local function createCarryWeld(carrierChar, targetChar, offset)
 		return nil
 	end
 
-	local adjustedOffset = offset
-
-	-- UpperTorso sits higher than HRP; compensate so the carried player aligns correctly
-	if getRigType(carrierChar) == "R15" and carrierPart.Name == "UpperTorso" then
-		local hrp = carrierChar:FindFirstChild("HumanoidRootPart")
-		if hrp then
-			local heightDiff = carrierPart.Position.Y - hrp.Position.Y
-			adjustedOffset = CFrame.new(0, -heightDiff, 0) * offset
-		end
-	end
-
 	local weld = Instance.new("Weld")
 	weld.Name  = "CarryWeld"
 	weld.Part0 = carrierPart
 	weld.Part1 = targetHRP
-	weld.C0    = adjustedOffset
+	weld.C0    = offset
 	weld.C1    = CFrame.new(0, 0, 0)
 	weld.Parent = targetHRP
 
@@ -305,7 +294,7 @@ local function startCarry(carrier, target, style)
 			end
 		end)
 
-		local offset       = CarryConfig.getStyleOffset(style)
+		local offset       = CarryConfig.getStyleOffset(style, cChar, tChar)
 		local carrierPart  = getAttachmentPart(cChar)
 
 		tHRP.CFrame = (carrierPart or cHRP).CFrame * offset

@@ -47,7 +47,11 @@ end
 -- GUI ELEMENTS (Mendukung StarterPlayerScripts & StarterGui)
 -- ============================================
 local playerGui = player:WaitForChild("PlayerGui")
-local gui = script.Parent:IsA("ScreenGui") and script.Parent or playerGui:WaitForChild("EmoteGui")
+local gui = script.Parent:IsA("ScreenGui") and script.Parent or playerGui:WaitForChild("EmoteGui", 30)
+if not gui then
+	warn("[EmoteHandler] EmoteGui tidak ditemukan di PlayerGui dalam 30 detik!")
+	return
+end
 gui.ResetOnSpawn = false
 
 local mainframe = gui:WaitForChild("MainFrame")
@@ -1139,7 +1143,20 @@ function updateDisplay()
 		for _, data in ipairs(allButtons) do
 			local shouldShow = (currentCategory == "Favorite") and (favoritedAnimations[data.name] == true) or (currentCategory == data.category)
 			if shouldShow and searchQuery ~= "" then 
-				shouldShow = string.find(string.lower(data.name), string.lower(searchQuery)) ~= nil 
+				local nameLower = string.lower(data.name)
+				local queryLower = string.lower(searchQuery)
+				if string.find(nameLower, queryLower, 1, true) then
+					shouldShow = true
+				else
+					local matchesAll = true
+					for word in string.gmatch(queryLower, "%S+") do
+						if not string.find(nameLower, word, 1, true) then
+							matchesAll = false
+							break
+						end
+					end
+					shouldShow = matchesAll
+				end
 			end
 			data.button.Visible = shouldShow
 		end

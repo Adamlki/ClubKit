@@ -22,7 +22,11 @@ local Icon = require(ReplicatedStorage:WaitForChild("Icon"))
 -- ============================================
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
-local gui       = playerGui:WaitForChild("DonationBoard")
+local gui       = playerGui:WaitForChild("DonationBoard", 30)
+if not gui then
+	warn("[DonationClientHandler] DonationBoard tidak ditemukan di PlayerGui dalam 30 detik!")
+	return
+end
 
 local UI = {
 	mainFrame         = gui:WaitForChild("MainFrame"),
@@ -328,6 +332,14 @@ local donationQueue    = {}
 local isDisplayingNotif = false
 
 local function processDonationQueue()
+	if _G.HideDonationNotif then
+		table.clear(donationQueue)
+		isDisplayingNotif = false
+		if UI.notificationFrame then
+			UI.notificationFrame.Visible = false
+		end
+		return
+	end
 	if isDisplayingNotif or #donationQueue == 0 then return end
 	isDisplayingNotif = true
 
@@ -355,6 +367,7 @@ local function setupBroadcastListener()
 
 	receiveRemote.OnClientEvent:Connect(function(displayName, amount, message, userId, totalAmount)
 		debugLog("Broadcast diterima:", displayName, amount)
+		if _G.HideDonationNotif then return end
 		ClientUI.sendDonationChatMessage(displayName, amount)
 
 		if amount >= ClientConfig.NOTIFICATION.MIN_DONATION then

@@ -131,7 +131,7 @@ function MusicDispatcher:SyncToPlayer(player)
 	local roleHierarchy = roleSystem.Config.RoleHierarchy[role] or 0
 
 	if self.systemState.IsUIBlocked then
-		if roleHierarchy < 4 then
+		if roleHierarchy < roleSystem.Config.RoleHierarchy.Moderator then
 			self:SendToClient(player, "ADMIN_BLOCK_ACTIVATED", {})
 		else
 			-- 💡 FIX: Beritahu Admin baru bahwa sistem sedang terblokir!

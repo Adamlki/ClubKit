@@ -154,9 +154,9 @@ local function handleCoinCommand(player, args)
 	lastCoinTime[player.UserId] = now
 
 	if #args < 2 then
-		print("Penggunaan: " .. CONFIG.COIN_PREFIX .. " <amount> <nama> [pesan]")
-		print("Contoh: " .. CONFIG.COIN_PREFIX .. " 150000 Budi Test Time Bomb!")
-		sendFeedback(player, "Coin Test", "Penggunaan: /coin <amount> <nama> [pesan]")
+		local help = "Penggunaan: /coin <amount> <nama> [pesan]\nContoh: /coin 500 " .. player.Name .. " Semangat!\nTier Efek Robux:\n• 500 - 999: Nuke (Roket Nuklir)\n• 1000 - 2499: Palu Raksasa & Clone Avatar (Smite)\n• 2500 - 4999: Black Hole Kosmik\n• >= 5000: Starfall (Winged Giant)"
+		print(help)
+		sendFeedback(player, "Coin Test", "Gunakan: /coin <amount> <nama> (500: Nuke, 1k: Palu, 2.5k: BlackHole, 5k: Starfall)")
 		return
 	end
 
@@ -181,7 +181,17 @@ local function handleCoinCommand(player, args)
 
 	if _G.TriggerTestDonation then
 		_G.TriggerTestDonation(donatorName, amount, message)
-		sendFeedback(player, "Coin Test", "Memicu Robux donate: " .. donatorName .. " R$" .. tostring(amount))
+		local extraInfo = ""
+		if amount >= 5000 then
+			extraInfo = " ✨⭐ (Efek Starfall Winged Giant)"
+		elseif amount >= 2500 then
+			extraInfo = " 🕳️🌌 (Efek Black Hole Kosmik)"
+		elseif amount >= 1000 then
+			extraInfo = " ⚡🔨 (Efek Palu Raksasa & Ava Clone)"
+		elseif amount >= 500 then
+			extraInfo = " 🚀💥 (Efek Nuke Nuklir)"
+		end
+		sendFeedback(player, "Coin Test", "Memicu Robux donate: " .. donatorName .. " R$" .. tostring(amount) .. extraInfo)
 	else
 		warn("[ADMIN CMD] _G.TriggerTestDonation belum ada. Mengirim notif saja.")
 		pcall(function()
@@ -353,6 +363,100 @@ local function handleStageCommand(player, args)
 	print(string.format("[ADMIN CMD] Stage effects dinyalakan oleh %s selama %d detik", player.Name, duration))
 end
 
+-- ========== COMMAND HANDLER: /effects (Toggle Mega Effects On/Off) ==========
+
+local function handleEffectsCommand(player, args)
+	if not isOwner(player) then
+		debugPrint(player.Name, "bukan Owner, command /effects ditolak!")
+		return
+	end
+
+	local cfg = _G.MegaEffectsConfig
+	if not cfg then
+		local ok, m = pcall(function()
+			return require(game:GetService("ServerScriptService"):WaitForChild("EffectDonationSaweria"):WaitForChild("MegaEffectsConfig"))
+		end)
+		if ok and m then
+			cfg = m
+			_G.MegaEffectsConfig = m
+		end
+	end
+
+	if not cfg then
+		sendFeedback(player, "Effects Config", "ERROR: MegaEffectsConfig tidak ditemukan!")
+		return
+	end
+
+	if #args == 0 or args[1]:lower() == "status" then
+		local msg = string.format("STATUS EFEK:\n• Global: %s\n• Robux: %s | Saweria: %s\n• Nuke: %s | Smite: %s | BlackHole: %s | Starfall: %s",
+			cfg.GLOBAL_ENABLED and "ON" or "OFF",
+			cfg.ROBUX_ENABLED and "ON" or "OFF",
+			cfg.SAWERIA_ENABLED and "ON" or "OFF",
+			cfg.EFFECTS_ENABLED.Nuke and "ON" or "OFF",
+			cfg.EFFECTS_ENABLED.Smite and "ON" or "OFF",
+			cfg.EFFECTS_ENABLED.BlackHole and "ON" or "OFF",
+			cfg.EFFECTS_ENABLED.Starfall and "ON" or "OFF"
+		)
+		print(msg)
+		sendFeedback(player, "Effects Config", "Format: /effects <nama/all> <on/off>. Cek console F9!")
+		return
+	end
+
+	local target = args[1]:lower()
+	local stateStr = args[2] and args[2]:lower() or ""
+	local newState = (stateStr == "on" or stateStr == "true" or stateStr == "1" or stateStr == "enable")
+
+	if stateStr == "" then
+		if target == "global" or target == "all" then
+			newState = not cfg.GLOBAL_ENABLED
+		elseif target == "robux" then
+			newState = not cfg.ROBUX_ENABLED
+		elseif target == "saweria" then
+			newState = not cfg.SAWERIA_ENABLED
+		elseif target == "nuke" then
+			newState = not cfg.EFFECTS_ENABLED.Nuke
+		elseif target == "smite" or target == "hammer" or target == "palu" then
+			newState = not cfg.EFFECTS_ENABLED.Smite
+		elseif target == "blackhole" or target == "hole" then
+			newState = not cfg.EFFECTS_ENABLED.BlackHole
+		elseif target == "starfall" or target == "star" then
+			newState = not cfg.EFFECTS_ENABLED.Starfall
+		else
+			sendFeedback(player, "Effects Config", "Target: global, robux, saweria, nuke, smite, blackhole, starfall")
+			return
+		end
+	end
+
+	local textOut = ""
+	if target == "global" or target == "all" then
+		cfg.GLOBAL_ENABLED = newState
+		textOut = "Global Mega Effects: " .. (newState and "ON ✅" or "OFF ❌")
+	elseif target == "robux" then
+		cfg.ROBUX_ENABLED = newState
+		textOut = "Robux Mega Effects: " .. (newState and "ON ✅" or "OFF ❌")
+	elseif target == "saweria" then
+		cfg.SAWERIA_ENABLED = newState
+		textOut = "Saweria Mega Effects: " .. (newState and "ON ✅" or "OFF ❌")
+	elseif target == "nuke" then
+		cfg.EFFECTS_ENABLED.Nuke = newState
+		textOut = "Nuke Effect: " .. (newState and "ON ✅" or "OFF ❌")
+	elseif target == "smite" or target == "hammer" or target == "palu" then
+		cfg.EFFECTS_ENABLED.Smite = newState
+		textOut = "Smite (Palu & Ava Clone): " .. (newState and "ON ✅" or "OFF ❌")
+	elseif target == "blackhole" or target == "hole" then
+		cfg.EFFECTS_ENABLED.BlackHole = newState
+		textOut = "BlackHole Effect: " .. (newState and "ON ✅" or "OFF ❌")
+	elseif target == "starfall" or target == "star" then
+		cfg.EFFECTS_ENABLED.Starfall = newState
+		textOut = "Starfall Effect: " .. (newState and "ON ✅" or "OFF ❌")
+	else
+		textOut = "Target salah! Gunakan: all, robux, saweria, nuke, smite, blackhole, starfall"
+	end
+
+	print("[ADMIN CMD]", textOut)
+	sendFeedback(player, "Effects Config", textOut)
+end
+
 -- ========== TEXTCHATSERVICE SETUP (ROBLOX MODERN CHAT) ==========
 task.spawn(function()
 	local ok, tcCommands = pcall(function()
@@ -431,7 +535,29 @@ task.spawn(function()
 			end)
 		end
 
-		debugPrint("TextChatCommands berhasil didaftarkan di TextChatService (/saweria, /coin, /stage)")
+		-- Daftarkan /effects dan /fx
+		local fxCmd = tcCommands:FindFirstChild("EffectsToggleCommand")
+		if not fxCmd then
+			fxCmd = Instance.new("TextChatCommand")
+			fxCmd.Name = "EffectsToggleCommand"
+			fxCmd.PrimaryAlias = "/effects"
+			fxCmd.SecondaryAlias = "/fx"
+			fxCmd.Parent = tcCommands
+
+			fxCmd.Triggered:Connect(function(textSource, rawText)
+				local player = Players:GetPlayerByUserId(textSource.UserId)
+				if not player then return end
+
+				local args = {}
+				for word in rawText:gmatch("%S+") do
+					table.insert(args, word)
+				end
+				table.remove(args, 1)
+				handleEffectsCommand(player, args)
+			end)
+		end
+
+		debugPrint("TextChatCommands berhasil didaftarkan di TextChatService (/saweria, /coin, /stage, /effects)")
 	end
 end)
 
@@ -465,6 +591,13 @@ local function onPlayerChatted(player, message)
 		end
 		table.remove(args, 1)
 		handleStageCommand(player, args)
+	elseif message:sub(1, 8):lower() == "/effects" or message:sub(1, 3):lower() == "/fx" then
+		local args = {}
+		for word in message:gmatch("%S+") do
+			table.insert(args, word)
+		end
+		table.remove(args, 1)
+		handleEffectsCommand(player, args)
 	end
 end
 

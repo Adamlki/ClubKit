@@ -97,12 +97,17 @@ function DonationLeaderboard:GetTopDonors(maxEntries)
 
 	self.isFetching = true
 
-	local success, pages = pcall(function()
-		return self.orderedStore:GetSortedAsync(false, maxEntries)
-	end)
+	local success, pages = nil, nil
+	for attempt = 1, 3 do
+		success, pages = pcall(function()
+			return self.orderedStore:GetSortedAsync(false, maxEntries)
+		end)
+		if success and pages then break end
+		if attempt < 3 then task.wait(1) end
+	end
 
 	if not success or not pages then
-		warn("[Leaderboard] Gagal menarik data dari OrderedDataStore")
+		warn("[Leaderboard] Gagal menarik data dari OrderedDataStore setelah 3 percobaan (gangguan server Roblox)")
 		self.isFetching = false
 		return self.cachedData or {}
 	end
@@ -151,9 +156,14 @@ function DonationLeaderboard:GetTopDailyDonors(maxEntries)
 	local dailyKey = "DonationDaily_" .. os.date("!%Y_%m_%d")
 	local dailyStore = DataStoreService:GetOrderedDataStore(dailyKey, "global")
 
-	local success, pages = pcall(function()
-		return dailyStore:GetSortedAsync(false, maxEntries)
-	end)
+	local success, pages = nil, nil
+	for attempt = 1, 3 do
+		success, pages = pcall(function()
+			return dailyStore:GetSortedAsync(false, maxEntries)
+		end)
+		if success and pages then break end
+		if attempt < 3 then task.wait(1) end
+	end
 
 	if not success or not pages then
 		return {}

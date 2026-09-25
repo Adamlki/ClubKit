@@ -196,12 +196,21 @@ function UINotificationManager:SetupSkipVoteButtons()
 	end)
 end
 
-function UINotificationManager:ShowSkipVote(initiatorName, songTitle, totalVoters)
-	self.sfSkipText.Text = string.format("%s wants to skip: %s", initiatorName, songTitle)
-	self.sfProgress.Text = string.format("0/%d votes", totalVoters)
+function UINotificationManager:ShowSkipVote(initiatorName, songTitle, totalVoters, requiredVotes, yesVotes, noVotes, isInitiator)
+	self.sfSkipText.Text = string.format("%s ingin skip: %s", initiatorName, songTitle)
+	local yVotes = yesVotes or 0
+	local req = requiredVotes or math.max(1, math.ceil((totalVoters or 1) * 0.8))
+	self.sfProgress.Text = string.format("Suara: %d/%d (Butuh %d - 80%%)", yVotes, totalVoters or 1, req)
 	self.skipFrame.Visible = true
-	self.sfAcceptBtn.Active = true
-	self.sfRejectBtn.Active = true
+
+	if isInitiator then
+		-- Inisiator sudah otomatis terhitung vote YES
+		self.sfAcceptBtn.Active = false
+		self.sfRejectBtn.Active = false
+	else
+		self.sfAcceptBtn.Active = true
+		self.sfRejectBtn.Active = true
+	end
 
 	-- Auto hide after 30 seconds
 	task.delay(30, function()
@@ -209,9 +218,10 @@ function UINotificationManager:ShowSkipVote(initiatorName, songTitle, totalVoter
 	end)
 end
 
-function UINotificationManager:UpdateSkipVote(yesVotes, noVotes, totalVoters)
-	self.sfProgress.Text = string.format("%d/%d (Yes: %d, No: %d)", 
-		yesVotes + noVotes, totalVoters, yesVotes, noVotes)
+function UINotificationManager:UpdateSkipVote(yesVotes, noVotes, totalVoters, requiredVotes)
+	local req = requiredVotes or math.max(1, math.ceil((totalVoters or 1) * 0.8))
+	self.sfProgress.Text = string.format("Suara: %d/%d (Yes: %d, No: %d | Butuh %d)", 
+		yesVotes + noVotes, totalVoters or 1, yesVotes, noVotes, req)
 end
 
 function UINotificationManager:HideSkipVote()
@@ -219,7 +229,7 @@ function UINotificationManager:HideSkipVote()
 end
 
 function UINotificationManager:ShowSkipVoteResult(passed)
-	local message = passed and "Skip vote passed! Skipping..." or "Skip vote failed."
+	local message = passed and "⏭️ Vote skip lolos (80% tercapai)! Melewati lagu..." or "❌ Vote skip gagal (tidak mencapai 80%)."
 	self:ShowNotification(message)
 end
 

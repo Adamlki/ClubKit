@@ -183,10 +183,16 @@ end
 local function filterBio(rawBio, fromUserId, toPlayer)
 	if rawBio == "" then return "" end
 
+	-- FilterStringAsync mewajibkan sender berada di server saat ini
+	local senderId = fromUserId
+	if not Players:GetPlayerByUserId(fromUserId) and toPlayer then
+		senderId = toPlayer.UserId
+	end
+
 	local ok, filterResult = pcall(function()
 		return TextService:FilterStringAsync(
 			rawBio,
-			fromUserId,
+			senderId,
 			Enum.TextFilterContext.PublicChat
 		)
 	end)

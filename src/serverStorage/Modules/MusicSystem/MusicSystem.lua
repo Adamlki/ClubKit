@@ -107,7 +107,8 @@ function MusicSystem.new()
 		playbackManager = self.playbackManager,
 		dispatcher = self.dispatcher,
 		systemState = self.systemState,
-		cooldownService = self.cooldownService
+		cooldownService = self.cooldownService,
+		playNextCallback = function() self:PlayNext() end
 	}, self.dispatcher)
 
 	-- Setup auto-next callback
@@ -176,6 +177,11 @@ function MusicSystem:PlayNext()
 
 	self.isTransitioning = true
 	self._transitionStartTime = os.clock()
+
+	-- 🧹 Bersihkan vote skip yang mungkin masih aktif saat lagu berganti
+	if self.skipVoteManager and self.skipVoteManager:IsActive() then
+		self.skipVoteManager:CancelVote(self.dispatcher)
+	end
 
 	local success, err = pcall(function()
 		-- Check if there's a song in queue

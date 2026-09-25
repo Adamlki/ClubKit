@@ -8,8 +8,8 @@ local ProcessReceiptHandler = {}
 -- STATE
 -- ============================================
 local initialized        = false
-local registeredCallbacks = {}  -- [name] = function
-local processedReceipts  = {}   -- [purchaseId] = {timestamp, processed}
+local registeredCallbacks = {}
+local processedReceipts  = {} 
 local activeProcessing   = {}
 
 -- ============================================

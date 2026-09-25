@@ -41,8 +41,12 @@ local COLOR_TEXT_MUTED = Color3.fromRGB(160, 165, 175)
 -- ============================================================
 -- REFERENCES TO MANUAL STARTERGUI INSTANCE
 -- ============================================================
-local screenGui = playerGui:WaitForChild("CinematicCamGui")
-local mainframe = screenGui:WaitForChild("MainFrame")
+local screenGui = playerGui:WaitForChild("CinematicCamGui", 30)
+if not screenGui then
+	warn("[CinematicCamClient] CinematicCamGui tidak ditemukan di PlayerGui dalam 30 detik!")
+	return
+end
+local mainframe = screenGui:WaitForChild("MainFrame", 15)
 local header = mainframe:WaitForChild("Header")
 local closeBtn = header:WaitForChild("CloseBtn")
 local content = mainframe:WaitForChild("Content")

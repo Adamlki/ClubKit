@@ -21,8 +21,12 @@ local Icon = require(ReplicatedStorage:WaitForChild("Icon"))
 -- ==============================================================================
 -- UI REFERENCES (Membaca GUI Fisik dari StarterGui / PlayerGui)
 -- ==============================================================================
-local gui = playerGui:WaitForChild("SaweriaDonationGui")
-local backdrop = gui:WaitForChild("Backdrop")
+local gui = playerGui:WaitForChild("SaweriaDonationGui", 30)
+if not gui then
+	warn("[SaweriaDonationHandler] SaweriaDonationGui tidak ditemukan di PlayerGui dalam 30 detik!")
+	return
+end
+local backdrop = gui:WaitForChild("Backdrop", 15)
 local mainCard = gui:WaitForChild("MainCard")
 
 local headerBar = mainCard:WaitForChild("HeaderBar")

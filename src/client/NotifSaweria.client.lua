@@ -25,8 +25,14 @@ end
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Pastikan NotifSaweriaGui aktif di PlayerGui
-local notifGui = playerGui:WaitForChild("NotifSaweriaGui")
+-- Pastikan NotifSaweriaGui aktif di PlayerGui (aman tanpa infinite yield warning)
+local notifGui = playerGui:WaitForChild("NotifSaweriaGui", 10) or playerGui:FindFirstChild("NotifSaweriaGui")
+if not notifGui then
+	repeat
+		notifGui = playerGui:FindFirstChild("NotifSaweriaGui")
+		task.wait(0.2)
+	until notifGui
+end
 notifGui.Enabled = true
 
 local notifFrame = notifGui:WaitForChild("NotifFrame")
@@ -56,6 +62,7 @@ local function parseClientAmount(val)
 end
 
 local function playSaweriaSound()
+	if _G.HideDonationNotif then return end
 	pcall(function()
 		local sound = Instance.new("Sound")
 		sound.SoundId = "rbxassetid://79392333090964"
@@ -74,6 +81,16 @@ local isDisplayingNotif = false
 local activeTween = nil
 
 local function processQueue()
+	if _G.HideDonationNotif then
+		table.clear(donationQueue)
+		isDisplayingNotif = false
+		if notifFrame then
+			notifFrame.Visible = false
+			notifFrame.Position = NOTIF_HIDDEN_POS
+		end
+		_G.__ActiveDonationNotification = nil
+		return
+	end
 	if isDisplayingNotif or #donationQueue == 0 then return end
 	isDisplayingNotif = true
 
@@ -81,8 +98,12 @@ local function processQueue()
 
 	task.spawn(function()
 		-- Tunggu jika notifikasi Robux sedang aktif di layar
-		while _G.__ActiveDonationNotification do
+		while _G.__ActiveDonationNotification and not _G.HideDonationNotif do
 			task.wait(0.3)
+		end
+		if _G.HideDonationNotif then
+			isDisplayingNotif = false
+			return
 		end
 		_G.__ActiveDonationNotification = true
 
@@ -204,6 +225,7 @@ end
 
 donationEvent.OnClientEvent:Connect(function(data)
 	if not data or not data.donator then return end
+	if _G.HideDonationNotif then return end
 
 	local donatorName = tostring(data.donator or "Anonymous")
 	local amount = parseClientAmount(data.amount)

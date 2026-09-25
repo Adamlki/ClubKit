@@ -683,9 +683,9 @@ end
 
 function UIManager:IsModeratorPlus()
 	local hierarchy = {
-		Owner = 6, Admin = 5, Moderator = 4, DJ = 3, VIP = 2, Player = 1
+		Owner = 5, Admin = 4, Moderator = 3, VIP = 2, Player = 1
 	}
-	return (hierarchy[self.playerRole] or 1) >= 4
+	return (hierarchy[self.playerRole] or 1) >= 3
 end
 
 function UIManager:UpdateAdminButtonState()
@@ -707,12 +707,12 @@ function UIManager:ShowNotification(message)
 	self.notificationManager:ShowNotification(message)
 end
 
-function UIManager:ShowSkipVote(initiatorName, songTitle, totalVoters)
-	self.notificationManager:ShowSkipVote(initiatorName, songTitle, totalVoters)
+function UIManager:ShowSkipVote(initiatorName, songTitle, totalVoters, requiredVotes, yesVotes, noVotes, isInitiator)
+	self.notificationManager:ShowSkipVote(initiatorName, songTitle, totalVoters, requiredVotes, yesVotes, noVotes, isInitiator)
 end
 
-function UIManager:UpdateSkipVote(yesVotes, noVotes, totalVoters)
-	self.notificationManager:UpdateSkipVote(yesVotes, noVotes, totalVoters)
+function UIManager:UpdateSkipVote(yesVotes, noVotes, totalVoters, requiredVotes)
+	self.notificationManager:UpdateSkipVote(yesVotes, noVotes, totalVoters, requiredVotes)
 end
 
 function UIManager:HideSkipVote()

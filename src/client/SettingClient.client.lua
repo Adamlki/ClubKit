@@ -9,6 +9,10 @@ _G.IsDonationEffectsHidden = function()
 	return _G.HideDonationEffects == true
 end
 _G.HideAdminNotif = false
+_G.HideDonationNotif = false
+_G.IsDonationNotifHidden = function()
+	return _G.HideDonationNotif == true
+end
 
 -- ============================================
 -- CONFIGURATION
@@ -52,8 +56,12 @@ local playerGui = localPlayer:WaitForChild("PlayerGui")
 -- ============================================
 -- UI REFERENCES
 -- ============================================
-local gui = script.Parent:IsA("ScreenGui") and script.Parent or playerGui:WaitForChild("SettingGui")
-local mainframe = gui:WaitForChild("Mainframe")
+local gui = script.Parent:IsA("ScreenGui") and script.Parent or playerGui:WaitForChild("SettingGui", 30)
+if not gui then
+	warn("[SettingClient] SettingGui tidak ditemukan di PlayerGui dalam 30 detik!")
+	return
+end
+local mainframe = gui:WaitForChild("Mainframe", 15)
 local settingBtn = gui:FindFirstChild("SettingBtn")
 local headerframe = mainframe:WaitForChild("HeaderFrame")
 local closeBtn = headerframe:WaitForChild("CloseBtn")
@@ -91,6 +99,24 @@ function Utils:AnimateButton(button, bg, isActive)
 	end
 	tweenservice:Create(button, tweenInfo, {Position = newPosition}):Play()
 	tweenservice:Create(bg, tweenInfo, {BackgroundColor3 = newColor}):Play()
+end
+
+function Utils:HideBasePart(part, shouldHide)
+	if part:IsA("BasePart") then
+		part.LocalTransparencyModifier = shouldHide and 1 or 0
+		return true
+	elseif part:IsA("Decal") or part:IsA("Texture") then
+		if part:GetAttribute("OriginalTransparency") == nil then
+			part:SetAttribute("OriginalTransparency", part.Transparency)
+		end
+		if shouldHide then
+			part.Transparency = 1
+		else
+			part.Transparency = part:GetAttribute("OriginalTransparency") or 0
+		end
+		return true
+	end
+	return false
 end
 
 function Utils:HideEffect(effect, shouldHide)
@@ -146,6 +172,7 @@ local ShadowSystem = {}
 local PlayerHideSystem = {}
 local EffectsSystem = {}
 local DonationEffectSystem = {}
+local DonationNotifSystem = {}
 local AdminNotifSystem = {}
 local HideUISystem = { hiddenGuis = {}, childAddedConn = nil }
 
@@ -196,6 +223,12 @@ local FEATURES = {
 		name = "Hide Effect Donate",
 		defaultState = false,
 		onToggle = function(self, isActive) DonationEffectSystem:SetVisible(not isActive) end
+	},
+	{
+		id = "donationnotif",
+		name = "Hide Notif Pesan Donate",
+		defaultState = false,
+		onToggle = function(self, isActive) DonationNotifSystem:SetVisible(not isActive) end
 	},
 	{
 		id = "adminnotif",
@@ -511,13 +544,17 @@ function DonationEffectSystem:SetVisible(visible)
 	local shouldHide = not visible
 	_G.HideDonationEffects = shouldHide
 
-	-- 1. Sembunyikan objek donasi 3D di Workspace (DonationEffect tag)
+	-- 1. Sembunyikan/hancurkan objek donasi 3D di Workspace (DonationEffect tag)
 	for _, effect in ipairs(collectionService:GetTagged("DonationEffect")) do
-		Utils:HideBasePart(effect, shouldHide)
-		for _, desc in ipairs(effect:GetDescendants()) do
-			Utils:HideEffect(desc, shouldHide)
-			Utils:HideLight(desc, shouldHide)
-			Utils:HideBasePart(desc, shouldHide)
+		if shouldHide then
+			pcall(function() effect:Destroy() end)
+		else
+			Utils:HideBasePart(effect, false)
+			for _, desc in ipairs(effect:GetDescendants()) do
+				Utils:HideEffect(desc, false)
+				Utils:HideLight(desc, false)
+				Utils:HideBasePart(desc, false)
+			end
 		end
 	end
 
@@ -539,14 +576,42 @@ function DonationEffectSystem:SetVisible(visible)
 		end
 	end
 
-	-- 3. Hapus efek animasi 3D yang sedang aktif jika disembunyikan
+	-- 3. Hapus seketika efek mega animasi 3D yang sedang aktif jika disembunyikan
 	if shouldHide then
+		-- Hapus dari folder ActiveEffects
 		local activeEffects = workspace:FindFirstChild("ActiveEffects")
 		if activeEffects then
 			for _, effect in ipairs(activeEffects:GetChildren()) do
 				pcall(function() effect:Destroy() end)
 			end
 		end
+
+		-- Bersihkan semua folder efek jika ada yang ter-parent langsung di workspace
+		for _, child in ipairs(workspace:GetChildren()) do
+			if child:IsA("Folder") or child:IsA("Model") then
+				local name = child.Name
+				if string.find(name, "Smite_") or string.find(name, "Starfall_") or string.find(name, "BlackHole_") or string.find(name, "Nuke_") then
+					pcall(function() child:Destroy() end)
+				end
+			end
+		end
+
+		-- Hentikan & bersihkan suara efek donasi di workspace
+		for _, snd in ipairs(workspace:GetChildren()) do
+			if snd:IsA("Sound") and (string.find(snd.Name, "Smite") or string.find(snd.Name, "Donation") or string.find(snd.Name, "Starfall")) then
+				pcall(function() snd:Stop(); snd:Destroy() end)
+			end
+		end
+
+		-- Bersihkan efek pencahayaan donasi di Lighting (agar layar tidak tertinggal merah/gelap)
+		for _, lightEffect in ipairs(lighting:GetChildren()) do
+			if string.find(lightEffect.Name, "Smite") or string.find(lightEffect.Name, "Starfall") or string.find(lightEffect.Name, "BlackHole") or string.find(lightEffect.Name, "Nuke") then
+				pcall(function() lightEffect:Destroy() end)
+			end
+		end
+
+		-- Hentikan guncangan kamera (CameraShake) jika sedang aktif
+		pcall(function() game:GetService("RunService"):UnbindFromRenderStep("CameraShaker") end)
 	end
 end
 
@@ -609,6 +674,49 @@ function AdminNotifSystem:SetVisible(visible)
 						child:Destroy()
 					end
 				end
+			end
+		end
+	end
+end
+
+-- ============================================
+-- DONATION NOTIFICATION SYSTEM (ROBUX & SAWERIA)
+-- ============================================
+function DonationNotifSystem:SetVisible(visible)
+	local shouldHide = not visible
+	_G.HideDonationNotif = shouldHide
+
+	if shouldHide then
+		-- 1. Sembunyikan notifikasi Saweria jika sedang tampil di layar
+		local notifSaweriaGui = playerGui:FindFirstChild("NotifSaweriaGui")
+		if notifSaweriaGui then
+			local notifFrame = notifSaweriaGui:FindFirstChild("NotifFrame")
+			if notifFrame then
+				notifFrame.Visible = false
+				notifFrame.Position = UDim2.new(0.5, 0, -0.2, 0)
+			end
+		end
+		_G.__ActiveDonationNotification = nil
+
+		-- 2. Sembunyikan notifikasi Robux jika sedang tampil di layar
+		local donationBoardGui = playerGui:FindFirstChild("DonationBoard")
+		if donationBoardGui then
+			local notifFrame = donationBoardGui:FindFirstChild("NotificationFrame")
+			if notifFrame then
+				notifFrame.Visible = false
+			end
+		end
+
+		-- 3. Sembunyikan Cinematic Level 4 jika sedang aktif
+		local level4Gui = playerGui:FindFirstChild("Level4Donation")
+		if level4Gui then
+			local container = level4Gui:FindFirstChild("CinematicContainer")
+			if container then
+				container.Visible = false
+			end
+			local skipFrame = level4Gui:FindFirstChild("SkipFrame")
+			if skipFrame then
+				skipFrame.Visible = false
 			end
 		end
 	end

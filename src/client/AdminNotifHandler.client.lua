@@ -23,7 +23,13 @@ local CheckTimerRemote     = RemoteFolder:WaitForChild("CheckTimer")
 -- ====================================
 -- UI REFERENCES
 -- ====================================
-local gui          = script.Parent:IsA("ScreenGui") and script.Parent or playerGui:WaitForChild("AdminNotif")
+local gui = script.Parent:IsA("ScreenGui") and script.Parent or (playerGui:WaitForChild("AdminNotif", 10) or playerGui:FindFirstChild("AdminNotif"))
+if not gui then
+	repeat
+		gui = playerGui:FindFirstChild("AdminNotif")
+		task.wait(0.2)
+	until gui
+end
 local mainframe    = gui:WaitForChild("MainFrame")
 local frame        = mainframe:WaitForChild("Frame") 
 local textbox      = mainframe:WaitForChild("TextBox") 

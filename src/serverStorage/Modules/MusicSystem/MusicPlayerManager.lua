@@ -17,6 +17,7 @@ function MusicPlayerManager.new(config, managers, dispatcher)
 	self.dispatcher = dispatcher
 	self.systemState = managers.systemState
 	self.cooldownService = managers.cooldownService
+	self.playNextCallback = managers.playNextCallback
 
 	return self
 end
@@ -73,7 +74,13 @@ function MusicPlayerManager:OnPlayerRemoving(player)
 	local userId = player.UserId
 
 	self.queueManager:RemoveUserSongs(userId)
-	self.skipVoteManager:UpdateVoteOnPlayerLeave(userId, self.dispatcher)
+	local votePassed = self.skipVoteManager:UpdateVoteOnPlayerLeave(userId, self.dispatcher)
+	if votePassed and self.playNextCallback then
+		local currentSong = self.playbackManager:GetCurrentSong()
+		self.dispatcher:NotifyAll(string.format("⏭️ Vote skip lolos setelah pemain keluar! Melewati: %s", currentSong and currentSong.judul or "Unknown"))
+		self.playNextCallback()
+		self.skipVoteManager:EndVote(self.dispatcher, true)
+	end
 	self.favoriteManager:CleanupPlayer(userId)
 	self.cooldownService:CleanupPlayer(userId)
 

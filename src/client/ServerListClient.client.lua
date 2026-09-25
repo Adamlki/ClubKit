@@ -15,9 +15,12 @@ local remotesFolder = ReplicatedStorage:WaitForChild("ServerListRemotes", 10)
 local getServerListRF = remotesFolder and remotesFolder:WaitForChild("GetServerList", 5)
 local teleportToServerRF = remotesFolder and remotesFolder:WaitForChild("TeleportToServer", 5)
 
--- GUI References (Manual StarterGui instance cloned to PlayerGui)
-local screenGui = playerGui:WaitForChild("ServerListGui")
-local mainframe = screenGui:WaitForChild("MainFrame")
+local screenGui = playerGui:WaitForChild("ServerListGui", 30)
+if not screenGui then
+	warn("[ServerListClient] ServerListGui tidak ditemukan di PlayerGui dalam 30 detik!")
+	return
+end
+local mainframe = screenGui:WaitForChild("MainFrame", 15)
 local header = mainframe:WaitForChild("Header")
 local rightControls = header:WaitForChild("RightControls")
 

@@ -69,14 +69,14 @@ function MusicActionHandler:IsPlayerBlocked(player)
 	print(string.format("[Block Check] Player: %s | Role: %s | Hierarchy: %d | IsUIBlocked: %s", 
 		player.DisplayName, role, roleHierarchy, tostring(self.systemState.IsUIBlocked)))
 
-	-- Moderator+ (hierarchy >= 4) are never blocked
-	if roleHierarchy >= 4 then
+	-- Moderator+ (hierarchy >= Moderator / 3) are never blocked
+	if roleHierarchy >= RoleSystem.Config.RoleHierarchy.Moderator then
 		print(string.format("[Block Check] %s is Moderator+ - NOT BLOCKED", player.DisplayName))
 		return false
 	end
 
 	-- Non-moderators are blocked
-	print(string.format("[Block Check] %s is blocked (hierarchy %d < 4)", player.DisplayName, roleHierarchy))
+	print(string.format("[Block Check] %s is blocked (hierarchy %d < %d)", player.DisplayName, roleHierarchy, RoleSystem.Config.RoleHierarchy.Moderator))
 	return true
 end
 
@@ -134,7 +134,7 @@ function MusicActionHandler:HandleAddToQueue(player, data)
 	-- Check role permission
 	local role = RoleSystem:GetPlayerRole(player)
 	if RoleSystem.Config.RoleHierarchy[role] < RoleSystem.Config.RoleHierarchy.VIP then
-		self.dispatcher:Notify(player, "Minimum rank VIP required to add songs!")
+		self.dispatcher:Notify(player, "⭐ Upgrade ke VIP untuk dapat menambah lagu ke antrean!")
 		return
 	end
 
@@ -254,50 +254,50 @@ function MusicActionHandler:HandleControlNext(player, data)
 	local role = RoleSystem:GetPlayerRole(player)
 	local roleHierarchy = RoleSystem.Config.RoleHierarchy[role] or 0
 
-	-- Check minimum role
+	-- Check minimum role (Hanya VIP ke atas yang bisa skip / vote skip)
 	if roleHierarchy < RoleSystem.Config.RoleHierarchy.VIP then
-		self.dispatcher:Notify(player, "Minimum rank VIP required to skip!")
+		self.dispatcher:Notify(player, "⭐ Upgrade ke VIP untuk dapat melakukan Vote Skip!")
 		return
 	end
 
-	-- Moderator+ can force skip
-	if roleHierarchy >= 4 then
+	-- Moderator+ (Moderator, Admin, Owner) dapat langsung skip (Force Skip tanpa vote)
+	if roleHierarchy >= RoleSystem.Config.RoleHierarchy.Moderator then
 		local currentSong = self.playbackManager:GetCurrentSong()
 		if currentSong then
-			self.dispatcher:NotifyAll(string.format("%s (%s) skipped: %s", player.DisplayName, role, currentSong.judul or "Unknown"))
-			task.wait(1.5)
+			self.dispatcher:NotifyAll(string.format("⏭️ %s (%s) melewati lagu: %s", player.DisplayName, role, currentSong.judul or "Unknown"))
+			task.wait(1.0)
 			self.playNextCallback()
 		else
-			self.dispatcher:Notify(player, "No song is currently playing!")
+			self.dispatcher:Notify(player, "Tidak ada lagu yang sedang diputar!")
 		end
 		return
 	end
 
-	-- Regular skip vote for VIP
+	-- Regular skip vote untuk VIP
 	local currentSong = self.playbackManager:GetCurrentSong()
 	if not currentSong then 
-		self.dispatcher:Notify(player, "No song is currently playing!")
+		self.dispatcher:Notify(player, "Tidak ada lagu yang sedang diputar!")
 		return 
 	end
 
-	-- Cannot skip auto-playlist songs
-	if self.playbackManager:IsFromPlaylist() then
-		self.dispatcher:Notify(player, "Cannot skip auto-playlist songs! Wait for user-added songs.")
+	-- Cek rate limit untuk mencegah spam vote
+	local canVote, remainingSec = self.skipVoteManager:CheckRateLimit(player)
+	if not canVote then
+		self.dispatcher:Notify(player, string.format("⏳ Tunggu %d detik lagi sebelum memulai vote skip baru!", remainingSec))
 		return
 	end
 
-	-- ✅ FIX: Check rate limit to prevent vote spamming
-	if not self.skipVoteManager:CheckRateLimit(player) then
-		self.dispatcher:Notify(player, "Please wait before starting another vote!")
-		return
-	end
-
-	-- Start skip vote
-	local success, msg = self.skipVoteManager:StartVote(player, currentSong, self.dispatcher)
+	-- Mulai skip vote (Vote dikirim ke seluruh player di server, butuh 80% suara)
+	local success, passedOrMsg = self.skipVoteManager:StartVote(player, currentSong, self.dispatcher)
 	if not success then
-		self.dispatcher:Notify(player, msg)
+		self.dispatcher:Notify(player, passedOrMsg)
+	elseif passedOrMsg == true then
+		-- Langsung lolos jika ambang batas 80% terpenuhi seketika (contoh: pemain VIP sendirian di server)
+		self.dispatcher:NotifyAll(string.format("⏭️ Vote skip disetujui (100%%)! Melewati lagu: %s", currentSong.judul or "Unknown"))
+		self.playNextCallback()
+		self.skipVoteManager:EndVote(self.dispatcher, true)
 	else
-		self.dispatcher:NotifyAll(string.format("%s started a skip vote for: %s", player.DisplayName, currentSong.judul or "Unknown"))
+		self.dispatcher:NotifyAll(string.format("📢 %s memulai vote skip untuk: %s (Butuh 80%% suara player)", player.DisplayName, currentSong.judul or "Unknown"))
 	end
 end
 
@@ -312,18 +312,18 @@ function MusicActionHandler:HandleSkipVoteYes(player, data)
 	local success, passed = self.skipVoteManager:CastVote(player, "yes", self.dispatcher)
 
 	if not success then
-		self.dispatcher:Notify(player, "Unable to cast vote. No active vote or you already voted!")
+		self.dispatcher:Notify(player, "Gagal memilih. Vote tidak aktif atau Anda sudah memberikan suara!")
 		return
 	end
 
 	if passed then
 		local currentSong = self.playbackManager:GetCurrentSong()
-		self.dispatcher:NotifyAll(string.format("Skip vote passed! Skipping: %s", currentSong and currentSong.judul or "Unknown"))
+		self.dispatcher:NotifyAll(string.format("⏭️ Vote skip lolos (80%% tercapai)! Melewati: %s", currentSong and currentSong.judul or "Unknown"))
 		-- 🔥 FIX: Dihapus task.wait(1) untuk mencegah bug double-skip
 		self.playNextCallback()
 		self.skipVoteManager:EndVote(self.dispatcher, true)
 	else
-		self.dispatcher:Notify(player, "Your vote has been counted!")
+		self.dispatcher:Notify(player, "Suara YES Anda telah tercatat!")
 	end
 end
 
@@ -338,9 +338,9 @@ function MusicActionHandler:HandleSkipVoteNo(player, data)
 	local success = self.skipVoteManager:CastVote(player, "no", self.dispatcher)
 
 	if success then
-		self.dispatcher:Notify(player, "Your vote has been counted!")
+		self.dispatcher:Notify(player, "Suara NO Anda telah tercatat!")
 	else
-		self.dispatcher:Notify(player, "Unable to cast vote. No active vote or you already voted!")
+		self.dispatcher:Notify(player, "Gagal memilih. Vote tidak aktif atau Anda sudah memberikan suara!")
 	end
 end
 
@@ -354,8 +354,8 @@ function MusicActionHandler:HandleRetryAll(player, data)
 	local role = RoleSystem:GetPlayerRole(player)
 	local roleHierarchy = RoleSystem.Config.RoleHierarchy[role] or 0
 
-	if roleHierarchy < 4 then
-		self.dispatcher:Notify(player, "Only Moderator+ can use retry all!")
+	if roleHierarchy < RoleSystem.Config.RoleHierarchy.Moderator then
+		self.dispatcher:Notify(player, "Hanya Moderator+ yang dapat menggunakan fitur reload audio!")
 		return
 	end
 
@@ -388,8 +388,8 @@ function MusicActionHandler:HandleAdminToggleBlock(player, data)
 	local role = RoleSystem:GetPlayerRole(player)
 	local roleHierarchy = RoleSystem.Config.RoleHierarchy[role] or 0
 
-	if roleHierarchy < 4 then
-		self.dispatcher:Notify(player, "Only Moderator+ can toggle UI block!")
+	if roleHierarchy < RoleSystem.Config.RoleHierarchy.Moderator then
+		self.dispatcher:Notify(player, "Hanya Moderator+ yang dapat mengatur block sistem musik!")
 		return
 	end
 
@@ -412,7 +412,7 @@ function MusicActionHandler:HandleAdminToggleBlock(player, data)
 			local plrRole = RoleSystem:GetPlayerRole(plr)
 			local plrHierarchy = RoleSystem.Config.RoleHierarchy[plrRole] or 0
 
-			if plrHierarchy < 4 then
+			if plrHierarchy < RoleSystem.Config.RoleHierarchy.Moderator then
 				-- ✅ FIXED: Only send to non-moderators
 				self.dispatcher:SendToClient(plr, "ADMIN_BLOCK_ACTIVATED", {})
 				print(string.format("[Admin Block] Blocking %s (Role: %s, Hierarchy: %d)", 
@@ -436,7 +436,7 @@ function MusicActionHandler:HandleAdminToggleBlock(player, data)
 			local plrRole = RoleSystem:GetPlayerRole(plr)
 			local plrHierarchy = RoleSystem.Config.RoleHierarchy[plrRole] or 0
 
-			if plrHierarchy < 4 then
+			if plrHierarchy < RoleSystem.Config.RoleHierarchy.Moderator then
 				self.dispatcher:SendToClient(plr, "ADMIN_BLOCK_DEACTIVATED", {})
 			else
 				self.dispatcher:SendToClient(plr, "ADMIN_BUTTON_UPDATE", {text = "Block"})

@@ -32,13 +32,13 @@ local CONFIG = {
 	STATE_REQUEST_COOLDOWN = 5,
 
 	STAGE_FX_DURATION     = 15,    -- Durasi semburan panggung
-	MIN_DONATION_FOR_FX   = 90,  -- Minimal donasi untuk menyalakan panggung otomatis
+	MIN_DONATION_FOR_FX   = 1,     -- Minimal donasi untuk menyalakan panggung otomatis (semua nominal)
 }
 
 local PRICE_RANGES = {
-	{ name = "Level 1", minPrice = 10, maxPrice = 90, templateName = "Level1", useCinematic = false },
-	{ name = "Level 2", minPrice = 90, maxPrice = 450, templateName = "Level2", useCinematic = false },
-	{ name = "Level 3", minPrice = 450, maxPrice = 900, templateName = "Level3", useCinematic = false },
+	{ name = "Level 1", minPrice = 1,   maxPrice = 89,      templateName = "Level1", useCinematic = false },
+	{ name = "Level 2", minPrice = 90,  maxPrice = 449,     templateName = "Level2", useCinematic = false },
+	{ name = "Level 3", minPrice = 450, maxPrice = 899,     templateName = "Level3", useCinematic = false },
 	{
 		name              = "Level 4",
 		minPrice          = 900,
@@ -56,26 +56,28 @@ local PRICE_RANGES = {
 local recentDonations  = {}
 local requestCooldowns = {}
 local isStageFiring    = false -- Mencegah tumpang tindih semprotan panggung
+local stageFireEndTime = 0
 
 -- ============================================================
 -- STAGE FX HANDLER (CONFETTI & SMOKE)
 -- ============================================================
 local function triggerStageEffects(duration)
-	if isStageFiring then return end
-	isStageFiring = true
+	duration = duration or CONFIG.STAGE_FX_DURATION
+	stageFireEndTime = math.max(stageFireEndTime, tick() + duration)
 
 	local stageEffectsFolder = Workspace:FindFirstChild("StageEffects")
 	if not stageEffectsFolder then
 		warn("[DonationEffect] Folder StageEffects tidak ditemukan di Workspace!")
-		isStageFiring = false
 		return
 	end
 
-	-- 1. NYALAKAN SEMUA EFEK
+	-- 1. NYALAKAN SEMUA EFEK PANGGUNG
 	for _, stageFX in ipairs(stageEffectsFolder:GetChildren()) do
 		if stageFX:IsA("BasePart") then
 			local sound = stageFX:FindFirstChild("HissSound")
-			if sound then sound:Play() end
+			if sound and not sound.IsPlaying then
+				pcall(function() sound:Play() end)
+			end
 
 			for _, fx in ipairs(stageFX:GetChildren()) do
 				if fx:IsA("ParticleEmitter") or fx:IsA("Smoke") then
@@ -85,25 +87,32 @@ local function triggerStageEffects(duration)
 		end
 	end
 
-	-- 2. TUNGGU DURASI (Bisa distop lebih awal jika dipanggil stop)
-	local elapsed = 0
-	while elapsed < duration and isStageFiring do
+	if isStageFiring then
+		-- Jika sedang menyala, perpanjang timer agar donasi baru tetap menikmati efek penuh
+		return
+	end
+	isStageFiring = true
+
+	-- 2. TUNGGU DURASI (Bisa diperpanjang jika ada donasi berturut-turut)
+	while tick() < stageFireEndTime and isStageFiring do
 		task.wait(0.25)
-		elapsed += 0.25
 	end
 
-	-- 3. MATIKAN DENGAN "SMOOTH"
-	for _, stageFX in ipairs(stageEffectsFolder:GetChildren()) do
-		if stageFX:IsA("BasePart") then
-			for _, fx in ipairs(stageFX:GetChildren()) do
-				if fx:IsA("ParticleEmitter") or fx:IsA("Smoke") then
-					fx.Enabled = false
+	-- 3. MATIKAN SEMUA EFEK DENGAN "SMOOTH"
+	if stageEffectsFolder and stageEffectsFolder.Parent then
+		for _, stageFX in ipairs(stageEffectsFolder:GetChildren()) do
+			if stageFX:IsA("BasePart") then
+				for _, fx in ipairs(stageFX:GetChildren()) do
+					if fx:IsA("ParticleEmitter") or fx:IsA("Smoke") then
+						fx.Enabled = false
+					end
 				end
 			end
 		end
 	end
 
 	isStageFiring = false
+	stageFireEndTime = 0
 end
 
 -- ============================================================
@@ -114,6 +123,9 @@ local function getRangeByPrice(price)
 		if price >= range.minPrice and price <= range.maxPrice then
 			return range
 		end
+	end
+	if price and price > 0 then
+		return PRICE_RANGES[1] -- Fallback agar donasi nominal berapapun tetap dapat efek
 	end
 	return nil
 end
@@ -219,14 +231,25 @@ local function grantDonationEffect(player, price)
 		and (range.cinematicDuration or CONFIG.LEVEL4_DURATION)
 		or  CONFIG.DISPLAY_DURATION
 
+	-- 1. Efek 3D di atas kepala donor
 	task.spawn(function()
 		spawnDonationObject(player, range.templateName, duration)
 	end)
 
-	if price >= CONFIG.MIN_DONATION_FOR_FX then
-		task.spawn(function()
-			triggerStageEffects(CONFIG.STAGE_FX_DURATION)
-		end)
+	-- 2. Efek semburan api panggung StageFX (selalu aktif berapapun nominal donasinya)
+	task.spawn(function()
+		triggerStageEffects(CONFIG.STAGE_FX_DURATION)
+	end)
+
+	-- 3. Efek Mega Panggung (500-999: Nuke, 1000+: Palu/Smite & Ava Clone)
+	if price >= 500 then
+		local RobuxEffectEvent = SS:FindFirstChild("RobuxEffectEvent")
+		if not RobuxEffectEvent then
+			RobuxEffectEvent = Instance.new("BindableEvent")
+			RobuxEffectEvent.Name = "RobuxEffectEvent"
+			RobuxEffectEvent.Parent = SS
+		end
+		RobuxEffectEvent:Fire(player, price)
 	end
 
 	local donationData = {
@@ -300,7 +323,7 @@ end
 -- ============================================================
 -- 🔥 PERBAIKAN TYPO DI LEVEL 2
 local SAWERIA_RANGES = {
-	{ name = "Level 1", minPrice = 5000,    maxPrice = 49999,     templateName = "Level1", useCinematic = false },
+	{ name = "Level 1", minPrice = 1,       maxPrice = 49999,     templateName = "Level1", useCinematic = false },
 	{ name = "Level 2", minPrice = 50000,   maxPrice = 499999,    templateName = "Level2", useCinematic = false },
 	{ name = "Level 3", minPrice = 500000,  maxPrice = 999999,    templateName = "Level3", useCinematic = false },
 	{
@@ -319,6 +342,9 @@ local function getSaweriaRangeByPrice(price)
 		if price >= range.minPrice and price <= range.maxPrice then
 			return range
 		end
+	end
+	if price and price > 0 then
+		return SAWERIA_RANGES[1] -- Fallback agar donasi nominal berapapun tetap dapat efek
 	end
 	return nil
 end
@@ -351,17 +377,17 @@ local function grantSaweriaEffect(playerOrName, rpAmount)
 		end
 	end
 
+	-- 1. Efek 3D di atas kepala donor
 	if donorPlayer then
 		task.spawn(function()
 			spawnDonationObject(donorPlayer, range.templateName, duration)
 		end)
 	end
 
-	if rpAmount >= 10000 then
-		task.spawn(function()
-			triggerStageEffects(CONFIG.STAGE_FX_DURATION)
-		end)
-	end
+	-- 2. Efek semburan api panggung StageFX (selalu aktif berapapun nominal donasinya)
+	task.spawn(function()
+		triggerStageEffects(CONFIG.STAGE_FX_DURATION)
+	end)
 
 	local donationData = {
 		donorName         = donorDisplayName,
@@ -430,6 +456,7 @@ end
 
 _G.StopStageEffects = function()
 	isStageFiring = false
+	stageFireEndTime = 0
 	local stageEffectsFolder = Workspace:FindFirstChild("StageEffects")
 	if stageEffectsFolder then
 		for _, fx in ipairs(stageEffectsFolder:GetDescendants()) do
@@ -446,4 +473,49 @@ end
 
 _G.IsStageFiring = function()
 	return isStageFiring
+end
+
+-- ============================================================
+-- TEST HELPER (STUDIO & ADMIN COMMANDS)
+-- ============================================================
+_G.TriggerTestDonation = function(donatorName, amount, message)
+	amount = tonumber(amount) or 100
+	local p = Players:FindFirstChild(donatorName or "")
+	if not p then
+		p = Players:GetPlayers()[1]
+	end
+	if p then
+		grantDonationEffect(p, amount)
+	else
+		local range = getRangeByPrice(amount)
+		task.spawn(function()
+			triggerStageEffects(CONFIG.STAGE_FX_DURATION)
+		end)
+
+		-- Trigger Efek Mega Panggung jika >= 500 (Nuke / Palu)
+		if amount >= 500 then
+			local RobuxEffectEvent = SS:FindFirstChild("RobuxEffectEvent")
+			if not RobuxEffectEvent then
+				RobuxEffectEvent = Instance.new("BindableEvent")
+				RobuxEffectEvent.Name = "RobuxEffectEvent"
+				RobuxEffectEvent.Parent = SS
+			end
+			RobuxEffectEvent:Fire(donatorName or "TestDonor", amount)
+		end
+
+		local duration = range and (range.useCinematic and (range.cinematicDuration or CONFIG.LEVEL4_DURATION) or CONFIG.DISPLAY_DURATION) or 10
+		local donationData = {
+			donorName         = donatorName or "TestDonor",
+			donorUserId       = 1,
+			price             = amount,
+			currencyType      = "Robux",
+			levelName         = range and range.name or "Level 1",
+			useCinematic      = range and range.useCinematic or false,
+			cinematicColor    = range and range.cinematicColor or nil,
+			cinematicDuration = duration,
+			timestamp         = tick(),
+		}
+		storeDonation(donationData)
+		fireToAllPlayers(donationData)
+	end
 end

@@ -387,8 +387,8 @@ end
 -- ✅ FIXED: CHECK IF PLAYER CAN PERFORM ACTION (SERVER-AUTHORITATIVE)
 -- ====================================
 function MusicPlayer:CanPerformAction(actionType)
-	-- ✅ MODERATOR+ (hierarchy >= 4) ALWAYS ALLOWED
-	if self.playerRoleHierarchy >= 4 then
+	-- ✅ MODERATOR+ (hierarchy >= 3: Moderator, Admin, Owner) ALWAYS ALLOWED
+	if self.playerRoleHierarchy >= 3 then
 		return true
 	end
 
@@ -423,6 +423,12 @@ end
 function MusicPlayer:SetupUICallbacks()
 	-- Music submit (from playlist or custom ID)
 	self.uiManager:OnMusicSubmit(function(musicId: string)
+		-- Check minimum role (Hanya VIP ke atas yang bisa add lagu)
+		if self.playerRoleHierarchy < 2 then
+			self.uiManager:ShowNotification("⭐ Upgrade ke VIP untuk dapat menambah lagu ke antrean!")
+			return
+		end
+
 		-- ✅ CLIENT-SIDE BLOCK CHECK (but allows Moderator+)
 		if not self:CanPerformAction("ADD_TO_QUEUE") then
 			self.uiManager:ShowNotification("🔒 Music access is currently blocked by Admin!")
@@ -444,6 +450,12 @@ function MusicPlayer:SetupUICallbacks()
 
 	-- Next/Skip button
 	self.uiManager:OnNext(function()
+		-- Check minimum role (Hanya VIP ke atas yang bisa skip / vote skip)
+		if self.playerRoleHierarchy < 2 then
+			self.uiManager:ShowNotification("⭐ Upgrade ke VIP untuk dapat melakukan Vote Skip!")
+			return
+		end
+
 		-- ✅ CLIENT-SIDE BLOCK CHECK (but allows Moderator+)
 		if not self:CanPerformAction("CONTROL_NEXT") then
 			self.uiManager:ShowNotification("🔒 Music access is currently blocked by Admin!")
@@ -609,10 +621,10 @@ function MusicPlayer:HandleDispatchEvent(data)
 		end
 
 	elseif eventType == "SKIP_VOTE_START" then
-		self.uiManager:ShowSkipVote(payload.initiator, payload.songTitle, payload.totalVoters)
+		self.uiManager:ShowSkipVote(payload.initiator, payload.songTitle, payload.totalVoters, payload.requiredVotes, payload.yesVotes, payload.noVotes, payload.isInitiator)
 
 	elseif eventType == "SKIP_VOTE_UPDATE" then
-		self.uiManager:UpdateSkipVote(payload.yesVotes, payload.noVotes, payload.totalVoters)
+		self.uiManager:UpdateSkipVote(payload.yesVotes, payload.noVotes, payload.totalVoters, payload.requiredVotes)
 
 	elseif eventType == "SKIP_VOTE_END" then
 		local passed = payload.result == "passed"
@@ -780,7 +792,7 @@ function MusicPlayer:SyncState(state)
 	end
 
 	-- Update admin block state (only for non-moderators)
-	if state.isBlocked and self.playerRoleHierarchy < 4 then
+	if state.isBlocked and self.playerRoleHierarchy < 3 then
 		self.uiManager:ShowBlockFrame()
 	else
 		self.uiManager:HideBlockFrame()

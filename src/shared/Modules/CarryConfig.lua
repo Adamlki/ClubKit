@@ -89,7 +89,7 @@ CarryConfig.STYLES = {
 			local c = CarryConfig.getAvatarMetrics(carrierChar)
 			local t = CarryConfig.getAvatarMetrics(carriedChar)
 			local z = (c.torsoSize.Z * 0.5) + (t.hrpSize.Z * 0.45)
-			local y = -0.35 * c.heightScale
+			local y = -1.35 * c.heightScale
 			return CFrame.new(0, y, z)
 		end,
 		animIds = {
@@ -141,8 +141,8 @@ CarryConfig.STYLES = {
 		offsetFunction = function(carrierChar, carriedChar)
 			local c = CarryConfig.getAvatarMetrics(carrierChar)
 			local t = CarryConfig.getAvatarMetrics(carriedChar)
-			local z = -((c.torsoSize.Z * 0.5) + (t.hrpSize.Z * 0.65))
-			local y = 0.45 * c.heightScale
+			local z = -((c.torsoSize.Z * 0.5) + (t.hrpSize.Z * 0.60))
+			local y = -0.45 * c.heightScale
 			return CFrame.new(0, y, z) * CFrame.fromEulerAnglesXYZ(
 				math.rad(-25), math.rad(175), 0
 			)

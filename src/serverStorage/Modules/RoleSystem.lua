@@ -68,6 +68,7 @@ local giveGamePassStore = DataStoreService:GetDataStore(RoleSystem.Config.DATAST
 -- ====================================
 local playerOwnershipCache = {}
 local ownershipLoadingLocks = {}
+local groupCheckCooldown = {}
 
 -- ====================================
 -- EVENTS

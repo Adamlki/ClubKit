@@ -2,6 +2,10 @@
   "name": "ClubKit",
   "tree": {
     "$className": "DataModel",
+    "ReplicatedFirst": {
+      "$path": "src/cinematic_loader",
+      "$ignoreUnknownInstances": true
+    },
     "ReplicatedStorage": {
       "$path": "src/shared",
       "$ignoreUnknownInstances": true

@@ -61,7 +61,12 @@ if GlobalEffectGui then
 	
 	NotifikasiFrame.Visible = false
 	
+	local lastFollowClick = 0
 	FollowBtn.MouseButton1Click:Connect(function()
+		local now = os.clock()
+		if now - lastFollowClick < 0.3 then return end
+		lastFollowClick = now
+
 		isFollowing = not isFollowing
 		if isFollowing then
 			FollowBtnText.Text = "Unfollow"
@@ -153,7 +158,12 @@ if GlobalEffectGui then
 		setupButton(BtnFly, "Fly")
 		setupButton(BtnWing, "Wing")
 
+		local lastClearClick = 0
 		BtnClear.MouseButton1Click:Connect(function()
+			local now = os.clock()
+			if now - lastClearClick < 0.3 then return end
+			lastClearClick = now
+
 			for stateName, _ in pairs(ButtonStates) do
 				ButtonStates[stateName] = false
 				updateButtonUI(stateName, false)

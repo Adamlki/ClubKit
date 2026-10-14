@@ -133,10 +133,15 @@ local function setColor(c)
 	updatePreviewBanner()
 end
 
--- Connect 15 Preset Buttons in EffectFrame Grid
+-- Connect 15 Preset Buttons in EffectFrame Grid (0.3s debounce)
+local lastColorClick = 0
 for _, child in ipairs(effectFrame:GetChildren()) do
 	if child:IsA("TextButton") then
 		child.MouseButton1Click:Connect(function()
+			local now = os.clock()
+			if now - lastColorClick < 0.3 then return end
+			lastColorClick = now
+
 			setColor(child.BackgroundColor3)
 		end)
 	end
@@ -172,8 +177,13 @@ entryTitle:GetPropertyChangedSignal("Text"):Connect(function()
 	updatePreviewBanner()
 end)
 
--- Close Button Click
+-- Close Button Click (0.3s debounce)
+local lastCloseTitleClick = 0
 closeBtn.MouseButton1Click:Connect(function()
+	local now = os.clock()
+	if now - lastCloseTitleClick < 0.3 then return end
+	lastCloseTitleClick = now
+
 	mainFrame.Visible = false
 end)
 
@@ -181,7 +191,12 @@ end)
 -- "CEK DULU" (5-SECOND PREVIEW) LOGIC
 -- ====================================
 local previewDebounce = false
+local lastPreviewClick = 0
 previewBtn.MouseButton1Click:Connect(function()
+	local now = os.clock()
+	if now - lastPreviewClick < 0.3 then return end
+	lastPreviewClick = now
+
 	if previewDebounce then return end
 	if state.isPreviewing then return end
 
@@ -244,7 +259,12 @@ end
 -- "SIMPAN TITLE" (APPLY) LOGIC
 -- ====================================
 local applyDebounce = false
+local lastApplyClick = 0
 applyBtn.MouseButton1Click:Connect(function()
+	local now = os.clock()
+	if now - lastApplyClick < 0.3 then return end
+	lastApplyClick = now
+
 	if applyDebounce then return end
 	if not state.isUnlimited and state.chances <= 0 then
 		showNotification("Kesempatan Habis", string.format("Kesempatan custom title kamu sudah habis (0/%d)! Capai Level %d untuk Custom Title Unlimited!", state.maxChances, state.unlimitedThreshold), 4)

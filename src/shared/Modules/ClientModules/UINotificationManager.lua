@@ -179,7 +179,12 @@ end
 -- SKIP VOTE UI
 -- ====================================
 function UINotificationManager:SetupSkipVoteButtons()
+	local lastVoteClick = 0
 	self.sfAcceptBtn.MouseButton1Click:Connect(function()
+		local now = os.clock()
+		if now - lastVoteClick < 0.3 then return end
+		lastVoteClick = now
+
 		if self.onSkipVoteResponseCallback then
 			self.onSkipVoteResponseCallback("yes")
 			self.sfAcceptBtn.Active = false
@@ -188,6 +193,10 @@ function UINotificationManager:SetupSkipVoteButtons()
 	end)
 
 	self.sfRejectBtn.MouseButton1Click:Connect(function()
+		local now = os.clock()
+		if now - lastVoteClick < 0.3 then return end
+		lastVoteClick = now
+
 		if self.onSkipVoteResponseCallback then
 			self.onSkipVoteResponseCallback("no")
 			self.sfAcceptBtn.Active = false

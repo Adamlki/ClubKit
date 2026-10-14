@@ -44,6 +44,9 @@ function MusicActionHandler.new(config, managers, dispatcher)
 	self.playNextCallback = managers.playNextCallback
 	self.broadcastPreloadCallback = managers.broadcastPreloadCallback
 
+	self.vipSkipData = {}     -- [userId] = { streak = number, lastSkipTime = number, cooldown = number }
+	self.adminSkipTimes = {}  -- [userId] = timestamp (flat 5 detik per orang)
+
 	return self
 end
 
@@ -218,10 +221,7 @@ function MusicActionHandler:HandleAddToQueue(player, data)
 		-- Update cooldown
 		self.cooldownService:UpdateCooldown(player)
 
-		-- Sync to player immediately
-		self.dispatcher:SyncToPlayer(player)
-
-		-- Broadcast queue update to all
+		-- Broadcast queue update to all (termasuk player yang menambah lagu)
 		self.dispatcher:SyncQueueOnly()
 
 		local queuePosition = self.queueManager:GetSize()
@@ -240,7 +240,83 @@ function MusicActionHandler:HandleAddToQueue(player, data)
 end
 
 -- ====================================
--- CONTROL NEXT (SKIP) - ✅ FIXED WITH BLOCK CHECK (VIP CAN SKIP)
+-- SKIP COOLDOWN TRACKING
+-- PER-ORANG (PER-PLAYER), BUKAN SERVER-WIDE:
+-- - VIP: Kelipatan 7 detik (Skip 1 = 7s, Skip 2 = 14s, Skip 3 = 21s, dst.)
+-- - Jajaran Owner/Admin/Moderator: Flat 5 detik tiap klik skip
+-- ====================================
+function MusicActionHandler:CheckSkipCooldown(player, roleHierarchy)
+	local userId = player.UserId
+	local now = os.clock()
+
+	-- Jajaran Owner / Admin / Moderator: Flat cooldown 5 detik per orang
+	if roleHierarchy >= RoleSystem.Config.RoleHierarchy.Moderator then
+		local lastSkip = self.adminSkipTimes[userId]
+		if lastSkip and (now - lastSkip) < 5 then
+			local remaining = math.ceil(5 - (now - lastSkip))
+			return false, remaining
+		end
+		return true, 0
+	end
+
+	-- VIP: Cooldown kelipatan 7 detik per orang (Skip 1 = 7s, Skip 2 = 14s, Skip 3 = 21s, dst.)
+	local data = self.vipSkipData[userId]
+	if data and data.lastSkipTime and data.lastSkipTime > 0 then
+		local elapsed = now - data.lastSkipTime
+		if elapsed < data.cooldown then
+			local remaining = math.ceil(data.cooldown - elapsed)
+			return false, remaining
+		end
+
+		-- Jika sudah lewat cooldown + 45 detik tanpa skip baru, reset streak ke 0
+		if elapsed > (data.cooldown + 45) then
+			data.streak = 0
+			data.cooldown = 0
+		end
+	end
+
+	return true, 0
+end
+
+function MusicActionHandler:RecordAdminSkip(player)
+	if not player then return end
+	self.adminSkipTimes[player.UserId] = os.clock()
+end
+
+function MusicActionHandler:RecordVipSkip(player)
+	if not player then return end
+	self:RecordVipSkipById(player.UserId)
+end
+
+function MusicActionHandler:RecordVipSkipById(userId)
+	if not userId then return end
+	local data = self.vipSkipData[userId]
+	if not data then
+		data = { streak = 0, lastSkipTime = 0, cooldown = 0 }
+		self.vipSkipData[userId] = data
+	end
+
+	data.streak = (data.streak or 0) + 1
+	data.cooldown = data.streak * 7
+	data.lastSkipTime = os.clock()
+end
+
+function MusicActionHandler:ResetAllSkipStreaks()
+	self.vipSkipData = {}
+end
+
+function MusicActionHandler:ResetSkipStreak()
+	self:ResetAllSkipStreaks()
+end
+
+function MusicActionHandler:CleanupPlayer(userId)
+	if not userId then return end
+	self.vipSkipData[userId] = nil
+	self.adminSkipTimes[userId] = nil
+end
+
+-- ====================================
+-- CONTROL NEXT (SKIP)
 -- ====================================
 function MusicActionHandler:HandleControlNext(player, data)
 	if not validatePlayer(player) then return end
@@ -260,30 +336,38 @@ function MusicActionHandler:HandleControlNext(player, data)
 		return
 	end
 
-	-- Moderator+ (Moderator, Admin, Owner) dapat langsung skip (Force Skip tanpa vote)
+	local currentSong = self.playbackManager:GetCurrentSong()
+	if not currentSong then
+		self.dispatcher:Notify(player, "Tidak ada lagu yang sedang diputar!")
+		return
+	end
+
+	-- 🛡️ CEK COOLDOWN SKIP PER-ORANG
+	-- Jajaran Owner/Admin: Flat 5s cooldown
+	-- VIP: Cooldown kelipatan 7s (7s, 14s, 21s, dst.)
+	local canSkip, remainingSec = self:CheckSkipCooldown(player, roleHierarchy)
+	if not canSkip then
+		self.dispatcher:Notify(player, string.format("⏳ Cooldown skip aktif! Tunggu %d detik lagi sebelum skip berikutnya.", remainingSec))
+		return
+	end
+
+	-- Moderator+ (Moderator, Admin, Owner) dapat langsung skip (Force Skip tanpa vote, flat cooldown 5 detik per orang)
 	if roleHierarchy >= RoleSystem.Config.RoleHierarchy.Moderator then
-		local currentSong = self.playbackManager:GetCurrentSong()
-		if currentSong then
-			self.dispatcher:NotifyAll(string.format("⏭️ %s (%s) melewati lagu: %s", player.DisplayName, role, currentSong.judul or "Unknown"))
-			task.wait(1.0)
-			self.playNextCallback()
-		else
-			self.dispatcher:Notify(player, "Tidak ada lagu yang sedang diputar!")
-		end
+		self:RecordAdminSkip(player)
+		self.dispatcher:NotifyAll(string.format("⏭️ %s (%s) melewati lagu: %s", player.DisplayName, role, currentSong.judul or "Unknown"))
+		task.wait(1.0)
+		self.playNextCallback()
 		return
 	end
 
 	-- Regular skip vote untuk VIP
-	local currentSong = self.playbackManager:GetCurrentSong()
-	if not currentSong then 
-		self.dispatcher:Notify(player, "Tidak ada lagu yang sedang diputar!")
-		return 
-	end
-
-	-- Cek rate limit untuk mencegah spam vote
-	local canVote, remainingSec = self.skipVoteManager:CheckRateLimit(player)
+	-- Cek rate limit untuk mencegah spam vote (gunakan skip cooldown VIP saat ini atau minimal 7s)
+	local vipData = self.vipSkipData[player.UserId]
+	local currentVipCooldown = (vipData and vipData.cooldown and vipData.cooldown > 0) and vipData.cooldown or 7
+	local voteCooldown = math.max(7, currentVipCooldown)
+	local canVote, remainingVoteSec = self.skipVoteManager:CheckRateLimit(player, voteCooldown)
 	if not canVote then
-		self.dispatcher:Notify(player, string.format("⏳ Tunggu %d detik lagi sebelum memulai vote skip baru!", remainingSec))
+		self.dispatcher:Notify(player, string.format("⏳ Tunggu %d detik lagi sebelum memulai vote skip baru!", remainingVoteSec))
 		return
 	end
 
@@ -293,6 +377,7 @@ function MusicActionHandler:HandleControlNext(player, data)
 		self.dispatcher:Notify(player, passedOrMsg)
 	elseif passedOrMsg == true then
 		-- Langsung lolos jika ambang batas 80% terpenuhi seketika (contoh: pemain VIP sendirian di server)
+		self:RecordVipSkip(player)
 		self.dispatcher:NotifyAll(string.format("⏭️ Vote skip disetujui (100%%)! Melewati lagu: %s", currentSong.judul or "Unknown"))
 		self.playNextCallback()
 		self.skipVoteManager:EndVote(self.dispatcher, true)
@@ -317,6 +402,12 @@ function MusicActionHandler:HandleSkipVoteYes(player, data)
 	end
 
 	if passed then
+		local initiatorId = self.skipVoteManager.skipVote and self.skipVoteManager.skipVote.initiatorId
+		if initiatorId then
+			self:RecordVipSkipById(initiatorId)
+		else
+			self:RecordVipSkip(player)
+		end
 		local currentSong = self.playbackManager:GetCurrentSong()
 		self.dispatcher:NotifyAll(string.format("⏭️ Vote skip lolos (80%% tercapai)! Melewati: %s", currentSong and currentSong.judul or "Unknown"))
 		-- 🔥 FIX: Dihapus task.wait(1) untuk mencegah bug double-skip

@@ -38,11 +38,12 @@ local gui = nil
 local mainframe = nil
 local displayname = nil
 local displaymessage = nil
+local avatarImage = nil
 
 local function getSaweriaScreenGui()
 	local folder = workspace:FindFirstChild("ScreenText")
 	if folder then
-		local part = folder:FindFirstChild("ScreenTextSaweria") or folder:FindFirstChild("ScreenText")
+		local part = folder:FindFirstChild("ScreenTextSaweria")
 		if part then
 			return part:FindFirstChild("ScreenMessage")
 		end
@@ -62,6 +63,12 @@ local function ensureElements()
 		if mainframe then
 			displayname = mainframe:FindFirstChild("DisplayName") or mainframe:WaitForChild("DisplayName", 5)
 			displaymessage = mainframe:FindFirstChild("DisplayMessage") or mainframe:WaitForChild("DisplayMessage", 5)
+			local avatarContainer = mainframe:FindFirstChild("AvatarContainer")
+			if avatarContainer then
+				avatarImage = avatarContainer:FindFirstChild("Avatar")
+			else
+				avatarImage = mainframe:FindFirstChild("Avatar")
+			end
 		end
 	end
 
@@ -76,15 +83,20 @@ ensureElements()
 -- ============================================
 local isAnimating = false
 
-local function animateUpdate(newName, newMessage)
+local function animateUpdate(newName, newMessage, userId)
 	if not ensureElements() then
 		warn("[SaweriaScreenBoard] Elemen GUI ScreenTextSaweria tidak ditemukan di Workspace!")
 		return
 	end
 
+	local newAvatarThumb = userId and string.format("rbxthumb://type=AvatarHeadShot&id=%d&w=420&h=420", userId) or nil
+
 	if isAnimating then
 		displayname.Text = newName
 		displaymessage.Text = newMessage
+		if avatarImage and newAvatarThumb then
+			avatarImage.Image = newAvatarThumb
+		end
 		return
 	end
 	isAnimating = true
@@ -100,13 +112,22 @@ local function animateUpdate(newName, newMessage)
 		TweenInfo.new(CONFIG.FADE_OUT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 		{TextTransparency = 1}
 	)
+	local fadeAvatarOut = avatarImage and TweenService:Create(
+		avatarImage,
+		TweenInfo.new(CONFIG.FADE_OUT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{ImageTransparency = 1}
+	)
 	fadeNameOut:Play()
 	fadeMsgOut:Play()
+	if fadeAvatarOut then fadeAvatarOut:Play() end
 	task.wait(CONFIG.FADE_OUT_TIME + 0.05)
 
-	-- Update teks
+	-- Update teks & avatar
 	displayname.Text = newName
 	displaymessage.Text = newMessage
+	if avatarImage and newAvatarThumb then
+		avatarImage.Image = newAvatarThumb
+	end
 
 	-- Fade in
 	local fadeNameIn = TweenService:Create(
@@ -119,8 +140,14 @@ local function animateUpdate(newName, newMessage)
 		TweenInfo.new(CONFIG.FADE_IN_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
 		{TextTransparency = 0}
 	)
+	local fadeAvatarIn = avatarImage and TweenService:Create(
+		avatarImage,
+		TweenInfo.new(CONFIG.FADE_IN_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+		{ImageTransparency = 0}
+	)
 	fadeNameIn:Play()
 	fadeMsgIn:Play()
+	if fadeAvatarIn then fadeAvatarIn:Play() end
 	task.wait(CONFIG.FADE_IN_TIME + 0.05)
 
 	isAnimating = false
@@ -143,25 +170,27 @@ local function filterMessage(message, fromUserId)
 		)
 	end)
 
-	if not ok1 or not filterResult then
-		return RunService:IsStudio() and message or CONFIG.DEFAULT_MESSAGE
+	if ok1 and filterResult then
+		local filteredText
+		local ok2 = pcall(function()
+			filteredText = filterResult:GetNonChatStringForBroadcastAsync()
+		end)
+
+		if ok2 and filteredText ~= nil then
+			local trimmed = filteredText:match("^%s*(.-)%s*$")
+			if #trimmed > 0 then
+				return trimmed
+			end
+		end
 	end
 
-	local filteredText
-	local ok2 = pcall(function()
-		filteredText = filterResult:GetNonChatStringForBroadcastAsync()
-	end)
-
-	if not ok2 or filteredText == nil then
-		return RunService:IsStudio() and message or CONFIG.DEFAULT_MESSAGE
+	-- Jika filtering gagal atau jaringan TextService sedang timeout, gunakan pesan asli yang sudah di-trim
+	local trimmed = message:match("^%s*(.-)%s*$")
+	if trimmed and #trimmed > 0 then
+		return trimmed
 	end
 
-	local trimmed = filteredText:match("^%s*(.-)%s*$")
-	if #trimmed == 0 then
-		return CONFIG.DEFAULT_MESSAGE
-	end
-
-	return trimmed
+	return CONFIG.DEFAULT_MESSAGE
 end
 
 -- ============================================
@@ -186,6 +215,12 @@ local function resolveUserId(donatorName)
 		return foundId
 	end
 
+	-- Fallback cerdas: gunakan salah satu pemain aktif di server sebagai konteks TextService
+	local activePlayer = Players:GetPlayers()[1]
+	if activePlayer then
+		return activePlayer.UserId
+	end
+
 	return 1
 end
 
@@ -207,14 +242,16 @@ function SaweriaScreenBoardHandler:ShowDonationMessage(donatorName, amount, mess
 	local userId = resolveUserId(donatorName)
 	local filtered = filterMessage(message or "", userId)
 
-	local displayNameText = string.format(
-		CONFIG.NAME_FORMAT,
-		donatorName,
-		formatRupiah(amount)
-	)
+	local targetPlayer = Players:GetPlayerByUserId(userId)
+	local displayNameText = ""
+	if targetPlayer then
+		displayNameText = string.format("%s (@%s)", targetPlayer.DisplayName, targetPlayer.Name)
+	else
+		displayNameText = string.format("%s (@%s)", donatorName, donatorName:lower():gsub("%s+", ""))
+	end
 
 	task.spawn(function()
-		animateUpdate(displayNameText, filtered)
+		animateUpdate(displayNameText, filtered, userId)
 	end)
 
 	print(string.format("[SaweriaScreenBoard] 📺 Screen Text Saweria diupdate untuk: %s | Rp %d", donatorName, amount))
@@ -227,13 +264,27 @@ end
 task.spawn(function()
 	task.wait(1.5)
 	if ensureElements() then
-		displayname.Text = CONFIG.DEFAULT_NAME
+		displayname.Text = "RASA NADA (@rasanada)"
 		displaymessage.Text = CONFIG.DEFAULT_MESSAGE
+		if avatarImage then
+			avatarImage.Image = "rbxthumb://type=AvatarHeadShot&id=8978185974&w=420&h=420"
+		end
 		print("[SaweriaScreenBoard] ✅ ScreenTextSaweria berhasil diinisialisasi dengan pesan default")
 	else
 		warn("[SaweriaScreenBoard] ⚠️ ScreenTextSaweria belum ditemukan saat inisialisasi awal.")
 	end
 end)
+
+function SaweriaScreenBoardHandler:ResetToDefault()
+	if ensureElements() then
+		displayname.Text = "RASA NADA (@rasanada)"
+		displaymessage.Text = CONFIG.DEFAULT_MESSAGE
+		if avatarImage then
+			avatarImage.Image = "rbxthumb://type=AvatarHeadShot&id=8978185974&w=420&h=420"
+		end
+		print("[SaweriaScreenBoard] 🔄 ScreenTextSaweria di-reset ke template default")
+	end
+end
 
 -- Global test shortcut
 _G.TestSaweriaScreen = function(donatorName, amount, message)

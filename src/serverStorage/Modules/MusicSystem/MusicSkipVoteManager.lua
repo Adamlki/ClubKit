@@ -38,10 +38,10 @@ end
 -- RATE LIMITING
 -- ====================================
 
-function MusicSkipVoteManager:CheckRateLimit(player)
+function MusicSkipVoteManager:CheckRateLimit(player, customCooldown)
 	local userId = player.UserId
 	local lastTime = self.skipVoteRateLimit[userId]
-	local cooldown = self.config.SKIP_VOTE_COOLDOWN or 60
+	local cooldown = customCooldown or self.config.SKIP_VOTE_COOLDOWN or 7
 
 	if lastTime then
 		local elapsed = tick() - lastTime

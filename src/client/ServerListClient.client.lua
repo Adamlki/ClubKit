@@ -54,7 +54,12 @@ mainframe:GetPropertyChangedSignal("Visible"):Connect(function()
 	end
 end)
 
+local lastCloseServerClick = 0
 closeBtn.MouseButton1Click:Connect(function()
+	local now = os.clock()
+	if now - lastCloseServerClick < 0.3 then return end
+	lastCloseServerClick = now
+
 	mainframe.Visible = false
 end)
 
@@ -65,11 +70,20 @@ local isDragging = false
 local dragStartMouse = nil
 local dragStartFramePos = nil
 
+local function isInsideGui(guiObj, pos)
+	if not guiObj then return false end
+	local absPos = guiObj.AbsolutePosition
+	local absSize = guiObj.AbsoluteSize
+	return pos.X >= absPos.X and pos.X <= (absPos.X + absSize.X)
+	   and pos.Y >= absPos.Y and pos.Y <= (absPos.Y + absSize.Y)
+end
+
 header.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		if input.Target == closeBtn or input.Target:IsDescendantOf(closeBtn) or
-		   input.Target == refreshBtn or input.Target:IsDescendantOf(refreshBtn) or
-		   input.Target == searchBox or input.Target:IsDescendantOf(searchContainer) then
+		if isInsideGui(rightControls, input.Position) or
+		   isInsideGui(closeBtn, input.Position) or
+		   isInsideGui(refreshBtn, input.Position) or
+		   isInsideGui(searchContainer, input.Position) then
 			return
 		end
 		isDragging = true
@@ -254,7 +268,12 @@ local function renderServerCards(filterText)
 						actionBtn.BackgroundColor3 = Color3.fromRGB(36, 40, 48)
 					end)
 
+					local lastJoinClick = 0
 					actionBtn.MouseButton1Click:Connect(function()
+						local now = os.clock()
+						if now - lastJoinClick < 0.3 then return end
+						lastJoinClick = now
+
 						if isFetching then return end
 						actionBtn.Text = "JOINING..."
 						actionBtn.BackgroundColor3 = Color3.fromRGB(0, 132, 255)
@@ -307,8 +326,13 @@ function fetchAndRenderServers()
 	end)
 end
 
--- Refresh Button Click
+-- Refresh Button Click (0.3s debounce)
+local lastRefreshServerClick = 0
 refreshBtn.MouseButton1Click:Connect(function()
+	local now = os.clock()
+	if now - lastRefreshServerClick < 0.3 then return end
+	lastRefreshServerClick = now
+
 	fetchAndRenderServers()
 end)
 

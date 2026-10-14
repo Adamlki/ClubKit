@@ -167,7 +167,8 @@ function ServerBridge._start(): nil
 		local remainingQueue = {}
 		local passingReplRates = {}
 
-		for i, v in remainingQueue do
+		for i = #remainingQueue, 1, -1 do
+			local v = remainingQueue[i]
 			if (currentTime - replTicks[v.replRate]) <= (1 / v.replRate - 0.003) then
 				table.insert(SendQueue, v)
 				continue
@@ -329,7 +330,10 @@ end
 end]]
 
 function ServerBridge._destroy()
-	RemoteEvent:Destroy()
+	if RemoteEvent then
+		RemoteEvent:Destroy()
+		RemoteEvent = nil
+	end
 end
 
 function ServerBridge.new(remoteName: string)

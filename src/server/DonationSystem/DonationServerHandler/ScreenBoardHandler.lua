@@ -14,16 +14,17 @@ local gui = nil
 local mainframe = nil
 local displayname = nil
 local displaymessage = nil
+local avatarImage = nil
 
 local function getRobuxScreenGui()
 	local folder = workspace:FindFirstChild("ScreenText")
 	if folder then
-		local part = folder:FindFirstChild("ScreenTextRobux") or folder:FindFirstChild("ScreenText")
+		local part = folder:FindFirstChild("ScreenTextRobux")
 		if part then
 			return part:FindFirstChild("ScreenMessage")
 		end
 	end
-	local part = workspace:FindFirstChild("ScreenTextRobux", true) or workspace:FindFirstChild("ScreenText", true)
+	local part = workspace:FindFirstChild("ScreenTextRobux", true)
 	return part and part:FindFirstChild("ScreenMessage")
 end
 
@@ -38,6 +39,12 @@ local function ensureElements()
 		if mainframe then
 			displayname = mainframe:FindFirstChild("DisplayName") or mainframe:WaitForChild("DisplayName", 5)
 			displaymessage = mainframe:FindFirstChild("DisplayMessage") or mainframe:WaitForChild("DisplayMessage", 5)
+			local avatarContainer = mainframe:FindFirstChild("AvatarContainer")
+			if avatarContainer then
+				avatarImage = avatarContainer:FindFirstChild("Avatar")
+			else
+				avatarImage = mainframe:FindFirstChild("Avatar")
+			end
 		end
 	end
 
@@ -58,9 +65,11 @@ local screenBoardRemote = ReplicatedStorage:FindFirstChild("UpdateScreenBoard")
 		return r
 	end)()
 
-screenBoardRemote.OnServerEvent:Connect(function(player)
-	player:Kick("Unauthorized remote invocation.")
-end)
+if RunService:IsServer() and RunService:IsRunning() then
+	screenBoardRemote.OnServerEvent:Connect(function(player)
+		player:Kick("Unauthorized remote invocation.")
+	end)
+end
 
 -- ============================================
 -- DEBUG
@@ -78,56 +87,50 @@ local isAnimating = false
 
 -- ============================================
 -- ANIMASI FADE (server-side TweenService)
--- TweenService di server menganimasikan Instance di Workspace
--- dan direplikasi otomatis ke semua client — tanpa client perlu
--- pegang referensi apapun.
 -- ============================================
 local FADE_OUT_TIME = 0.3
 local FADE_IN_TIME  = 0.4
 
-local function animateUpdate(newName, newMessage)
+local function animateUpdate(newName, newMessage, userId)
 	if not ensureElements() then return end
 
+	local newAvatarThumb = userId and string.format("rbxthumb://type=AvatarHeadShot&id=%d&w=420&h=420", userId) or nil
+
 	if isAnimating then
-		-- Langsung update tanpa animasi jika sedang transisi
 		displayname.Text    = newName
 		displaymessage.Text = newMessage
+		if avatarImage and newAvatarThumb then
+			avatarImage.Image = newAvatarThumb
+		end
 		return
 	end
 	isAnimating = true
 
 	-- Fade out
-	local fadeNameOut = TweenService:Create(
-		displayname,
-		TweenInfo.new(FADE_OUT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-		{TextTransparency = 1}
-	)
-	local fadeMsgOut = TweenService:Create(
-		displaymessage,
-		TweenInfo.new(FADE_OUT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-		{TextTransparency = 1}
-	)
+	local fadeNameOut = TweenService:Create(displayname, TweenInfo.new(FADE_OUT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 1})
+	local fadeMsgOut = TweenService:Create(displaymessage, TweenInfo.new(FADE_OUT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 1})
+	local fadeAvatarOut = avatarImage and TweenService:Create(avatarImage, TweenInfo.new(FADE_OUT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {ImageTransparency = 1})
+
 	fadeNameOut:Play()
 	fadeMsgOut:Play()
+	if fadeAvatarOut then fadeAvatarOut:Play() end
 	task.wait(FADE_OUT_TIME + 0.05)
 
 	-- Update konten
 	displayname.Text    = newName
 	displaymessage.Text = newMessage
+	if avatarImage and newAvatarThumb then
+		avatarImage.Image = newAvatarThumb
+	end
 
 	-- Fade in
-	local fadeNameIn = TweenService:Create(
-		displayname,
-		TweenInfo.new(FADE_IN_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-		{TextTransparency = 0}
-	)
-	local fadeMsgIn = TweenService:Create(
-		displaymessage,
-		TweenInfo.new(FADE_IN_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-		{TextTransparency = 0}
-	)
+	local fadeNameIn = TweenService:Create(displayname, TweenInfo.new(FADE_IN_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {TextTransparency = 0})
+	local fadeMsgIn = TweenService:Create(displaymessage, TweenInfo.new(FADE_IN_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {TextTransparency = 0})
+	local fadeAvatarIn = avatarImage and TweenService:Create(avatarImage, TweenInfo.new(FADE_IN_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {ImageTransparency = 0})
+
 	fadeNameIn:Play()
 	fadeMsgIn:Play()
+	if fadeAvatarIn then fadeAvatarIn:Play() end
 	task.wait(FADE_IN_TIME + 0.05)
 
 	isAnimating = false
@@ -211,15 +214,12 @@ function ScreenBoardHandler:ShowDonationMessage(player, amount, message)
 
 	local filtered        = filterMessage(message or "", player)
 	local resolvedName    = getPlayerDisplayName(player.UserId)
-	local displayNameText = string.format(
-		DonationConfig.SCREEN_BOARD.NAME_FORMAT,
-		resolvedName,
-		amount
-	)
+	local username        = player.Name or ("user_" .. tostring(player.UserId))
+	local displayNameText = string.format("%s (@%s)", resolvedName, username)
 
 	-- Animasi dan update dijalankan di server — direplikasi otomatis ke semua client
 	task.spawn(function()
-		animateUpdate(displayNameText, filtered)
+		animateUpdate(displayNameText, filtered, player.UserId)
 	end)
 
 	debugLog("Screen board diupdate untuk:", player.Name, "| Amount:", amount)
@@ -232,8 +232,11 @@ end
 task.spawn(function()
 	task.wait(1.5)
 	if ensureElements() then
-		displayname.Text = DonationConfig.SCREEN_BOARD.DEFAULT_NAME
+		displayname.Text = "RASA NADA (@rasanada)"
 		displaymessage.Text = DonationConfig.SCREEN_BOARD.DEFAULT_MESSAGE
+		if avatarImage then
+			avatarImage.Image = "rbxthumb://type=AvatarHeadShot&id=8978185974&w=420&h=420"
+		end
 		debugLog("Screen board Robux diinisialisasi dengan pesan default")
 	else
 		warn("[ScreenBoardHandler] ⚠️ ScreenTextRobux belum ditemukan saat inisialisasi awal.")

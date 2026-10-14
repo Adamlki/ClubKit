@@ -260,7 +260,7 @@ task.spawn(function()
 	local lastCycleIndex = -1
 
 	while true do
-		task.wait(0.2)
+		task.wait(1.0)
 
 		-- Pastikan target masih valid
 		if not mainImage or not mainImage.Parent then

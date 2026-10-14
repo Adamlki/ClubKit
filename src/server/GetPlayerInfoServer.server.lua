@@ -4,6 +4,8 @@ local TextService       = game:GetService("TextService")
 local Players           = game:GetService("Players")
 local ServerScriptService = game:GetService("ServerScriptService")
 
+local GroupService     = game:GetService("GroupService")
+
 local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 
 -- ============================================
@@ -28,87 +30,95 @@ end
 local BASE_USERS   = "https://users.roproxy.com/v1/users/"
 local BASE_FRIENDS = "https://friends.roproxy.com/v1/users/"
 
--- Cache TTL dalam detik — data dianggap fresh selama 5 menit.
--- Setelah TTL habis, data akan di-fetch ulang dari API.
-local CACHE_TTL       = 300
-local REQUEST_TIMEOUT = 8  -- detik maksimal menunggu semua parallel request
+-- Cache TTL dalam detik — data disimpan selama 30 menit (menghemat kuota & anti-429).
+local CACHE_TTL       = 1800
+local REQUEST_TIMEOUT = 5  -- detik maksimal menunggu request roproxy
 
 -- ============================================
 -- CACHE SYSTEM
 -- ============================================
---[[
-    Struktur cache:
-    cache[userId] = {
-        rawDescription : string  -- bio mentah sebelum TextService filter
-        friendsCount   : number
-        followersCount : number
-        followingCount : number
-        timestamp      : number  -- tick() saat di-cache
-    }
-
-    Cara kerja:
-    - Sebelum fetch API, cek apakah cache untuk userId masih fresh (< CACHE_TTL detik)
-    - Jika fresh  → kembalikan cache langsung, tanpa HTTP request
-    - Jika stale  → fetch ulang dari API, simpan ke cache
-    - Saat player keluar → cache dihapus untuk hemat memori
-]]
 local cache = {}
 
 local function getCached(userId)
 	local entry = cache[userId]
 	if not entry then return nil end
-	if tick() - entry.timestamp > CACHE_TTL then
+	if (os.clock() - entry.timestamp) > CACHE_TTL then
 		cache[userId] = nil  -- expired, hapus
 		return nil
 	end
 	return entry
 end
 
-local function setCached(userId, rawDescription, friendsCount, followersCount, followingCount)
+local function setCached(userId, rawDescription, friendsCount, followersCount, followingCount, primaryGroup)
 	cache[userId] = {
 		rawDescription = rawDescription,
 		friendsCount   = friendsCount,
 		followersCount = followersCount,
 		followingCount = followingCount,
-		timestamp      = tick(),
+		primaryGroup   = primaryGroup,
+		timestamp      = os.clock(),
 	}
 end
 
--- Hapus cache saat player keluar untuk hemat memori
-Players.PlayerRemoving:Connect(function(player)
-	cache[player.UserId] = nil
-end)
+-- ============================================
+-- HTTP HELPER DENGAN GLOBAL PACING & CIRCUIT BREAKER
+-- ============================================
+local proxyCircuitOpenUntil = 0
+local consecutiveErrors = 0
+local CIRCUIT_BREAK_DURATION = 30 -- Jeda 30 detik jika proxy down/terkena hard rate limit
+local lastHttpCallTime = 0
+local MIN_HTTP_GAP = 0.15 -- Jeda minimal 150ms antar outbound request ke RoProxy untuk anti-429
 
--- ============================================
--- HTTP HELPER
--- ============================================
---[[
-    httpGet melakukan GET request ke URL dan decode JSON hasilnya.
-    Retry otomatis 1 kali jika request pertama gagal,
-    dengan jeda 1 detik antar percobaan untuk menangani error sementara.
-    Mengembalikan table data jika sukses, nil jika gagal.
-]]
 local function httpGet(url)
+	-- Jika circuit breaker aktif, jangan kirim HTTP request ke proxy sama sekali
+	if os.clock() < proxyCircuitOpenUntil then
+		return nil
+	end
+
+	-- 🛡️ GLOBAL PACING: Beri jeda minimal 150ms agar RoProxy tidak memblokir IP Roblox (HTTP 429)
+	local timeSinceLast = os.clock() - lastHttpCallTime
+	if timeSinceLast < MIN_HTTP_GAP then
+		task.wait(MIN_HTTP_GAP - timeSinceLast)
+	end
+	lastHttpCallTime = os.clock()
+
 	for attempt = 1, 2 do
 		local ok, result = pcall(function()
-			return HttpService:GetAsync(url, true) -- 
+			return HttpService:GetAsync(url, true)
 		end)
 
 		if ok and result then
-			local okJson, data = pcall(HttpService.JSONDecode, HttpService, result) -- 
+			local okJson, data = pcall(HttpService.JSONDecode, HttpService, result)
 			if okJson and data then
+				consecutiveErrors = 0
 				return data
 			end
 		else
-			-- 🔥 ARCHITECT FIX: Sembunyikan log jika proxy penuh (429), down (InvalidRedirect), atau ngelag (Timeout)
 			local errorStr = tostring(result)
-			if not string.find(errorStr, "429") and not string.find(errorStr, "InvalidRedirect") and not string.find(errorStr, "Timeout") then
-				--warn(string.format("[GetPlayerInfo] HTTP gagal (attempt %d/2): %s | %s", attempt, url, errorStr)) 
+			-- Jika terkena rate limit (429), jangan retry agresif dan catat error
+			if string.find(errorStr, "429") or string.find(errorStr, "Too Many Requests") then
+				consecutiveErrors += 1
+				if consecutiveErrors >= 4 then
+					proxyCircuitOpenUntil = os.clock() + CIRCUIT_BREAK_DURATION
+				end
+				-- Beri jeda backoff jika 429
+				task.wait(1.5 + math.random() * 0.5)
+				break
+			elseif string.find(errorStr, "Timeout") then
+				consecutiveErrors += 1
+				if consecutiveErrors >= 5 then
+					proxyCircuitOpenUntil = os.clock() + CIRCUIT_BREAK_DURATION
+				end
+			else
+				consecutiveErrors += 1
+				if consecutiveErrors >= 6 then
+					proxyCircuitOpenUntil = os.clock() + CIRCUIT_BREAK_DURATION
+				end
 			end
 		end
 
 		if attempt < 2 then 
-			task.wait(2) -- Jeda diperpanjang menjadi 2 detik jika server sibuk 
+			task.wait(1.0)
 		end
 	end
 	return nil
@@ -227,7 +237,40 @@ end
         followersCount : number
         followingCount : number
     }
+--[[
+    Ambil grup utama (Primary Group) atau grup pertama pemain menggunakan GroupService resmi Roblox.
+    GroupService tidak menggunakan roproxy sehingga 100% cepat dan aman dari 429.
 ]]
+local function fetchPrimaryGroup(userId)
+	local ok, groups = pcall(function()
+		return GroupService:GetGroupsAsync(userId)
+	end)
+	if ok and type(groups) == "table" then
+		for _, g in ipairs(groups) do
+			if g.IsPrimary then
+				return {
+					id = g.Id,
+					name = g.Name,
+					emblem = g.EmblemUrl or ("rbxthumb://type=GroupIcon&id=" .. g.Id .. "&w=420&h=420")
+				}
+			end
+		end
+		if #groups > 0 then
+			local g = groups[1]
+			return {
+				id = g.Id,
+				name = g.Name,
+				emblem = g.EmblemUrl or ("rbxthumb://type=GroupIcon&id=" .. g.Id .. "&w=420&h=420")
+			}
+		end
+	end
+	return {
+		id = 192828493,
+		name = "DMS STUDIO",
+		emblem = "http://www.roblox.com/asset/?id=100615948228188"
+	}
+end
+
 local function fetchPlayerInfo(userId, callerPlayer)
 	-- Cek cache terlebih dahulu
 	local cached = getCached(userId)
@@ -238,49 +281,59 @@ local function fetchPlayerInfo(userId, callerPlayer)
 			friendsCount   = cached.friendsCount,
 			followersCount = cached.followersCount,
 			followingCount = cached.followingCount,
+			primaryGroup   = cached.primaryGroup,
 		}
 	end
 
-	-- ✨ Fetch secara paralel dengan timeout untuk mencegah thread menahan
+	-- Fetch primary group via native GroupService (super fast & reliable)
+	local primaryGroup = fetchPrimaryGroup(userId)
+
 	local rawDescription = ""
 	local friendsCount   = 0
 	local followersCount = 0
 	local followingCount = 0
 
-	local completedTasks = 0
-	task.spawn(function()
-		rawDescription = fetchDescription(userId)
-		completedTasks += 1
-	end)
-	task.spawn(function()
-		friendsCount = fetchFriendsCount(userId)
-		completedTasks += 1
-	end)
-	task.spawn(function()
-		followersCount = fetchFollowersCount(userId)
-		completedTasks += 1
-	end)
-	task.spawn(function()
-		followingCount = fetchFollowingCount(userId)
-		completedTasks += 1
-	end)
+	-- Cek circuit breaker roproxy
+	if os.clock() >= proxyCircuitOpenUntil then
+		local completedTasks = 0
+		task.spawn(function()
+			rawDescription = fetchDescription(userId)
+			completedTasks += 1
+		end)
 
-	local startTime = os.clock()
-	while completedTasks < 4 and (os.clock() - startTime) < 4.5 do
 		task.wait(0.1)
+		task.spawn(function()
+			friendsCount = fetchFriendsCount(userId)
+			completedTasks += 1
+		end)
+
+		task.wait(0.1)
+		task.spawn(function()
+			followersCount = fetchFollowersCount(userId)
+			completedTasks += 1
+		end)
+
+		task.wait(0.1)
+		task.spawn(function()
+			followingCount = fetchFollowingCount(userId)
+			completedTasks += 1
+		end)
+
+		local startTime = os.clock()
+		while completedTasks < 4 and (os.clock() - startTime) < 3.5 do
+			task.wait(0.05)
+		end
 	end
 
-	-- 🔥 OPTIMASI 50+ PLAYERS: Simpan data yang berhasil didapat ke cache
-	-- agar request berikutnya instan dari memori dan tidak mengulang request ke Roproxy
-	if completedTasks > 0 then
-		setCached(userId, rawDescription, friendsCount, followersCount, followingCount)
-	end
+	-- Simpan ke cache agar TIDAK PERNAH request berulang kali (Anti-Lag, Anti-429)
+	setCached(userId, rawDescription, friendsCount, followersCount, followingCount, primaryGroup)
 
 	return {
 		description    = filterBio(rawDescription, userId, callerPlayer),
 		friendsCount   = friendsCount,
 		followersCount = followersCount,
 		followingCount = followingCount,
+		primaryGroup   = primaryGroup,
 	}
 end
 
@@ -328,7 +381,7 @@ end
 task.spawn(function()
 	while true do
 		task.wait(300) -- Berpatroli setiap 5 menit
-		local now = tick()
+		local now = os.clock()
 		local deletedCount = 0
 		
 		for uid, entry in pairs(cache) do

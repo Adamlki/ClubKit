@@ -127,20 +127,50 @@ local function fetchOrderedLikes(store)
 	return results
 end
 
+local function isDataDifferent(oldPayload, newPayload)
+	if not oldPayload or not newPayload then return true end
+	local oldAll = oldPayload.AllTime or {}
+	local newAll = newPayload.AllTime or {}
+	if #oldAll ~= #newAll then return true end
+	for i = 1, math.min(10, #newAll) do
+		local o, n = oldAll[i], newAll[i]
+		if not o or not n then return true end
+		if (o.UserId or o.userId) ~= (n.UserId or n.userId) or (o.Likes or o.likes) ~= (n.Likes or n.likes) then
+			return true
+		end
+	end
+	local oldDaily = oldPayload.Daily or {}
+	local newDaily = newPayload.Daily or {}
+	if #oldDaily ~= #newDaily then return true end
+	for i = 1, math.min(10, #newDaily) do
+		local o, n = oldDaily[i], newDaily[i]
+		if not o or not n then return true end
+		if (o.UserId or o.userId) ~= (n.UserId or n.userId) or (o.Likes or o.likes) ~= (n.Likes or n.likes) then
+			return true
+		end
+	end
+	return false
+end
+
 local function updateLeaderboardBoard()
 	local allTimeLikes = fetchOrderedLikes(OrderedLikesStore)
 	local dailyKey = "PlayerLikes_Daily_" .. os.date("!%Y_%m_%d")
 	local dailyStore = DataStoreService:GetOrderedDataStore(dailyKey)
 	local dailyLikes = fetchOrderedLikes(dailyStore)
 
-	_G.LikesLeaderboardData = allTimeLikes
-	cachedTopLikes = {
+	local newPayload = {
 		AllTime = allTimeLikes,
 		Daily   = dailyLikes,
 	}
 
-	-- HANYA FIRING KE CLIENT, TIDAK ADA RENDER DI SERVER
-	updateLikeBoardRemote:FireAllClients(cachedTopLikes)
+	local hasChanged = isDataDifferent(cachedTopLikes, newPayload)
+	cachedTopLikes = newPayload
+	_G.LikesLeaderboardData = allTimeLikes
+
+	-- HANYA FIRING JIKA ADA PERUBAHAN DATA (0% Trafik jika tidak ada like baru)
+	if hasChanged then
+		updateLikeBoardRemote:FireAllClients(cachedTopLikes)
+	end
 
 	-- [PERBAIKAN]: Otomatis refresh Overhead semua pemain setiap kali data Leaderboard selesai ditarik.
 	task.spawn(function()
@@ -187,16 +217,7 @@ Players.PlayerRemoving:Connect(function(player)
 	requestCooldowns[player.UserId] = nil
 end)
 
-local function startLeaderboardLoop()
-	task.wait(2) -- Quick initial fetch on server start
+-- Export ke LeaderboardOrchestrator (Round-Robin centralized scheduler)
+_G.UpdateLikeLeaderboard = function()
 	pcall(updateLeaderboardBoard)
-	
-	-- Loop terus menerus
-	while true do
-		task.wait(REFRESH_INTERVAL)
-		pcall(updateLeaderboardBoard)
-	end
 end
-
--- Jalankan di background thread
-task.spawn(startLeaderboardLoop)

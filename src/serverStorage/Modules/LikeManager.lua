@@ -14,6 +14,7 @@ local playerCooldownsCache = {}
 local playerLikesCache = {} -- Menyimpan data like sementara sebelum di-save
 local playerLoadedFlags = {} -- Mencegah data loss jika GetAsync gagal
 local playerDirtyFlags = {} -- Dirty checking agar tidak boros DataStore
+local cooldownDirtyFlags = {} -- Dirty checking untuk cooldown agar hemat SetAsync
 
 -- Untuk mencegah Bug Race Condition saat pemain keluar-masuk terlalu cepat di server yang sama
 local activeSaves = {}
@@ -35,19 +36,22 @@ function LikeManager.LoadPlayerCooldowns(player)
 end
 
 function LikeManager.SavePlayerCooldowns(player)
-	local data = playerCooldownsCache[player.UserId]
-	if data then
-		local cleanedData = {}
-		local currentTime = os.time()
-		for targetId, expireTime in pairs(data) do
-			if currentTime < expireTime then
-				cleanedData[tostring(targetId)] = expireTime
+	if cooldownDirtyFlags[player.UserId] then
+		local data = playerCooldownsCache[player.UserId]
+		if data then
+			local cleanedData = {}
+			local currentTime = os.time()
+			for targetId, expireTime in pairs(data) do
+				if currentTime < expireTime then
+					cleanedData[tostring(targetId)] = expireTime
+				end
 			end
+			
+			pcall(function()
+				CooldownsStore:SetAsync(tostring(player.UserId), cleanedData)
+			end)
 		end
-		
-		pcall(function()
-			CooldownsStore:SetAsync(tostring(player.UserId), cleanedData)
-		end)
+		cooldownDirtyFlags[player.UserId] = nil
 	end
 	playerCooldownsCache[player.UserId] = nil
 end
@@ -140,6 +144,7 @@ function LikeManager.ProcessLike(liker, targetPlayer)
 	
 	-- Mark as dirty
 	playerDirtyFlags[likerId] = true
+	cooldownDirtyFlags[likerId] = true
 	playerDirtyFlags[targetPlayer.UserId] = true
 
 	-- Increment Daily Likes OrderedDataStore
@@ -206,18 +211,19 @@ task.spawn(function()
 				
 				-- Simpan juga cooldown agar tidak hilang jika server crash tanpa BindToClose
 				local cooldownData = playerCooldownsCache[player.UserId]
-			if cooldownData then
-				local cleanedData = {}
-				local currentTime = os.time()
-				for targetId, expireTime in pairs(cooldownData) do
-					if currentTime < expireTime then
-						cleanedData[tostring(targetId)] = expireTime
+				if cooldownData and cooldownDirtyFlags[player.UserId] then
+					local cleanedData = {}
+					local currentTime = os.time()
+					for targetId, expireTime in pairs(cooldownData) do
+						if currentTime < expireTime then
+							cleanedData[tostring(targetId)] = expireTime
+						end
 					end
+					pcall(function()
+						CooldownsStore:SetAsync(tostring(player.UserId), cleanedData)
+					end)
+					cooldownDirtyFlags[player.UserId] = nil
 				end
-				pcall(function()
-					CooldownsStore:SetAsync(tostring(player.UserId), cleanedData)
-				end)
-			end
 			
 			playerDirtyFlags[player.UserId] = nil -- Reset dirty
 			
@@ -229,30 +235,35 @@ task.spawn(function()
 end)
 
 -- Mencegah data loss saat server mati
-game:BindToClose(function()
-	local players = Players:GetPlayers()
-	local totalPlayers = #players
-	local completed = 0
+local RunService = game:GetService("RunService")
+if RunService:IsServer() and RunService:IsRunning() then
+	pcall(function()
+		game:BindToClose(function()
+			local players = Players:GetPlayers()
+			local totalPlayers = #players
+			local completed = 0
 
-	for i, player in ipairs(players) do
-		task.spawn(function()
-			LikeManager.SaveTotalLikes(player)
-			LikeManager.SavePlayerCooldowns(player)
-			completed += 1
+			for i, player in ipairs(players) do
+				task.spawn(function()
+					LikeManager.SaveTotalLikes(player)
+					LikeManager.SavePlayerCooldowns(player)
+					completed += 1
+				end)
+				
+				-- Beri napas ke API Roblox tiap 10 pemain (Anti-Throttle)
+				if i % 10 == 0 then
+					task.wait(0.2)
+				end
+			end
+			
+			-- Tahan server jangan mati sebelum data diselamatkan (maks 15 detik)
+			local elapsed = 0
+			while completed < totalPlayers and elapsed < 15 do
+				task.wait(1)
+				elapsed += 1
+			end
 		end)
-		
-		-- Beri napas ke API Roblox tiap 10 pemain (Anti-Throttle)
-		if i % 10 == 0 then
-			task.wait(0.2)
-		end
-	end
-	
-	-- Tahan server jangan mati sebelum data diselamatkan (maks 15 detik)
-	local elapsed = 0
-	while completed < totalPlayers and elapsed < 15 do
-		task.wait(1)
-		elapsed += 1
-	end
-end)
+	end)
+end
 
 return LikeManager

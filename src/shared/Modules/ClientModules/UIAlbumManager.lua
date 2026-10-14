@@ -59,7 +59,12 @@ function UIAlbumManager:LoadAlbums(favoriteSongs, silent)
 
 		self.albumButtons[albumData.name] = albumBtn
 
+		local lastAlbumClick = 0
 		albumBtn.MouseButton1Click:Connect(function()
+			local now = os.clock()
+			if now - lastAlbumClick < 0.3 then return end
+			lastAlbumClick = now
+
 			self:SelectAlbum(albumData.name, false, albumData.songCount)
 		end)
 	end

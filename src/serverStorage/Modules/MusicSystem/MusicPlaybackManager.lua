@@ -28,9 +28,11 @@ local CONFIG = {
 	AUTO_DURATION_TIMEOUT = 12, -- Waktu aman 12 detik agar audio buffer tanpa false-positive skip
 }
 
--- 🛑 SESSION BLACKLIST: Menyimpan ID lagu yang gagal dimuat (502 / Banned)
--- agar saat playlist berputar ulang, server langsung skip tanpa delay atau spam CDN
-local failedSongCache = {}
+-- 🛑 BANNED CACHE: Menyimpan ID lagu yang diverifikasi benar-benar dibanned/unauthorized oleh Roblox
+local bannedSongCache = {}
+-- ⏱️ TEMPORARY CDN COOLDOWN: Mencegah spam request saat CDN Roblox mengalami HTTP 502 Bad Gateway
+-- Hanya cooldown sementara (45 detik), TIDAK diblacklist permanen!
+local temporaryCdnCooldown = {}
 
 function MusicPlaybackManager.new(config)
 	local self = setmetatable({}, MusicPlaybackManager)
@@ -277,13 +279,23 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 	local musicData = songData.musicData or songData
 	local songIdStr = tostring(musicData.id or "")
 
-	-- 🛑 CEK SESSION BLACKLIST: Lewati langsung jika sudah diketahui rusak/banned
-	if songIdStr ~= "" and failedSongCache[songIdStr] then
-		debugWarn("⚠️ [PlaybackManager] Melewati lagu blacklisted (Error/502):", musicData.judul or songIdStr)
-		if self.autoNextCallback then
-			task.defer(self.autoNextCallback)
+	-- 🛑 CEK STATUS BANNED & COOLDOWN SEMENTARA
+	if songIdStr ~= "" then
+		if bannedSongCache[songIdStr] then
+			debugWarn("🚫 [PlaybackManager] Melewati lagu yang dibanned Roblox:", musicData.judul or songIdStr)
+			if self.autoNextCallback then
+				task.defer(self.autoNextCallback)
+			end
+			return false, "Song is banned on Roblox"
 		end
-		return false, "Song is blacklisted in this session"
+
+		if temporaryCdnCooldown[songIdStr] and os.clock() < temporaryCdnCooldown[songIdStr] then
+			debugWarn("⏱️ [PlaybackManager] Melewati lagu (cooldown CDN sementara):", musicData.judul or songIdStr)
+			if self.autoNextCallback then
+				task.defer(self.autoNextCallback)
+			end
+			return false, "Song is in temporary CDN cooldown"
+		end
 	end
 
 	local baseDuration = songData.Duration or musicData.Duration or self.config.DEFAULT_SONG_DURATION
@@ -345,7 +357,7 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 	-- Broadcast initial song update to clients
 	self:BroadcastSongUpdate(remotes, displayMusicData, uploaderName, self.adjustedDuration, playbackSpeed, false)
 
-	-- ⏳ DETEKSI DURASI & VALIDASI LAGU DI BACKGROUND (DENGAN CIRCUIT BREAKER & ANTI FALSE-POSITIVE)
+	-- ⏳ DETEKSI DURASI & VALIDASI LAGU DI BACKGROUND (DENGAN RETRY & ANTI FALSE-POSITIVE)
 	task.spawn(function()
 		local detectedDuration = self:TryDetectDuration(musicData.id, playbackSpeed, CONFIG.AUTO_DURATION_TIMEOUT)
 		
@@ -357,10 +369,47 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 		local sound = self.audioHandler:GetSound()
 		local hasTimeLength = sound and sound.TimeLength > 0
 		local isLoaded = sound and sound.IsLoaded
-		local isActivelyPlaying = sound and (sound.TimePosition > 0 or sound.IsPlaying)
+		local hasRealDuration = detectedDuration and detectedDuration > 0
+		local hasPositionProgress = sound and sound.TimePosition > 0.2
 
-		-- Lagu valid jika memiliki TimeLength, IsLoaded, durasi terdeteksi, ATAU sedang aktif memutar audio
-		if hasTimeLength or isLoaded or (detectedDuration and detectedDuration > 0) or isActivelyPlaying then
+		-- 🔄 AUTO-RETRY RE-FETCH: Jika terkena HTTP 502 / Network Blip dari CDN Roblox,
+		-- jangan langsung anggap banned! Coba re-trigger koneksi audio sekali lagi.
+		if not (hasTimeLength or isLoaded or hasRealDuration or hasPositionProgress) then
+			for retry = 1, 2 do
+				if self._playbackGeneration ~= currentGeneration then return end
+				task.wait(1.0)
+				if self._playbackGeneration ~= currentGeneration then return end
+
+				pcall(function()
+					sound.SoundId = ""
+					task.wait(0.2)
+					sound.SoundId = "rbxassetid://" .. tostring(musicData.id)
+					sound.PlaybackSpeed = playbackSpeed
+					sound:Play()
+				end)
+
+				local retryStart = os.clock()
+				while (not sound.IsLoaded or sound.TimeLength == 0) and (os.clock() - retryStart) < 4.0 do
+					task.wait(0.2)
+				end
+
+				hasTimeLength = sound and sound.TimeLength > 0
+				isLoaded = sound and sound.IsLoaded
+				hasPositionProgress = sound and sound.TimePosition > 0.2
+				if hasTimeLength or isLoaded or hasPositionProgress then
+					if hasTimeLength then
+						detectedDuration = sound.TimeLength / (playbackSpeed > 0 and playbackSpeed or 1)
+						hasRealDuration = true
+					end
+					debugPrint(string.format("✅ Auto-retry #%d berhasil memulihkan koneksi audio '%s'", retry, displayMusicData.judul))
+					break
+				end
+			end
+		end
+
+		-- Lagu valid HANYA jika benar-benar memiliki data audio yang termuat.
+		-- JANGAN gunakan 'sound.IsPlaying' saja, karena Roblox server otomatis mengeset IsPlaying = true walaupun asetnya unauthorized/banned/rusak!
+		if hasTimeLength or isLoaded or hasRealDuration or hasPositionProgress then
 			self.consecutiveFailures = 0 -- Reset counter kegagalan karena lagu valid
 
 			if detectedDuration and detectedDuration > 0 then
@@ -373,18 +422,42 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 				self:BroadcastSongUpdate(remotes, displayMusicData, uploaderName, self.adjustedDuration, playbackSpeed, true)
 			end
 		else
-			-- 🚨 SISTEM AUTO-SKIP: LAGU ERROR / BANNED / HTTP 502 TERDETEKSI!
+			-- 🔍 VERIFIKASI AKURAT: Cek apakah aset memang dibanned atau hanya CDN 502 glitch
+			local MarketplaceService = game:GetService("MarketplaceService")
+			local numericId = tonumber(tostring(musicData.id):match("%d+"))
+			local isTrulyBanned = false
+
+			if numericId then
+				local ok, assetInfo = pcall(function()
+					return MarketplaceService:GetProductInfo(numericId, Enum.InfoType.Asset)
+				end)
+				if not ok then
+					local errStr = string.lower(tostring(assetInfo))
+					if errStr:find("not approved") or errStr:find("forbidden") or errStr:find("403") or errStr:find("404") then
+						isTrulyBanned = true
+					end
+				end
+			end
+
 			local failedIdStr = tostring(musicData.id or "")
-			if failedIdStr ~= "" then
-				failedSongCache[failedIdStr] = true -- Tandai ke session blacklist
+			if isTrulyBanned then
+				if failedIdStr ~= "" then
+					bannedSongCache[failedIdStr] = true -- Banned permanen di sesi ini
+				end
+				warn(string.format("[PlaybackManager] 🚫 Lagu '%s' (ID: %s) diblokir moderasi/hak cipta Roblox (Banned). Melewati ke lagu berikutnya...", 
+					displayMusicData.judul or "Unknown", tostring(musicData.id)))
+			else
+				if failedIdStr ~= "" then
+					temporaryCdnCooldown[failedIdStr] = os.clock() + 45 -- Cooldown sementara 45 detik saja (TIDAK DIBANNED!)
+				end
+				warn(string.format("[PlaybackManager] ⚠️ Lagu '%s' (ID: %s) gagal dimuat dari CDN Roblox (HTTP 502 Bad Gateway / Network Glitch). Lagu TIDAK dibanned, melewati sementara...", 
+					displayMusicData.judul or "Unknown", tostring(musicData.id)))
 			end
 
 			self.consecutiveFailures = (self.consecutiveFailures or 0) + 1
-			warn(string.format("[PlaybackManager] ⚠️ Lagu '%s' (ID: %s) tidak dapat dimuat (Error/Banned/HTTP 502). Kegagalan berturut-turut: %d. Melewati ke lagu berikutnya...", 
-				displayMusicData.judul or "Unknown", tostring(musicData.id), self.consecutiveFailures))
 			
 			if self.onSongFailed then
-				pcall(self.onSongFailed, displayMusicData.judul or "Unknown", "Song unplayable or banned")
+				pcall(self.onSongFailed, displayMusicData.judul or "Unknown", isTrulyBanned and "Song is banned/unauthorized" or "Roblox CDN 502 Bad Gateway")
 			end
 
 			-- Hentikan audio yang rusak dan bersihkan status
@@ -506,7 +579,8 @@ function MusicPlaybackManager:SyncToPlayer(remotes, player)
 			Duration = self.adjustedDuration,
 			PlaybackSpeed = self.currentSong.PlaybackSpeed or 1.0,
 			IsPlaying = self.isPlaying,
-			IsPaused = false
+			IsPaused = false,
+			ServerTime = self.songStartTime or workspace:GetServerTimeNow()
 		})
 	end)
 end

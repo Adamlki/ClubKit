@@ -48,6 +48,9 @@ local isProcessingQueue   = false
 local playerCooldowns     = {}  -- [userId] = lastBroadcastTime
 local verifiedPurchases   = {}  -- [userId] = {[timestamp] = {amount, claimed}}
 
+local addToQueue = nil
+local processQueue = nil
+
 -- ============================================
 -- SECURITY
 -- ============================================
@@ -56,34 +59,69 @@ local function recordPurchase(userId, amount)
 	if not verifiedPurchases[userId] then
 		verifiedPurchases[userId] = {}
 	end
-	verifiedPurchases[userId][tick()] = {amount = amount, claimed = false}
+	local purchaseTime = tick()
+	local isSmall = (amount < DonationConfig.BROADCAST.MIN_DONATION)
+	verifiedPurchases[userId][purchaseTime] = {amount = amount, claimed = isSmall}
 	debugLog("BROADCAST", "Purchase recorded:", userId, amount)
+
+	if not isSmall then
+		-- Timeout fallback: jika player tidak mengirim pesan dalam 90 detik (misal AFK/close UI/disconnect),
+		-- otomatis kirim pesan default sehingga broadcast dan efek panggung tetap muncul!
+		task.delay(120, function()
+			local userPurchases = verifiedPurchases[userId]
+			if userPurchases and userPurchases[purchaseTime] and not userPurchases[purchaseTime].claimed then
+				userPurchases[purchaseTime].claimed = true
+				debugLog("BROADCAST", "Timeout tercapai untuk user:", userId, "- memicu broadcast default & efek")
+				local p = Players:GetPlayerByUserId(userId)
+				local defaultMsg = DonationConfig.DEFAULT_SMALL_DONATION_MESSAGE or "Thank you for your donation!"
+				if p then
+					addToQueue(p, defaultMsg, amount, true)
+				else
+					table.insert(broadcastQueue, {
+						userId      = userId,
+						displayName = "Donator",
+						amount      = amount,
+						message     = defaultMsg,
+						timestamp   = tick()
+					})
+					task.spawn(processQueue)
+				end
+			end
+		end)
+	end
 end
 
 local function verifyPurchase(userId, amount)
-	if not DonationConfig.SECURITY.TRACK_PURCHASES then
-		return true  -- Security dimatikan di Studio/Test
-	end
-
-	local purchases = verifiedPurchases[userId]
-	if not purchases then
-		debugLog("ERROR", "Tidak ada purchase tercatat untuk:", userId)
-		return false
-	end
-
-	local now = tick()
-	for timestamp, data in pairs(purchases) do
-		if now - timestamp > DonationConfig.SECURITY.PURCHASE_TIMEOUT then
-			purchases[timestamp] = nil
-		elseif not data.claimed and data.amount == amount then
-			data.claimed = true
-			debugLog("BROADCAST", "Purchase verified:", userId, amount)
-			return true
+	local startTime = os.clock()
+	-- Beri toleransi waktu hingga 3 detik jika ProcessReceipt di server sedang memproses DataStore
+	repeat
+		local purchases = verifiedPurchases[userId]
+		if purchases then
+			local now = tick()
+			for timestamp, data in pairs(purchases) do
+				if now - timestamp > DonationConfig.SECURITY.PURCHASE_TIMEOUT then
+					purchases[timestamp] = nil
+				elseif not data.claimed and (amount == nil or data.amount == amount) then
+					data.claimed = true
+					debugLog("BROADCAST", "Purchase verified & claimed:", userId, data.amount)
+					return true, data.amount
+				end
+			end
 		end
-	end
+
+		if not DonationConfig.SECURITY.TRACK_PURCHASES then
+			return true, amount or 0
+		end
+
+		if os.clock() - startTime < 3 then
+			task.wait(0.3)
+		else
+			break
+		end
+	until false
 
 	debugLog("ERROR", "FAKE DONATION ATTEMPT:", userId, amount)
-	return false
+	return false, 0
 end
 
 local function cleanupPlayerSecurity(userId)
@@ -159,7 +197,7 @@ local function fireBroadcastToAll(displayName, amount, message, userId, totalAmo
 	end
 end
 
-local function processQueue()
+processQueue = function()
 	if isProcessingQueue then return end
 	isProcessingQueue = true
 
@@ -178,6 +216,31 @@ local function processQueue()
 
 		fireBroadcastToAll(item.displayName, item.amount, item.message, item.userId, totalAmount)
 
+		-- Cek pengaturan sorot kamera donor
+		local spotlightSettings = ReplicatedStorage:FindFirstChild("DonationSpotlightSettings")
+		local isSpotlightOn = (spotlightSettings and spotlightSettings:GetAttribute("Enabled") == true)
+		local minRobux = spotlightSettings and spotlightSettings:GetAttribute("MinRobux") or 500
+		local shouldSpotlight = isSpotlightOn and (item.amount >= minRobux)
+
+		-- Trigger animasi kamera sorot donor ke semua client jika memenuhi syarat
+		if shouldSpotlight then
+			local DonorSpotlightRemote = ReplicatedStorage:FindFirstChild("DonorSpotlightRemote")
+			if DonorSpotlightRemote then
+				DonorSpotlightRemote:FireAllClients(item.userId, item.displayName, 5)
+			end
+		end
+
+		-- 🔥 PICU EFEK ROBUX BERSAMAAN DENGAN NOTIFIKASI PESAN & SCREEN BOARD!
+		local ServerStorage = game:GetService("ServerStorage")
+		local RobuxDonationEffectEvent = ServerStorage:FindFirstChild("RobuxDonationEffectEvent")
+		if not RobuxDonationEffectEvent then
+			RobuxDonationEffectEvent = Instance.new("BindableEvent")
+			RobuxDonationEffectEvent.Name = "RobuxDonationEffectEvent"
+			RobuxDonationEffectEvent.Parent = ServerStorage
+		end
+		local player = Players:GetPlayerByUserId(item.userId)
+		RobuxDonationEffectEvent:Fire(player or item.displayName, item.amount, shouldSpotlight)
+
 		-- ============================================
 		-- SCREEN BOARD UPDATE (FITUR BARU)
 		-- Setiap broadcast yang masuk antrian juga ditampilkan
@@ -190,38 +253,13 @@ local function processQueue()
 				ScreenBoardHandler:ShowDonationMessage(player, item.amount, item.message)
 			else
 				-- Player sudah disconnect, tapi tetap update board dengan data yang ada
-				-- Buat objek sementara agar format bisa dipakai
-				if item.amount >= DonationConfig.SCREEN_BOARD.MIN_DONATION then
-					local fakePlayer = {
-						UserId      = item.userId,
-						DisplayName = item.displayName,
-					}
-					
-					-- FILTERING RICHTEXT UNTUK DISPLAY NAME (Mencegah eksploitasi <font>)
-					local safeDisplayName = item.displayName
-					safeDisplayName = string.gsub(safeDisplayName, "&", "&amp;")
-					safeDisplayName = string.gsub(safeDisplayName, "<", "&lt;")
-					safeDisplayName = string.gsub(safeDisplayName, ">", "&gt;")
-					safeDisplayName = string.gsub(safeDisplayName, '"', "&quot;")
-					safeDisplayName = string.gsub(safeDisplayName, "'", "&apos;")
-
-					-- Langsung update tanpa filtering (message sudah difilter saat masuk antrian)
-					local displayNameText = string.format(
-						DonationConfig.SCREEN_BOARD.NAME_FORMAT,
-						safeDisplayName,
-						item.amount
-					)
-					-- Fire manual ke semua client
-					local screenBoardRemote = ReplicatedStorage:FindFirstChild("UpdateScreenBoard")
-					if screenBoardRemote then
-						for _, targetPlayer in ipairs(Players:GetPlayers()) do
-							pcall(function()
-								screenBoardRemote:FireClient(targetPlayer, displayNameText, item.message)
-							end)
-						end
-					end
-					debugLog("BROADCAST", "Screen board diupdate (player offline):", item.displayName)
-				end
+				local fakePlayer = {
+					UserId      = item.userId,
+					Name        = item.displayName,
+					DisplayName = item.displayName,
+				}
+				ScreenBoardHandler:ShowDonationMessage(fakePlayer, item.amount, item.message)
+				debugLog("BROADCAST", "Screen board diupdate (player offline):", item.displayName)
 			end
 		end
 
@@ -232,32 +270,29 @@ local function processQueue()
 	debugLog("BROADCAST", "Queue selesai diproses")
 end
 
-local function addToQueue(player, message, amount, skipVerification)
+addToQueue = function(player, message, amount, skipVerification)
 	local userId = player.UserId
 
-	-- Verifikasi purchase (kecuali untuk auto-broadcast kecil)
-	if not skipVerification then
-		if not verifyPurchase(userId, amount) then
-			if DonationConfig.SECURITY.KICK_ON_FAKE then
-				player:Kick("Fake donation detected")
-			end
-			return false, "Donasi tidak terverifikasi."
-		end
-
-		-- Cooldown per player
-		local lastTime  = playerCooldowns[userId] or 0
-		local remaining = DonationConfig.BROADCAST.COOLDOWN - (tick() - lastTime)
-		if remaining > 0 then
-			return false, "Cooldown: tunggu " .. math.ceil(remaining) .. " detik."
-		end
-	end
-
-	-- Batas antrian
+	-- Batas antrian dicek terlebih dahulu
 	if getPlayerQueueCount(userId) >= DonationConfig.BROADCAST.MAX_QUEUE_PER_PLAYER then
 		return false, "Terlalu banyak pesan dalam antrian."
 	end
 	if #broadcastQueue >= DonationConfig.BROADCAST.MAX_QUEUE then
 		return false, "Antrian penuh."
+	end
+
+	-- Verifikasi purchase (kecuali untuk auto-broadcast kecil / fallback)
+	if not skipVerification then
+		local verified, verifiedAmount = verifyPurchase(userId, amount)
+		if not verified then
+			if DonationConfig.SECURITY.KICK_ON_FAKE then
+				player:Kick("Fake donation detected")
+			end
+			return false, "Donasi tidak terverifikasi."
+		end
+		if verifiedAmount and verifiedAmount > 0 then
+			amount = verifiedAmount
+		end
 	end
 
 	-- Trim whitespace dan potong kalau terlalu panjang
@@ -350,7 +385,7 @@ broadcastRemote.OnServerInvoke = function(player, message, amount)
 	if type(message) ~= "string" or #message < 1 then
 		return false, "Pesan tidak valid."
 	end
-	if type(amount) ~= "number" or amount < DonationConfig.BROADCAST.MIN_DONATION then
+	if amount ~= nil and (type(amount) ~= "number" or amount < DonationConfig.BROADCAST.MIN_DONATION) then
 		return false, "Donasi tidak mencukupi untuk broadcast."
 	end
 

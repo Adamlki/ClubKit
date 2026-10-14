@@ -16,27 +16,28 @@ local activeBots = {}
 local isTesting = false
 local isSyncing = false
 
--- Generate Template Dummy (Yields di background)
 local dummyTemplate = nil
-task.spawn(function()
+
+local function getDummyTemplate()
+	if dummyTemplate then return dummyTemplate end
 	local success, model = pcall(function()
-		return Players:CreateHumanoidModelFromUserId(1) -- Default Roblox User (Roblox)
+		return Players:CreateHumanoidModelFromUserId(1)
 	end)
 	if success and model then
 		dummyTemplate = model
 		dummyTemplate.Name = "StressTestBot"
-		
-		-- Bersihkan script internal dari model agar tidak membocorkan memori
 		for _, child in ipairs(dummyTemplate:GetDescendants()) do
 			if child:IsA("Script") or child:IsA("LocalScript") then
 				child:Destroy()
 			end
 		end
 	end
-end)
+	return dummyTemplate
+end
 
 local function spawnBots(amount, originPosition)
-	if not dummyTemplate then
+	local template = getDummyTemplate()
+	if not template then
 		warn("[StressTest] Dummy Template belum selesai loading, coba lagi dalam beberapa detik.")
 		return
 	end
@@ -45,7 +46,7 @@ local function spawnBots(amount, originPosition)
 	local radius = 40
 	
 	for i = 1, amount do
-		local bot = dummyTemplate:Clone()
+		local bot = template:Clone()
 		bot.Name = "Bot_" .. tostring(i)
 		
 		-- Posisi spawn acak di sekitar origin

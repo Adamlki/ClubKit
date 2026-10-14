@@ -44,27 +44,42 @@ end
 -- SETUP CONNECTIONS
 -- ====================================
 function UIControlManager:SetupConnections()
-	-- Skip button
+	-- Skip button (0.3s debounce)
 	if self.skipBtn then
+		local lastSkipClick = 0
 		self.skipBtn.MouseButton1Click:Connect(function()
+			local now = os.clock()
+			if now - lastSkipClick < 0.3 then return end
+			lastSkipClick = now
+
 			if self.onNextCallback then
 				self.onNextCallback()
 			end
 		end)
 	end
 
-	-- Reload button
+	-- Reload button (0.3s debounce)
 	if self.reloadBtn then
+		local lastReloadClick = 0
 		self.reloadBtn.MouseButton1Click:Connect(function()
+			local now = os.clock()
+			if now - lastReloadClick < 0.3 then return end
+			lastReloadClick = now
+
 			if self.onReloadCallback then
 				self.onReloadCallback()
 			end
 		end)
 	end
 
-	-- Admin button
+	-- Admin button (0.3s debounce)
 	if self.adminBtn then
+		local lastAdminClick = 0
 		self.adminBtn.MouseButton1Click:Connect(function()
+			local now = os.clock()
+			if now - lastAdminClick < 0.3 then return end
+			lastAdminClick = now
+
 			if self.onAdminToggleBlockCallback then
 				self.onAdminToggleBlockCallback()
 			end

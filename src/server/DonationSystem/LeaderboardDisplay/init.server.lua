@@ -70,6 +70,31 @@ end
 -- ============================================
 -- UPDATE LEADERBOARD (GLOBAL)
 -- ============================================
+local function isDataDifferent(oldPayload, newPayload)
+	if not oldPayload or not newPayload then return true end
+	local oldAll = oldPayload.AllTime or {}
+	local newAll = newPayload.AllTime or {}
+	if #oldAll ~= #newAll then return true end
+	for i = 1, math.min(10, #newAll) do
+		local o, n = oldAll[i], newAll[i]
+		if not o or not n then return true end
+		if (o.userId or o.UserId) ~= (n.userId or n.UserId) or (o.amount or o.Amount) ~= (n.amount or n.Amount) then
+			return true
+		end
+	end
+	local oldDaily = oldPayload.Daily or {}
+	local newDaily = newPayload.Daily or {}
+	if #oldDaily ~= #newDaily then return true end
+	for i = 1, math.min(10, #newDaily) do
+		local o, n = oldDaily[i], newDaily[i]
+		if not o or not n then return true end
+		if (o.userId or o.UserId) ~= (n.userId or n.UserId) or (o.amount or o.Amount) ~= (n.amount or n.Amount) then
+			return true
+		end
+	end
+	return false
+end
+
 function updateLeaderboard()
 	local ok, donors = pcall(function()
 		return leaderboard:GetTopDonors(TOP_ENTRIES)
@@ -81,13 +106,24 @@ function updateLeaderboard()
 	local allTimeData = (ok and donors) and buildNetworkData(donors) or {}
 	local dailyData   = (okDaily and dailyDonors) and buildNetworkData(dailyDonors) or {}
 
-	cachedDonors = {
+	local newPayload = {
 		AllTime = allTimeData,
 		Daily   = dailyData,
 	}
 
-	-- HANYA FIRING KE CLIENT, TIDAK ADA RENDER DI SERVER
-	updateTopBoardRemote:FireAllClients(cachedDonors)
+	local hasChanged = isDataDifferent(cachedDonors, newPayload)
+	cachedDonors = newPayload
+
+	-- HANYA FIRING JIKA ADA PERUBAHAN DATA (0% Trafik jika tidak ada donasi baru)
+	if hasChanged then
+		updateTopBoardRemote:FireAllClients(cachedDonors)
+	end
+end
+
+-- Export ke LeaderboardOrchestrator (Round-Robin centralized scheduler)
+_G.UpdateRobuxLeaderboard = function()
+	leaderboard:ClearCache()
+	updateLeaderboard()
 end
 
 -- ============================================
@@ -98,22 +134,5 @@ updateTopBoardRemote.OnServerEvent:Connect(function(player)
 		pcall(function()
 			updateTopBoardRemote:FireClient(player, cachedDonors)
 		end)
-	end
-end)
-
--- ============================================
--- RENDER AWAL
--- ============================================
-task.wait(2)
-updateLeaderboard()
-
--- ============================================
--- LOOP AUTO-REFRESH
--- ============================================
-task.spawn(function()
-	while true do
-		task.wait(REFRESH_INTERVAL)
-		leaderboard:ClearCache()
-		updateLeaderboard()
 	end
 end)

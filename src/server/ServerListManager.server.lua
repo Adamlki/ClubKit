@@ -87,7 +87,7 @@ pcall(function()
 end)
 
 local function updateServerHeartbeat()
-	if not memoryMap then return end
+	if isStudio or not memoryMap or actualJobId == "STUDIO-SESSION" then return end
 	pcall(function()
 		local data = getCurrentServerData()
 		-- Expire after 45 seconds if no heartbeat

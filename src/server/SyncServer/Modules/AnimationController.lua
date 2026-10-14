@@ -18,8 +18,8 @@ local FADE_OUT = 0.1
 local DANCE_WALK_SPEED = 5
 local ANIMATION_PRIORITY = Enum.AnimationPriority.Action4
 
-local processingRequests = {}
-local lastRequestTime = {}
+local processingRequests = setmetatable({}, { __mode = "k" })
+local lastRequestTime = setmetatable({}, { __mode = "k" })
 local MIN_REQUEST_INTERVAL = 0.05 -- 50ms (Agar spam dance dari leader langsung tersinkron ke followers 0 delay)
 
 -- ============================================

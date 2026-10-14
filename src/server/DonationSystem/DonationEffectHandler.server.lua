@@ -198,7 +198,7 @@ end
 -- 🔥 PERBAIKAN: Background Garbage Collection (1 loop per server, bukan per donasi)
 task.spawn(function()
 	while true do
-		task.wait(10)
+		task.wait(30)
 		local cutoff = tick() - CONFIG.DONATION_STORAGE_TIME
 		for i = #recentDonations, 1, -1 do
 			if recentDonations[i].timestamp < cutoff then
@@ -223,7 +223,7 @@ end
 -- ============================================================
 -- MAIN DONATION GRANT (ROBUX)
 -- ============================================================
-local function grantDonationEffect(player, price)
+local function grantDonationEffect(player, price, shouldSpotlight)
 	local range = getRangeByPrice(price)
 	if not range then return false end
 
@@ -231,10 +231,12 @@ local function grantDonationEffect(player, price)
 		and (range.cinematicDuration or CONFIG.LEVEL4_DURATION)
 		or  CONFIG.DISPLAY_DURATION
 
-	-- 1. Efek 3D di atas kepala donor
-	task.spawn(function()
-		spawnDonationObject(player, range.templateName, duration)
-	end)
+	-- 1. Efek 3D di atas kepala donor (Hanya aktif jika TIDAK disorot kamera)
+	if not shouldSpotlight then
+		task.spawn(function()
+			spawnDonationObject(player, range.templateName, duration)
+		end)
+	end
 
 	-- 2. Efek semburan api panggung StageFX (selalu aktif berapapun nominal donasinya)
 	task.spawn(function()
@@ -300,23 +302,39 @@ Players.PlayerRemoving:Connect(function(player)
 end)
 
 -- ============================================================
--- INTEGRATE PROCESSRECEIPTHANDLER
+-- INTEGRASI EFEK ROBUX (BERJALAN BERSAMAAN DENGAN BROADCAST PESAN)
 -- ============================================================
-local waited = 0
-while not ProcessReceiptHandler:IsInitialized() and waited < 10 do
-	task.wait(0.5)
-	waited += 0.5
+local RobuxDonationEffectEvent = SS:FindFirstChild("RobuxDonationEffectEvent")
+if not RobuxDonationEffectEvent then
+	RobuxDonationEffectEvent = Instance.new("BindableEvent")
+	RobuxDonationEffectEvent.Name = "RobuxDonationEffectEvent"
+	RobuxDonationEffectEvent.Parent = SS
 end
 
-if not ProcessReceiptHandler:IsInitialized() then
-	warn("[DonationEffectHandler] ProcessReceiptHandler belum siap!")
-else
-	ProcessReceiptHandler:RegisterCallback("DonationEffect", function(player, productId, amount)
-		local ok, err = pcall(grantDonationEffect, player, amount)
+RobuxDonationEffectEvent.Event:Connect(function(playerOrName, robuxAmount, shouldSpotlight)
+	local donorPlayer = nil
+	if typeof(playerOrName) == "Instance" and playerOrName:IsA("Player") then
+		donorPlayer = playerOrName
+	elseif type(playerOrName) == "string" then
+		donorPlayer = Players:FindFirstChild(playerOrName)
+	end
+
+	if donorPlayer then
+		local ok, err = pcall(grantDonationEffect, donorPlayer, robuxAmount, shouldSpotlight)
 		if not ok then warn("[DonationEffect] Error:", err) end
-		return ok
-	end)
-end
+	else
+		-- Jika player sudah leave, tetap nyalakan panggung & mega efek
+		task.spawn(function()
+			triggerStageEffects(CONFIG.STAGE_FX_DURATION)
+		end)
+		if robuxAmount and robuxAmount >= 500 then
+			local RobuxEffectEvent = SS:FindFirstChild("RobuxEffectEvent")
+			if RobuxEffectEvent then
+				RobuxEffectEvent:Fire(playerOrName, robuxAmount)
+			end
+		end
+	end
+end)
 
 -- ============================================================
 -- INTEGRASI EFEK SAWERIA (RUPIAH)
@@ -349,7 +367,7 @@ local function getSaweriaRangeByPrice(price)
 	return nil
 end
 
-local function grantSaweriaEffect(playerOrName, rpAmount)
+local function grantSaweriaEffect(playerOrName, rpAmount, shouldSpotlight)
 	local range = getSaweriaRangeByPrice(rpAmount)
 	if not range then return false end
 
@@ -377,8 +395,8 @@ local function grantSaweriaEffect(playerOrName, rpAmount)
 		end
 	end
 
-	-- 1. Efek 3D di atas kepala donor
-	if donorPlayer then
+	-- 1. Efek 3D di atas kepala donor (Hanya aktif jika TIDAK disorot kamera)
+	if donorPlayer and not shouldSpotlight then
 		task.spawn(function()
 			spawnDonationObject(donorPlayer, range.templateName, duration)
 		end)
@@ -416,8 +434,8 @@ if not SaweriaEffectEvent then
 end
 
 -- Menjalankan efek saat ada sinyal dari script DonasiSaweria
-SaweriaEffectEvent.Event:Connect(function(playerOrName, rpAmount)
-	grantSaweriaEffect(playerOrName, rpAmount)
+SaweriaEffectEvent.Event:Connect(function(playerOrName, rpAmount, shouldSpotlight)
+	grantSaweriaEffect(playerOrName, rpAmount, shouldSpotlight)
 end)
 
 -- ============================================================

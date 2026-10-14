@@ -25,15 +25,7 @@ local CONFIG = {
 	MaxHotbarSlots = 9,
 
 	AnimSpeed = 0.3,
-
-	BorderSpeed = 30,
-	BorderSequence = ColorSequence.new({
-		ColorSequenceKeypoint.new(0.00, Color3.fromRGB(30, 20, 40)),
-		ColorSequenceKeypoint.new(0.25, Color3.fromRGB(15, 15, 15)),
-		ColorSequenceKeypoint.new(0.50, Color3.fromRGB(60, 60, 65)),
-		ColorSequenceKeypoint.new(0.75, Color3.fromRGB(15, 15, 15)),
-		ColorSequenceKeypoint.new(1.00, Color3.fromRGB(30, 20, 40))
-	}),
+	ClickCooldown = 0.5, -- Proteksi anti-spam jeda klik use/lepas tool (0.5 detik)
 
 	Colors = {
 		Container = Color3.fromRGB(15, 15, 15),
@@ -105,15 +97,10 @@ hotbarFrame.AutomaticSize = Enum.AutomaticSize.X
 hotbarFrame.Parent = mainContainer
 
 local hbStroke = Instance.new("UIStroke")
-hbStroke.Color = Color3.new(1, 1, 1)
-hbStroke.Thickness = 1.5
-hbStroke.Transparency = 0.4
+hbStroke.Color = CONFIG.Colors.Border
+hbStroke.Thickness = 1.2
+hbStroke.Transparency = 0.2
 hbStroke.Parent = hotbarFrame
-
-local hbGrad = Instance.new("UIGradient")
-hbGrad.Name = "BorderAnim"
-hbGrad.Color = CONFIG.BorderSequence
-hbGrad.Parent = hbStroke
 
 local hbCorner = Instance.new("UICorner")
 hbCorner.CornerRadius = UDim.new(0, CONFIG.CornerRadius)
@@ -209,7 +196,7 @@ local function setHotbarCollapsed(collapsed)
 			end
 
 			if collapsed then
-				tw.Completed:Connect(function()
+				tw.Completed:Once(function()
 					if isHotbarCollapsed then
 						v.Visible = false
 					end
@@ -219,7 +206,12 @@ local function setHotbarCollapsed(collapsed)
 	end
 end
 
+local lastEyeClick = 0
 eyeBtn.MouseButton1Click:Connect(function()
+	local now = os.clock()
+	if now - lastEyeClick < 0.3 then return end
+	lastEyeClick = now
+
 	playSound()
 	setHotbarCollapsed(not isHotbarCollapsed)
 end)
@@ -289,6 +281,48 @@ local function autoBindInitial()
 	end
 end
 
+-- ============================================
+-- 🛡️ PROTEKSI ANTI-SPAM KLIK TOOLS (COOLDOWN 0.5s)
+-- ============================================
+local lastToolActionTime = 0
+
+local function toggleTool(tool, btn)
+	if not tool or not tool:IsA("Tool") then return false end
+
+	local now = os.clock()
+	if (now - lastToolActionTime) < CONFIG.ClickCooldown then
+		-- Cooldown 0.5s aktif: abaikan spam klik
+		return false
+	end
+	lastToolActionTime = now
+
+	local char = player.Character
+	if not char then return false end
+	local humanoid = char:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then return false end
+
+	playSound()
+
+	-- Micro-animation feedback saat tombol berhasil ditekan
+	if btn and btn:IsA("GuiButton") then
+		task.spawn(function()
+			local origSize = UDim2.new(0, CONFIG.SlotSize, 0, CONFIG.SlotSize)
+			local shrinkSize = UDim2.new(0, CONFIG.SlotSize - 4, 0, CONFIG.SlotSize - 4)
+			TweenService:Create(btn, TweenInfo.new(0.06, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = shrinkSize }):Play()
+			task.wait(0.06)
+			TweenService:Create(btn, TweenInfo.new(0.1, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = origSize }):Play()
+		end)
+	end
+
+	if tool.Parent == char then
+		humanoid:UnequipTools()
+	else
+		humanoid:EquipTool(tool)
+	end
+
+	return true
+end
+
 local function makeSlotButton(parent, slotIndex, tool, isEquipped, layoutOrder)
 	local btn = Instance.new("ImageButton")
 	btn.Name = "Slot" .. slotIndex
@@ -317,20 +351,17 @@ local function makeSlotButton(parent, slotIndex, tool, isEquipped, layoutOrder)
 	if tool then
 		if isEquipped then
 			local stroke = Instance.new("UIStroke")
-			stroke.Color = Color3.new(1, 1, 1)
+			stroke.Color = Color3.fromRGB(200, 200, 215)
 			stroke.Thickness = 1.5
+			stroke.Transparency = 0.1
 			stroke.Parent = btn
-			local grad = Instance.new("UIGradient")
-			grad.Name = "BorderAnim"
-			grad.Color = CONFIG.BorderSequence
-			grad.Rotation = 0
-			grad.Parent = stroke
 			btn.BackgroundTransparency = 0
-			btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+			btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
 		else
 			local stroke = Instance.new("UIStroke")
 			stroke.Color = CONFIG.Colors.Border
 			stroke.Thickness = 1
+			stroke.Transparency = 0.3
 			stroke.Parent = btn
 			btn.BackgroundTransparency = 0.2
 			btn.BackgroundColor3 = CONFIG.Colors.Container
@@ -356,17 +387,13 @@ local function makeSlotButton(parent, slotIndex, tool, isEquipped, layoutOrder)
 			txt.Parent = btn
 		end
 
-		local char = player.Character
+		local lastSlotClick = 0
 		btn.MouseButton1Click:Connect(function()
-			playSound()
-			if not char then return end
-			local humanoid = char:FindFirstChildOfClass("Humanoid")
-			if not humanoid then return end
-			if tool.Parent == char then
-				humanoid:UnequipTools()
-			else
-				humanoid:EquipTool(tool)
-			end
+			local now = os.clock()
+			if now - lastSlotClick < 0.3 then return end
+			lastSlotClick = now
+
+			toggleTool(tool, btn)
 		end)
 	else
 		btn.BackgroundTransparency = 0.9
@@ -432,42 +459,54 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		if slotNum and not isHotbarCollapsed and getTotalTools() > 0 then
 			local tool = BoundSlots[slotNum]
 			if tool then
-				playSound()
-				local char = player.Character
-				if char and char:FindFirstChild("Humanoid") then
-					if tool.Parent == char then char.Humanoid:UnequipTools() else char.Humanoid:EquipTool(tool) end
-				end
+				local btn = hotbarFrame:FindFirstChild("Slot" .. slotNum)
+				toggleTool(tool, btn)
 			end
-			task.wait()
-			updateVisuals()
 		end
 	end
 end)
 
-local function hookEvents()
-	local backpack = player:WaitForChild("Backpack")
-	local char = player.Character or player.CharacterAdded:Wait()
+local eventConnections = {}
+local function clearEventConnections()
+	for _, conn in ipairs(eventConnections) do
+		if conn then
+			conn:Disconnect()
+		end
+	end
+	table.clear(eventConnections)
+end
 
-	backpack.ChildAdded:Connect(function(child)
+local function hookEvents()
+	clearEventConnections()
+
+	local backpack = player:WaitForChild("Backpack")
+	local char = player.Character
+
+	table.insert(eventConnections, backpack.ChildAdded:Connect(function(child)
 		if child:IsA("Tool") then
 			task.defer(function() cleanSlots() autoBindTool(child) updateVisuals() end)
 		end
-	end)
-	backpack.ChildRemoved:Connect(function(child)
+	end))
+
+	table.insert(eventConnections, backpack.ChildRemoved:Connect(function(child)
 		if child:IsA("Tool") then
 			task.defer(function() cleanSlots() updateVisuals() end)
 		end
-	end)
-	char.ChildAdded:Connect(function(child)
-		if child:IsA("Tool") then
-			task.defer(function() cleanSlots() autoBindTool(child) updateVisuals() end)
-		end
-	end)
-	char.ChildRemoved:Connect(function(child)
-		if child:IsA("Tool") then
-			task.defer(function() cleanSlots() updateVisuals() end)
-		end
-	end)
+	end))
+
+	if char then
+		table.insert(eventConnections, char.ChildAdded:Connect(function(child)
+			if child:IsA("Tool") then
+				task.defer(function() cleanSlots() autoBindTool(child) updateVisuals() end)
+			end
+		end))
+
+		table.insert(eventConnections, char.ChildRemoved:Connect(function(child)
+			if child:IsA("Tool") then
+				task.defer(function() cleanSlots() updateVisuals() end)
+			end
+		end))
+	end
 end
 
 if player.Character then
@@ -486,16 +525,6 @@ end)
 
 player.CharacterRemoving:Connect(function()
 	mainContainer.Visible = false
-end)
-
-RunService.RenderStepped:Connect(function(dt)
-	if mainContainer.Visible and not isHotbarCollapsed then
-		hbGrad.Rotation = (hbGrad.Rotation + CONFIG.BorderSpeed * dt) % 360
-		for _, v in pairs(hotbarFrame:GetChildren()) do
-			if v:IsA("GuiButton") and v:FindFirstChild("UIStroke") and v.UIStroke:FindFirstChild("BorderAnim") then
-				v.UIStroke.BorderAnim.Rotation = (v.UIStroke.BorderAnim.Rotation + CONFIG.BorderSpeed * dt) % 360
-			end
-		end
-	end
+	clearEventConnections()
 end)
 

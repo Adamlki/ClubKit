@@ -10,7 +10,7 @@ local RunService = game:GetService("RunService")
 local SaweriaAPI = require(game:GetService("ServerStorage"):WaitForChild("Modules"):WaitForChild("SaweriaAPI"))
 
 local IS_STUDIO = RunService:IsStudio()
-local UPDATE_INTERVAL = IS_STUDIO and 15 or 60
+local UPDATE_INTERVAL = IS_STUDIO and 30 or 60 -- Interval aman 60s untuk mencegah lonjakan ping (network spike) & micro-freeze
 local TOP_COUNT = 10
 
 local GetTopSaweriaFunc = ServerStorage:FindFirstChild("GetTopSaweriaFunc") or Instance.new("BindableFunction")
@@ -21,10 +21,10 @@ local UpdateSaweriaEvent = ReplicatedStorage:FindFirstChild("UpdateSaweriaTopBoa
 UpdateSaweriaEvent.Name = "UpdateSaweriaTopBoard"
 UpdateSaweriaEvent.Parent = ReplicatedStorage
 
--- 🟡 FIX: CACHE SYSTEM LIMITER (Cegah Memory Leak 24/7)
+-- 🟡 FIX: CACHE SYSTEM LIMITER (500 entri agar tidak terus-menerus reset cache di tengah buildList)
 local userIdCache = {} 
 local cacheCount = 0
-local MAX_CACHE_LIMIT = 50
+local MAX_CACHE_LIMIT = 500
 
 local function formatRupiah(amount)
 	local formatted = tostring(math.floor(tonumber(amount) or 0))
@@ -90,9 +90,16 @@ GetTopSaweriaFunc.OnInvoke = function()
 end
 
 -- ========================================
--- DYNAMIC BOARD FINDER (Mencari di Workspace)
+-- DYNAMIC BOARD FINDER (Mencari di Workspace dengan Cache)
 -- ========================================
+local cachedRoot, cachedGui, cachedComp = nil, nil, nil
+
 local function findBoardComponents()
+	-- Gunakan cache jika masih valid di Workspace
+	if cachedRoot and cachedRoot.Parent and cachedGui and cachedGui.Parent and cachedComp then
+		return cachedRoot, cachedGui, cachedComp
+	end
+
 	-- 1. Cari model/folder di Workspace / Workspace.Leaderboard
 	local folder = workspace:FindFirstChild("Leaderboard")
 	local root = (folder and (folder:FindFirstChild("BoardSaweria") or folder:FindFirstChild("Saweria")))
@@ -117,15 +124,21 @@ local function findBoardComponents()
 	local mainFrame = gui:FindFirstChild("MainFrame", true)
 	local scrollFrame = gui:FindFirstChild("ScrollFrame", true) 
 		or (mainFrame and mainFrame:FindFirstChild("ScrollFrame"))
-	local entryTemplate = scrollFrame and (scrollFrame:FindFirstChild("EntryTemplate") or scrollFrame:FindFirstChild("Template"))
+	local entryTemplate = scrollFrame and (scrollFrame:FindFirstChild("TemplateFrame") or scrollFrame:FindFirstChild("EntryTemplate") or scrollFrame:FindFirstChild("Template"))
 	local listLabel = gui:FindFirstChild("List", true)
 
-	return root, gui, {
+	local comp = {
 		MainFrame = mainFrame,
 		ScrollFrame = scrollFrame,
 		EntryTemplate = entryTemplate,
 		ListLabel = listLabel
 	}
+
+	cachedRoot = root
+	cachedGui = gui
+	cachedComp = comp
+
+	return root, gui, comp
 end
 
 local function updateUIs()
@@ -185,10 +198,12 @@ local function updateUIs()
 
 						local rankLbl = entry:FindFirstChild("RankLabel", true)
 						local nameLbl = entry:FindFirstChild("NameLabel", true)
-						local amountLbl = entry:FindFirstChild("AmountLabel", true)
+						local userLbl = entry:FindFirstChild("UserLabel", true)
+						local amountLbl = entry:FindFirstChild("AmountLabel", true) or entry:FindFirstChild("ValueLabel", true)
 
 						if rankLbl then rankLbl.Text = "#" .. i end
 						if nameLbl then nameLbl.Text = donator.name end
+						if userLbl then userLbl.Text = "@" .. donator.name:gsub("%s+", "_") end
 						if amountLbl then amountLbl.Text = formatRupiah(donator.total) end
 					end
 
@@ -203,9 +218,37 @@ local function updateUIs()
 					if listLayout then comp.ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 20) end
 				end
 			end
+
+			-- Render ke PodiumFrame (Top 1, 2, 3) jika ada
+			local podium = comp.MainFrame and comp.MainFrame:FindFirstChild("PodiumFrame")
+			if podium then
+				local slotMap = {
+					[1] = podium:FindFirstChild("Slot_1"),
+					[2] = podium:FindFirstChild("Slot_2"),
+					[3] = podium:FindFirstChild("Slot_3"),
+				}
+				for rank = 1, 3 do
+					local slot = slotMap[rank]
+					local donator = topDonators[rank]
+					if slot then
+						local nl = slot:FindFirstChild("NameLabel")
+						local ul = slot:FindFirstChild("UserLabel")
+						local al = slot:FindFirstChild("AmountLabel", true) or slot:FindFirstChild("ValueLabel", true)
+						if donator then
+							if nl then nl.Text = donator.name end
+							if ul then ul.Text = "@" .. donator.name:gsub("%s+", "_") end
+							if al then al.Text = formatRupiah(donator.total) end
+						else
+							if nl then nl.Text = "-" end
+							if ul then ul.Text = "@-" end
+							if al then al.Text = "Rp 0" end
+						end
+					end
+				end
+			end
 		end
 
-		-- Render ke ListLabel (format teks sederhana) jika ada
+	-- Render ke ListLabel (format teks sederhana) jika ada
 		if comp.ListLabel then
 			local displayText = "🏆 TOP 10 DONATOR 🏆\n\n"
 			if #topDonators == 0 then
@@ -228,6 +271,15 @@ local function updateUIs()
 	-- 2. SIAPKAN DATA UNTUK CLIENT (ALL TIME & DAILY)
 	local function resolveUserId(dName)
 		if userIdCache[dName] then return userIdCache[dName] end
+
+		-- Cek apakah donatur sedang online di server (0 network call)
+		local onlinePlayer = Players:FindFirstChild(dName)
+		if onlinePlayer then
+			userIdCache[dName] = onlinePlayer.UserId
+			cacheCount += 1
+			return onlinePlayer.UserId
+		end
+
 		local success, foundId = pcall(function() 
 			return Players:GetUserIdFromNameAsync(dName) 
 		end)
@@ -240,6 +292,7 @@ local function updateUIs()
 			cacheCount += 1
 			return foundId
 		else
+			-- Simpan 1 jika nama bukan akun Roblox asli (mencegah HTTP spam berulang)
 			userIdCache[dName] = 1
 			cacheCount += 1
 			return 1
@@ -273,15 +326,40 @@ local function updateUIs()
 	local allTimeClientData = buildList(topDonators, 50)
 	local dailyClientData = buildList(dailyDonators, 50)
 
-	cachedSaweriaPayload = {
+	local newPayload = {
 		AllTime = allTimeClientData,
 		Daily = dailyClientData,
 	}
 
-	UpdateSaweriaEvent:FireAllClients(cachedSaweriaPayload)
+	-- Cek apakah payload berubah sebelum melakukan multicast broadcast ke semua client
+	local hasChanged = not cachedSaweriaPayload 
+		or not cachedSaweriaPayload.AllTime 
+		or #cachedSaweriaPayload.AllTime ~= #newPayload.AllTime
+		or #cachedSaweriaPayload.Daily ~= #newPayload.Daily
+
+	if not hasChanged and cachedSaweriaPayload and cachedSaweriaPayload.AllTime then
+		for i = 1, math.min(10, #newPayload.AllTime) do
+			local oldEntry = cachedSaweriaPayload.AllTime[i]
+			local newEntry = newPayload.AllTime[i]
+			if not oldEntry or oldEntry.DisplayName ~= newEntry.DisplayName or oldEntry.Amount ~= newEntry.Amount then
+				hasChanged = true
+				break
+			end
+		end
+	end
+
+	cachedSaweriaPayload = newPayload
+
+	-- Hanya broadcast jika data benar-benar berubah (menghemat bandwidth dan mencegah ping spike)
+	if hasChanged then
+		UpdateSaweriaEvent:FireAllClients(cachedSaweriaPayload)
+	end
 end
 
 UpdateSaweriaEvent.OnServerEvent:Connect(function(plr)
+	if not cachedSaweriaPayload or not cachedSaweriaPayload.AllTime or #cachedSaweriaPayload.AllTime == 0 then
+		pcall(updateUIs)
+	end
 	if cachedSaweriaPayload and (cachedSaweriaPayload.AllTime or #cachedSaweriaPayload > 0) then
 		pcall(function()
 			UpdateSaweriaEvent:FireClient(plr, cachedSaweriaPayload)
@@ -289,13 +367,13 @@ UpdateSaweriaEvent.OnServerEvent:Connect(function(plr)
 	end
 end)
 
--- Eksekusi awal segera saat startup
-task.spawn(function()
-	task.wait(1) -- Beri waktu 1 detik agar workspace selesai di-load
-	pcall(updateUIs)
-end)
-
-while true do
-	task.wait(UPDATE_INTERVAL)
+-- Export ke LeaderboardOrchestrator (Round-Robin centralized scheduler)
+_G.UpdateSaweriaLeaderboard = function()
 	pcall(updateUIs)
 end
+
+-- Inisialisasi awal saat server baru menyala (agar client yang baru masuk langsung dapat data patung)
+task.spawn(function()
+	task.wait(2)
+	pcall(updateUIs)
+end)

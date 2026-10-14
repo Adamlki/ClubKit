@@ -175,6 +175,11 @@ local DonationEffectSystem = {}
 local DonationNotifSystem = {}
 local AdminNotifSystem = {}
 local HideUISystem = { hiddenGuis = {}, childAddedConn = nil }
+local CameraFocusSystem = {
+	currentMode = "DEFAULT",
+	isApplying = false,
+	buttons = {},
+}
 
 local FeatureManager = {
 	features = {},
@@ -252,6 +257,7 @@ function FeatureManager:RegisterFeature(featureConfig)
 
 	local featureFrame = templateframe:Clone()
 	featureFrame.Name = featureConfig.id .. "Frame"
+	featureFrame.LayoutOrder = 1
 	featureFrame.Visible = true
 
 	local label = featureFrame:FindFirstChild("TemplateLabel")
@@ -265,7 +271,12 @@ function FeatureManager:RegisterFeature(featureConfig)
 
 	self.featureStates[featureConfig.id] = featureConfig.defaultState or false
 
+	local lastToggleClick = 0
 	button.MouseButton1Click:Connect(function()
+		local now = os.clock()
+		if now - lastToggleClick < 0.3 then return end
+		lastToggleClick = now
+
 		self:ToggleFeature(featureConfig.id)
 	end)
 
@@ -379,13 +390,31 @@ end
 -- MAINFRAME & UNHIDE TOGGLE
 -- ============================================
 if settingBtn then
+	local lastSettingClick = 0
 	settingBtn.MouseButton1Click:Connect(function()
+		local now = os.clock()
+		if now - lastSettingClick < 0.3 then return end
+		lastSettingClick = now
+
 		mainframe.Visible = not mainframe.Visible
 	end)
 end
 
-closeBtn.MouseButton1Click:Connect(function() mainframe.Visible = false end)
+local lastCloseSettingClick = 0
+closeBtn.MouseButton1Click:Connect(function()
+	local now = os.clock()
+	if now - lastCloseSettingClick < 0.3 then return end
+	lastCloseSettingClick = now
+
+	mainframe.Visible = false
+end)
+
+local lastUnhideClick = 0
 unhideBtn.MouseButton1Click:Connect(function()
+	local now = os.clock()
+	if now - lastUnhideClick < 0.3 then return end
+	lastUnhideClick = now
+
 	if FeatureManager:GetFeatureState("hideui") then FeatureManager:ToggleFeature("hideui") end
 end)
 
@@ -799,8 +828,159 @@ function PlayerHideSystem:OnCharacterAdded(character, otherPlayer)
 end
 
 -- ============================================
+-- POV CAMERA FOCUS SYSTEM
+-- ============================================
+function CameraFocusSystem:Init()
+	local povFrame = containerframe:WaitForChild("POVFocusFrame", 5)
+	if not povFrame then return end
+
+	local defaultBtn = povFrame:WaitForChild("DefaultBtn", 5)
+	local headBtn = povFrame:WaitForChild("HeadBtn", 5)
+	local bodyBtn = povFrame:WaitForChild("BodyBtn", 5)
+
+	if not defaultBtn or not headBtn or not bodyBtn then return end
+
+	self.buttons = {
+		DEFAULT = defaultBtn,
+		HEAD = headBtn,
+		BODY = bodyBtn,
+	}
+
+	for mode, btn in pairs(self.buttons) do
+		btn.MouseButton1Click:Connect(function()
+			self:SetFocus(mode, true)
+		end)
+
+		btn.MouseEnter:Connect(function()
+			if self.currentMode ~= mode then
+				tweenservice:Create(btn, TweenInfo.new(0.18), {BackgroundColor3 = Color3.fromRGB(32, 32, 32)}):Play()
+			end
+		end)
+
+		btn.MouseLeave:Connect(function()
+			if self.currentMode ~= mode then
+				tweenservice:Create(btn, TweenInfo.new(0.18), {BackgroundColor3 = Color3.fromRGB(22, 22, 22)}):Play()
+			end
+		end)
+	end
+
+	-- Karakter Added & Respawn
+	local function onChar(char)
+		char:WaitForChild("Humanoid", 10)
+		task.wait(0.25)
+		self:ApplyCurrentFocus()
+	end
+
+	if localPlayer.Character then
+		task.spawn(onChar, localPlayer.Character)
+	end
+	localPlayer.CharacterAdded:Connect(onChar)
+
+	-- Monitor Camera Subject & Type
+	local cam = workspace.CurrentCamera
+	if cam then
+		cam:GetPropertyChangedSignal("CameraType"):Connect(function()
+			if cam.CameraType == Enum.CameraType.Custom and self.currentMode ~= "DEFAULT" then
+				task.defer(function() self:ApplyCurrentFocus() end)
+			end
+		end)
+
+		cam:GetPropertyChangedSignal("CameraSubject"):Connect(function()
+			if self.isApplying or cam.CameraType ~= Enum.CameraType.Custom then return end
+			if self.currentMode ~= "DEFAULT" then
+				local char = localPlayer.Character
+				local expected = self:GetTargetPart(self.currentMode, char)
+				if expected and cam.CameraSubject ~= expected then
+					task.defer(function() self:ApplyCurrentFocus() end)
+				end
+			end
+		end)
+	end
+
+	self:UpdateVisuals()
+end
+
+function CameraFocusSystem:GetTargetPart(mode, char)
+	if not char then return nil end
+	if mode == "HEAD" then
+		return char:FindFirstChild("Head")
+	elseif mode == "BODY" then
+		return char:FindFirstChild("UpperTorso") 
+			or char:FindFirstChild("Torso") 
+			or char:FindFirstChild("HumanoidRootPart")
+	else
+		return char:FindFirstChildOfClass("Humanoid")
+	end
+end
+
+local lastFocusClickTime = 0
+function CameraFocusSystem:SetFocus(mode, playSound)
+	local now = os.clock()
+	if now - lastFocusClickTime < 0.2 then return end
+	lastFocusClickTime = now
+
+	self.currentMode = mode
+	self:ApplyCurrentFocus()
+
+	if playSound then
+		pcall(function()
+			local clickSound = game:GetService("SoundService"):FindFirstChild("Sound")
+			if clickSound then
+				clickSound.TimePosition = 0
+				clickSound:Play()
+			end
+		end)
+	end
+end
+
+function CameraFocusSystem:ApplyCurrentFocus()
+	local char = localPlayer.Character
+	if not char then return end
+
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if hum and hum.Health <= 0 then return end -- Tidak mengganggu kamera saat karakter mati
+
+	local cam = workspace.CurrentCamera
+	if not cam or cam.CameraType ~= Enum.CameraType.Custom then return end
+
+	self.isApplying = true
+
+	local target = self:GetTargetPart(self.currentMode, char)
+	if target then
+		cam.CameraSubject = target
+	elseif hum then
+		cam.CameraSubject = hum
+	end
+
+	if hum then
+		hum.CameraOffset = Vector3.zero
+	end
+
+	self.isApplying = false
+	self:UpdateVisuals()
+end
+
+function CameraFocusSystem:UpdateVisuals()
+	local tweenInfo = TweenInfo.new(CONFIG.ANIMATION_DURATION, CONFIG.ANIMATION_STYLE, CONFIG.ANIMATION_DIRECTION)
+
+	for mode, btn in pairs(self.buttons) do
+		local isActive = (mode == self.currentMode)
+		local targetBg = isActive and CONFIG.BG_COLOR_ON or Color3.fromRGB(22, 22, 22)
+		local targetStroke = isActive and Color3.fromRGB(46, 210, 115) or Color3.fromRGB(44, 44, 44)
+		local targetText = isActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(180, 180, 180)
+
+		tweenservice:Create(btn, tweenInfo, {BackgroundColor3 = targetBg, TextColor3 = targetText}):Play()
+		local stroke = btn:FindFirstChildOfClass("UIStroke")
+		if stroke then
+			tweenservice:Create(stroke, tweenInfo, {Color = targetStroke}):Play()
+		end
+	end
+end
+
+-- ============================================
 -- INITIALIZE
 -- ============================================
+CameraFocusSystem:Init()
 for _, featureConfig in ipairs(FEATURES) do
 	FeatureManager:RegisterFeature(featureConfig)
 end
@@ -817,31 +997,38 @@ end)
 
 
 -- ============================================
--- GRAPHICS QUALITY MONITOR
+-- GRAPHICS QUALITY MONITOR (DECOUPLED FROM COREGUI)
 -- ============================================
 local userSettings = UserSettings():GetService("UserGameSettings")
 
+local isUpdatingQuality = false
 local function onGraphicsQualityChanged()
-	local quality = userSettings.SavedQualityLevel
-	local qualityValue = quality.Value
-	
-	-- Automatic = 0. Manual levels = QualityLevel1 (1) to QualityLevel10 (10).
-	-- Level 1-4 bars are the left (low graphics) side of the graphics slider.
-	if qualityValue > 0 then
-		if qualityValue <= 4 then
-			-- Bar kiri (1-4 bar / Grafik rendah): Aktifkan Hide Effect Player, Hide Effect Donate, & Hide All Shadow
-			FeatureManager:SetFeature("effects", true)
-			FeatureManager:SetFeature("donationeffect", true)
-			FeatureManager:SetFeature("shadow", true)
-		else
-			-- Bar kanan (5-10 bar / Grafik sedang-tinggi): Matikan fitur sembunyikan otomatis
-			FeatureManager:SetFeature("effects", false)
-			FeatureManager:SetFeature("donationeffect", false)
-			FeatureManager:SetFeature("shadow", false)
-		end
-	end
+	if isUpdatingQuality then return end
+	isUpdatingQuality = true
+
+	task.defer(function()
+		pcall(function()
+			local quality = userSettings.SavedQualityLevel
+			local qualityValue = quality and quality.Value or 0
+			
+			-- Automatic = 0. Manual levels = QualityLevel1 (1) to QualityLevel10 (10).
+			-- Level 1-4 bars are the left (low graphics) side of the graphics slider.
+			if qualityValue > 0 then
+				if qualityValue <= 4 then
+					-- Bar kiri (1-4 bar / Grafik rendah): Aktifkan Hide Effect Player & Hide All Shadow
+					FeatureManager:SetFeature("effects", true)
+					FeatureManager:SetFeature("shadow", true)
+				else
+					-- Bar kanan (5-10 bar / Grafik sedang-tinggi): Matikan fitur sembunyikan otomatis
+					FeatureManager:SetFeature("effects", false)
+					FeatureManager:SetFeature("shadow", false)
+				end
+			end
+		end)
+		isUpdatingQuality = false
+	end)
 end
 
 userSettings:GetPropertyChangedSignal("SavedQualityLevel"):Connect(onGraphicsQualityChanged)
--- Panggil saat inisialisasi awal
-onGraphicsQualityChanged()
+-- Panggil saat inisialisasi awal di thread terpisah
+task.defer(onGraphicsQualityChanged)

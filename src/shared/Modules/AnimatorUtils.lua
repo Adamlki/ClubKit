@@ -163,7 +163,7 @@ end
 -- ============================================
 function module.stopAllDances(animator, loadedAnimations, fadeOut)
 	if not animator or not animator.Parent then return end
-	fadeOut = (fadeOut ~= nil) and fadeOut or 0.06
+	fadeOut = (fadeOut ~= nil) and fadeOut or 0.5
 
 	local tracks
 	local success = pcall(function()
@@ -173,7 +173,7 @@ function module.stopAllDances(animator, loadedAnimations, fadeOut)
 	if not success or not tracks then return end
 
 	for _, t in ipairs(tracks) do
-		if isDanceTrack(t, loadedAnimations) then
+		if isDanceTrack(t, loadedAnimations) or t.Priority == Enum.AnimationPriority.Action4 then
 			pcall(function() 
 				t:AdjustSpeed(1) -- ✅ UNFREEZE SEBELUM STOP (Mencegah Zombie)
 				t:Stop(fadeOut) 
@@ -197,7 +197,7 @@ function module.stopOtherDances(animator, excludeTrack, loadedAnimations, fadeOu
 	if not success or not tracks then return end
 
 	for _, t in ipairs(tracks) do
-		if t ~= excludeTrack and isDanceTrack(t, loadedAnimations) then
+		if t ~= excludeTrack and (isDanceTrack(t, loadedAnimations) or t.Priority == Enum.AnimationPriority.Action4) then
 			pcall(function() t:Stop(fadeOut) end)
 		end
 	end

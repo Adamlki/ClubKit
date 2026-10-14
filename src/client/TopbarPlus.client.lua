@@ -27,15 +27,9 @@ local CONFIG = {
 }
 
 local ICON_CONFIGS = {
-	-- Right Side
 	Menu         = { enabled = true, image = "rbxassetid://87603332567027",  label = "", alignment = "right", order = 1 },
 	Refresh      = { enabled = true, image = nil, label = "/", alignment = "right", order = 2 },
-
-	-- Left Side (Music & Donate only)
 	Music        = { enabled = true, image = "rbxassetid://123643550590893", label = "", alignment = "left", order = 1, animate = false },
-
-	-- Dropdown / Sub-menu Icons (Inside Menu)
-	-- Dance diputuskan dari topbar karena sudah ada tombol sendiri di GUI
 	Dance        = { enabled = false, image = "rbxassetid://113394514826547", label = "", order = 1 },
 	Setting      = { enabled = true, image = "rbxassetid://116292866711662", label = "", order = 2 }, 
 	FreeCam      = { enabled = true, image = "rbxassetid://134750039859396", label = "", order = 3 }, 
@@ -45,8 +39,6 @@ local ICON_CONFIGS = {
 	Broadcast    = { enabled = true, image = "rbxassetid://124033060370841", label = "" },
 	MyHat        = { enabled = true, image = "rbxassetid://120495411505696", label = "" },
 	GlobalEffect = { enabled = true, image = "rbxassetid://84595853614117", label = "" },
-
-	-- Disabled Shop System
 	Gamepass     = { enabled = false, image = "rbxassetid://140276937557646", label = "" },
 }
 
@@ -262,7 +254,12 @@ local function setupFrameSync(name, icon, frame, closeButtonPath)
 			closeBtn = closeBtn and closeBtn:FindFirstChild(part)
 		end
 		if closeBtn then
+			local lastTopbarCloseClick = 0
 			local cc = closeBtn.MouseButton1Click:Connect(function()
+				local now = os.clock()
+				if now - lastTopbarCloseClick < 0.3 then return end
+				lastTopbarCloseClick = now
+
 				icon:deselect()
 			end)
 			icon:addToJanitor(cc)
@@ -275,7 +272,12 @@ local function bindIconLogic(name, icon, gui, frame, closeBtnPath, originalBtnNa
 	local cfg = getCfg(name)
 	icons[name] = { icon = icon, gui = gui, frame = frame, isOpen = false, lockSync = false, animate = cfg.animate }
 
+	local lastToggleIconTime = 0
 	icon:bindEvent("selected", function()
+		local now = os.clock()
+		if now - lastToggleIconTime < 0.3 then return end
+		lastToggleIconTime = now
+
 		playClick()
 		for otherName, d in pairs(icons) do
 			if otherName ~= name and d.isOpen and not d.lockSync then
@@ -306,6 +308,10 @@ local function bindIconLogic(name, icon, gui, frame, closeBtnPath, originalBtnNa
 	end)
 
 	icon:bindEvent("deselected", function()
+		local now = os.clock()
+		if now - lastToggleIconTime < 0.3 then return end
+		lastToggleIconTime = now
+
 		playClick()
 		local d = icons[name]
 		if d and d.frame and not d.lockSync then

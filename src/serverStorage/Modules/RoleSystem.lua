@@ -28,22 +28,18 @@ local DEBUG_MODE = false -- Biarkan false agar F9 Console bersih saat game live!
 -- ====================================
 -- CONFIGURATION
 -- ====================================
-RoleSystem.Config = {
-	GamePasses = {
-		VIP = {1800222458, 1799395597} -- 1799395597 adalah ID VVIP lama yang sekarang otomatis jadi VIP
-	},
-	-- Developer Product (Fitur Gift/Beliin orang lain)
-	GiftProducts = {
-		VIP = 3578052945,    -- ID Dev Product Gift VIP
-	},
-	
-	ActiveGamepasses = {
-		VIP = 1800222458
-	},
+local PrivateConfig = require(script.Parent:WaitForChild("PrivateConfig"))
 
-	OwnerIds = {8978185974}, --7979929622 Noe
-	AdminIds = {},
-	ModeratorIds = {},
+RoleSystem.Config = {
+	GamePasses = PrivateConfig.GamePasses,
+	-- Developer Product (Fitur Gift/Beliin orang lain)
+	GiftProducts = PrivateConfig.GiftProducts,
+	
+	ActiveGamepasses = PrivateConfig.ActiveGamepasses,
+
+	OwnerIds = PrivateConfig.OwnerIds,
+	AdminIds = PrivateConfig.AdminIds,
+	ModeratorIds = PrivateConfig.ModeratorIds,
 
 	RoleHierarchy = {
 		Owner = 5,
@@ -53,7 +49,7 @@ RoleSystem.Config = {
 		Player = 1
 	},
 
-	GroupId = 192828493, -- ID Komunitas / Grup untuk Free VIP
+	GroupId = PrivateConfig.GroupId, -- ID Komunitas / Grup untuk Free VIP
 
 	DATASTORE_NAME = "PlayerGiveGamePasses_v1",
 	DATASTORE_RETRY_ATTEMPTS = 3,
@@ -256,15 +252,21 @@ function RoleSystem:CachePlayerOwnership(player)
 	local key = "givenpass_" .. tostring(userId)
 	local givenPassData = datastoreGetAsync(key, player)
 
-	if givenPassData and givenPassData.passType then
-		ownership.GivenPass = (givenPassData.passType == "VVIP") and "VIP" or givenPassData.passType
+	if givenPassData then
+		local passType = nil
+		if type(givenPassData) == "table" then
+			passType = givenPassData.passType or givenPassData.PassType or givenPassData.Role or givenPassData.role
+		elseif type(givenPassData) == "string" then
+			passType = givenPassData
+		end
 
-		if givenPassData.passType == "VIP" or givenPassData.passType == "VVIP" then
-			ownership.VIP = true
-		elseif givenPassData.passType == "Moderator" then
-			ownership.GivenPass = "Moderator"
-		elseif givenPassData.passType == "Admin" then
-			ownership.GivenPass = "Admin"
+		if passType then
+			if passType == "VVIP" then passType = "VIP" end
+			ownership.GivenPass = passType
+
+			if passType == "VIP" then
+				ownership.VIP = true
+			end
 		end
 	end
 
@@ -329,6 +331,10 @@ function RoleSystem:UpdateOwnershipCache(player, gamepassType, owned)
 end
 
 function RoleSystem:InvalidateOwnershipCache(userId)
+	playerOwnershipCache[userId] = nil
+end
+
+function RoleSystem:HandlePlayerRemoving(userId)
 	if playerOwnershipCache[userId] then
 		playerOwnershipCache[userId].DisconnectedAt = os.clock()
 		
@@ -396,7 +402,7 @@ end
 -- PLAYER INITIALIZATION
 -- ====================================
 function RoleSystem:InitializePlayer(player)
-	self:CachePlayerOwnership(player)
+	self:GetPlayerOwnership(player)
 
 	local role = self:GetPlayerRole(player)
 
@@ -418,7 +424,6 @@ function RoleSystem:InitializePlayer(player)
 end
 
 function RoleSystem:UpdatePlayerRole(player)
-	self:InvalidateOwnershipCache(player.UserId)
 	return self:InitializePlayer(player)
 end
 
@@ -447,7 +452,12 @@ function RoleSystem:GivePassToPlayer(targetUserId, passType, giverUserId)
 	local success = datastoreSetAsync(key, data)
 
 	if success then
-		self:InvalidateOwnershipCache(targetUserId)
+		-- Update cache langsung di memori server agar instan tanpa lag atau delay
+		playerOwnershipCache[targetUserId] = {
+			VIP = (passType == "VIP"),
+			GivenPass = passType,
+			CheckedAt = os.clock()
+		}
 
 		local player = game.Players:GetPlayerByUserId(targetUserId)
 		if player then
@@ -472,7 +482,12 @@ function RoleSystem:RemovePassFromPlayer(targetUserId)
 	local success = datastoreRemoveAsync(key)
 
 	if success then
-		self:InvalidateOwnershipCache(targetUserId)
+		-- Reset cache langsung di memori server
+		playerOwnershipCache[targetUserId] = {
+			VIP = false,
+			GivenPass = "None",
+			CheckedAt = os.clock()
+		}
 
 		local player = game.Players:GetPlayerByUserId(targetUserId)
 		if player then
@@ -577,7 +592,7 @@ function RoleSystem:GiveSpecialItems(player) end
 -- ANTI MEMORY LEAK UNTUK CACHE ROLE
 game:GetService("Players").PlayerRemoving:Connect(function(player)
 	-- Variabel playerOwnershipCache ada di scope file ini
-	RoleSystem:InvalidateOwnershipCache(player.UserId)
+	RoleSystem:HandlePlayerRemoving(player.UserId)
 end)
 
 -- ====================================

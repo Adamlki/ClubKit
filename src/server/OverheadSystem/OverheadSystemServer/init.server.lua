@@ -372,8 +372,16 @@ Players.PlayerRemoving:Connect(function(player)
 			OverheadManager:CleanupPlayer(player)
 		end
 
-		if TitleDataManager and TitleDataManager.CleanupPlayer then
-			TitleDataManager:CleanupPlayer(player)
+		if TitleDataManager and TitleDataManager.ClearCache then
+			TitleDataManager:ClearCache(player.UserId)
+		end
+
+		if DonaturRankSystem and DonaturRankSystem.ClearCache then
+			DonaturRankSystem:ClearCache(player.UserId)
+		end
+
+		if NametagDisabler and NametagDisabler.Cleanup then
+			NametagDisabler:Cleanup(player)
 		end
 	end)
 end)

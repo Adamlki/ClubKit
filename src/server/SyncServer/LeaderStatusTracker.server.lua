@@ -16,7 +16,7 @@ end
 local CONFIG = {
 	DEBUG_ENABLED = false,
 	DEBOUNCE_TIME = 0.05,
-	PERIODIC_CHECK_INTERVAL = 3
+	PERIODIC_CHECK_INTERVAL = 10
 }
 
 -- Connection management
@@ -81,13 +81,9 @@ local function updatePlayerLeaderStatus(player)
 	end
 end
 
--- Immediate update all
+-- Immediate update all (O(N) batch)
 local function immediateUpdateAll()
-	for _, player in ipairs(Players:GetPlayers()) do
-		if player.Character then
-			updatePlayerLeaderStatus(player)
-		end
-	end
+	SyncController.updateAllLeaderStatus()
 end
 
 -- Scheduled update with debounce (coalesce pattern)
@@ -250,7 +246,13 @@ local periodicUpdateTask = task.spawn(function()
 
 				if needsUpdate then
 					debug("⚠ Fixing status drift for", player.Name)
-					updatePlayerLeaderStatus(player)
+					if followerCount > 0 then
+						player.Character:SetAttribute("IsLeader", true)
+						player.Character:SetAttribute("FollowerCount", followerCount)
+					else
+						player.Character:SetAttribute("IsLeader", nil)
+						player.Character:SetAttribute("FollowerCount", nil)
+					end
 				end
 			end
 		end

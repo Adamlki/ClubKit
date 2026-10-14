@@ -8,7 +8,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
-local AUTO_ROTATE_INTERVAL = 15 -- Auto-cycle between All Time and Daily every 15s
+local AUTO_ROTATE_INTERVAL = 30 -- Auto-cycle between All Time and Daily every 30s
 local USER_INTERACTION_PAUSE = 30 -- Pause auto-rotate for 30s when a user clicks a tab
 
 -- Helper to find models in Workspace.Leaderboard
@@ -728,16 +728,20 @@ local function setupTabClicks()
 		if aBtn and not aBtn:GetAttribute("Bound") then
 			aBtn:SetAttribute("Bound", true)
 			aBtn.MouseButton1Click:Connect(function()
+				local now = os.clock()
+				if now - (States.Robux.LastClick or 0) < 0.3 then return end
+				States.Robux.LastClick = now
 				States.Robux.Mode = "AllTime"
-				States.Robux.LastClick = os.clock()
 				renderRobuxBoard()
 			end)
 		end
 		if dBtn and not dBtn:GetAttribute("Bound") then
 			dBtn:SetAttribute("Bound", true)
 			dBtn.MouseButton1Click:Connect(function()
+				local now = os.clock()
+				if now - (States.Robux.LastClick or 0) < 0.3 then return end
+				States.Robux.LastClick = now
 				States.Robux.Mode = "Daily"
-				States.Robux.LastClick = os.clock()
 				renderRobuxBoard()
 			end)
 		end
@@ -754,16 +758,20 @@ local function setupTabClicks()
 		if aBtn and not aBtn:GetAttribute("Bound") then
 			aBtn:SetAttribute("Bound", true)
 			aBtn.MouseButton1Click:Connect(function()
+				local now = os.clock()
+				if now - (States.Saweria.LastClick or 0) < 0.3 then return end
+				States.Saweria.LastClick = now
 				States.Saweria.Mode = "AllTime"
-				States.Saweria.LastClick = os.clock()
 				renderSaweriaBoard()
 			end)
 		end
 		if dBtn and not dBtn:GetAttribute("Bound") then
 			dBtn:SetAttribute("Bound", true)
 			dBtn.MouseButton1Click:Connect(function()
+				local now = os.clock()
+				if now - (States.Saweria.LastClick or 0) < 0.3 then return end
+				States.Saweria.LastClick = now
 				States.Saweria.Mode = "Daily"
-				States.Saweria.LastClick = os.clock()
 				renderSaweriaBoard()
 			end)
 		end

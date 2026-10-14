@@ -293,7 +293,12 @@ end
 -- ====================================
 function UIManager:SetupCloseButton()
 	if self.closeBtn then
+		local lastCloseClick = 0
 		self.closeBtn.MouseButton1Click:Connect(function()
+			local now = os.clock()
+			if now - lastCloseClick < 0.3 then return end
+			lastCloseClick = now
+
 			self:HideMainFrame()
 		end)
 	end
@@ -353,16 +358,30 @@ function UIManager:SetupTabSwitcher()
 		end
 	end
 
+	local lastTabClick = 0
 	self.homeTabBtn.MouseButton1Click:Connect(function()
+		local now = os.clock()
+		if now - lastTabClick < 0.3 then return end
+		lastTabClick = now
+
 		setTab("Home")
 	end)
 
 	self.libraryTabBtn.MouseButton1Click:Connect(function()
+		local now = os.clock()
+		if now - lastTabClick < 0.3 then return end
+		lastTabClick = now
+
 		setTab("Library")
 	end)
 
 	-- Back button in Library (toggles between Album Selector and Playlist Detail)
+	local lastBackClick = 0
 	self.libBackBtn.MouseButton1Click:Connect(function()
+		local now = os.clock()
+		if now - lastBackClick < 0.3 then return end
+		lastBackClick = now
+
 		self.hasActiveAlbumOpen = false
 		self.playlistDetailFrame.Visible = false
 		self.albumsSelectionFrame.Visible = true
@@ -376,7 +395,9 @@ function UIManager:SetupVisualizer()
 	local barCount = #self.visualizerBars
 	if barCount == 0 then return end
 
-	RunService.Heartbeat:Connect(function()
+	local visualizerConnection = nil
+
+	local function updateVisualizer()
 		local t = os.clock()
 
 		for i, bar in ipairs(self.visualizerBars) do
@@ -394,20 +415,37 @@ function UIManager:SetupVisualizer()
 			local newH = currentH + (targetH - currentH) * 0.25
 			bar.Size = UDim2.new(0, 4, 0, math.floor(newH))
 		end
+	end
+
+	self.mainFrame:GetPropertyChangedSignal("Visible"):Connect(function()
+		if self.mainFrame.Visible then
+			if not visualizerConnection then
+				visualizerConnection = RunService.Heartbeat:Connect(updateVisualizer)
+			end
+		else
+			if visualizerConnection then
+				visualizerConnection:Disconnect()
+				visualizerConnection = nil
+			end
+		end
 	end)
+
+	if self.mainFrame.Visible then
+		visualizerConnection = RunService.Heartbeat:Connect(updateVisualizer)
+	end
 end
 
 -- ====================================
 -- CONNECTIONS
 -- ====================================
 function UIManager:SetupConnections()
-	-- Close Button
-	self.closeBtn.MouseButton1Click:Connect(function()
-		self.mainFrame.Visible = false
-	end)
-
-	-- Like Button on Now Playing
+	-- Like Button on Now Playing (0.3s debounce)
+	local lastLikeClick = 0
 	self.likeBtn.MouseButton1Click:Connect(function()
+		local now = os.clock()
+		if now - lastLikeClick < 0.3 then return end
+		lastLikeClick = now
+
 		if self.currentSongId and self.callbacks.onToggleFavorite then
 			self.callbacks.onToggleFavorite(self.currentSongId)
 		end
@@ -526,7 +564,12 @@ function UIManager:UpdateQueue(queueData)
 			favBtn.Text = isFav and "❤️" or "♡"
 			favBtn.TextColor3 = isFav and Color3.fromRGB(255, 90, 120) or Color3.fromRGB(140, 140, 140)
 
+			local lastFavClick = 0
 			favBtn.MouseButton1Click:Connect(function()
+				local now = os.clock()
+				if now - lastFavClick < 0.3 then return end
+				lastFavClick = now
+
 				if musicData.id and self.callbacks.onToggleFavorite then
 					self.callbacks.onToggleFavorite(musicData.id)
 				end

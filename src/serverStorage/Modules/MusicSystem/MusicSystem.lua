@@ -50,7 +50,7 @@ local CONFIG = {
 
 	-- Skip Vote
 	SKIP_VOTE_DURATION = 30,
-	SKIP_VOTE_COOLDOWN = 60,
+	SKIP_VOTE_COOLDOWN = 7,
 }
 
 -- ====================================
@@ -108,11 +108,15 @@ function MusicSystem.new()
 		dispatcher = self.dispatcher,
 		systemState = self.systemState,
 		cooldownService = self.cooldownService,
+		actionHandler = self.actionHandler,
 		playNextCallback = function() self:PlayNext() end
 	}, self.dispatcher)
 
-	-- Setup auto-next callback
+	-- Setup auto-next callback (Lagu selesai alami -> reset streak skip)
 	self.playbackManager.autoNextCallback = function()
+		if self.actionHandler then
+			self.actionHandler:ResetSkipStreak()
+		end
 		self:PlayNext()
 	end
 
@@ -255,6 +259,9 @@ function MusicSystem:PlayNext()
 					end
 				else
 					self.playbackManager:Stop(self.remotes)
+					if self.actionHandler then
+						self.actionHandler:ResetSkipStreak()
+					end
 				end
 				self.isTransitioning = false
 			end
@@ -334,7 +341,7 @@ function MusicSystem:Start()
 	self.remotes.MusicAction.OnServerEvent:Connect(function(player, action)
 		if action.type == "REQUEST_SYNC" then
 			if not RemoteEventManager.checkRateLimit(player, "musicSync") then return end
-			self.playerManager:OnPlayerAdded(player)
+			self.dispatcher:SyncToPlayer(player)
 		else
 			if not RemoteEventManager.checkRateLimit(player, "musicAction") then return end
 			self.actionHandler:DispatchAction(player, action)

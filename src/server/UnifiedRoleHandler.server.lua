@@ -298,6 +298,17 @@ giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
 					success = true,
 					message = successMessage,
 				})
+
+				-- Beritahu target player jika sedang di server
+				pcall(function()
+					if targetPlayer and targetPlayer ~= player then
+						giveRoleRemote:FireClient(targetPlayer, {
+							source  = "AdminPanel",
+							success = true,
+							message = (roleType == "Player") and "Role kamu telah direset ke Player." or string.format("Selamat! Kamu telah diberikan role %s!", roleType),
+						})
+					end
+				end)
 			else
 				warn(string.format("[UnifiedRole] Give role failed: %s", result or "Unknown"))
 				giveRoleRemote:FireClient(player, {

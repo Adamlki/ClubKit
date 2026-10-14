@@ -48,6 +48,7 @@ local playerLevelCache = {}
 local playerTimers = {}
 local activeConnections = {}
 local saveCooldowns = {} -- BARU: Mencegah spam DataStore
+local loadingLocks = {} -- ANTI-RACE: Mencegah multiple GetAsync saat join bersamaan
 
 -- ====================================
 -- EVENTS
@@ -153,9 +154,22 @@ end
 -- ====================================
 function LevelSystem:LoadPlayerLevel(player)
 	local userId = player.UserId
+	if playerLevelCache[userId] then
+		return playerLevelCache[userId].Level
+	end
+
+	if loadingLocks[userId] then
+		repeat task.wait(0.05) until not loadingLocks[userId]
+		if playerLevelCache[userId] then
+			return playerLevelCache[userId].Level
+		end
+	end
+
+	loadingLocks[userId] = true
 	local key = self.Config.DATASTORE_PREFIX .. tostring(userId)
 	
 	local success, data = datastoreGetAsync(key)
+	loadingLocks[userId] = nil
 	
 	-- 🔥 ARCHITECT FIX 1: Cegah Data Wipe akibat Roblox Down
 	if not success then
@@ -376,6 +390,7 @@ function LevelSystem:CleanupPlayer(player)
 	-- Hapus dari cache
 	playerLevelCache[userId] = nil
 	saveCooldowns[userId] = nil
+	loadingLocks[userId] = nil
 end
 
 Players.PlayerRemoving:Connect(function(player)
@@ -385,34 +400,39 @@ end)
 -- ====================================
 -- SHUTDOWN PROTECTION (BINDTOCLOSE)
 -- ====================================
-game:BindToClose(function()
-	print("[LevelSystem] Server shutting down, saving all player data safely...")
-	local players = Players:GetPlayers()
-	local totalPlayers = #players
-	local completed = 0
-	
-	for i, player in ipairs(players) do
-		task.spawn(function()
-			-- Paksa save mengabaikan cooldown
-			LevelSystem:SavePlayerLevel(player, true) 
-			completed += 1 -- Tandai bahwa pemain ini sudah selesai disave
+local RunService = game:GetService("RunService")
+if RunService:IsServer() and RunService:IsRunning() then
+	pcall(function()
+		game:BindToClose(function()
+			print("[LevelSystem] Server shutting down, saving all player data safely...")
+			local players = Players:GetPlayers()
+			local totalPlayers = #players
+			local completed = 0
+			
+			for i, player in ipairs(players) do
+				task.spawn(function()
+					-- Paksa save mengabaikan cooldown
+					LevelSystem:SavePlayerLevel(player, true) 
+					completed += 1 -- Tandai bahwa pemain ini sudah selesai disave
+				end)
+				
+				-- 🔥 KUNCI ANTI-LAG: Kasih napas ke Roblox API setiap 10 pemain
+				if i % 10 == 0 then
+					task.wait(0.2)
+				end
+			end
+			
+			-- TAHAN SERVER JANGAN SAMPAI MATI!
+			-- Tunggu sampai semua save selesai (maksimal 25 detik agar tidak force kill oleh Roblox)
+			local elapsed = 0
+			while completed < totalPlayers and elapsed < 25 do
+				task.wait(1)
+				elapsed += 1
+			end
+			
+			print("[LevelSystem] " .. completed .. "/" .. totalPlayers .. " data pemain berhasil diselamatkan sebelum shutdown!")
 		end)
-		
-		-- 🔥 KUNCI ANTI-LAG: Kasih napas ke Roblox API setiap 10 pemain
-		if i % 10 == 0 then
-			task.wait(0.2)
-		end
-	end
-	
-	-- TAHAN SERVER JANGAN SAMPAI MATI!
-	-- Tunggu sampai semua save selesai (maksimal 25 detik agar tidak force kill oleh Roblox)
-	local elapsed = 0
-	while completed < totalPlayers and elapsed < 25 do
-		task.wait(1)
-		elapsed += 1
-	end
-	
-	print("[LevelSystem] " .. completed .. "/" .. totalPlayers .. " data pemain berhasil diselamatkan sebelum shutdown!")
-end)
+	end)
+end
 
 return LevelSystem

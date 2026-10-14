@@ -13,7 +13,7 @@ local SULTAN_REQUIREMENT = 10000
 -- ============================================================
 -- 1. SAAT PLAYER JOIN: Bikin Leaderstat & Cek History (Optimized)
 -- ============================================================
-Players.PlayerAdded:Connect(function(player)
+local function setupPlayer(player)
 	-- Tunggu folder leaderstats dari LevelSystem selesai dibuat
 	local leaderstats = player:WaitForChild("leaderstats", 15)
 	if not leaderstats then return end
@@ -22,10 +22,12 @@ Players.PlayerAdded:Connect(function(player)
 	leaderstats:WaitForChild("Level", 10)
 
 	-- Buat Nilai "Donation"
-	local donationStat = Instance.new("IntValue")
+	local donationStat = leaderstats:FindFirstChild("Donation") or Instance.new("IntValue")
 	donationStat.Name = "Donation"
-	donationStat.Value = 0
-	donationStat.Parent = leaderstats
+	if not donationStat.Parent then
+		donationStat.Value = 0
+		donationStat.Parent = leaderstats
+	end
 
 	-- 🔥 ARCHITECT FIX: Ambil data spesifik player dari Cache (Anti-Lag)
 	task.spawn(function()
@@ -56,7 +58,12 @@ Players.PlayerAdded:Connect(function(player)
 		if not player or not player.Parent then return end
 		TeamGroups.AssignPlayer(player)
 	end)
-end)
+end
+
+Players.PlayerAdded:Connect(setupPlayer)
+for _, player in ipairs(Players:GetPlayers()) do
+	task.spawn(setupPlayer, player)
+end
 
 -- ============================================================
 -- 2. SAAT PLAYER DONASI: Update Leaderstat secara Real-time

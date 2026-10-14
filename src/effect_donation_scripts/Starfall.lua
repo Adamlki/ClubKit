@@ -22,6 +22,10 @@ local DEFAULT_DURATION = 249
 
 local effectsEvent = ReplicatedStorage:WaitForChild("EffectsRemotes"):WaitForChild("EffectsEvent")
 
+if script:FindFirstChild("ScreenGui") then
+	script.ScreenGui.Enabled = false
+end
+
 local vfxFolder         = ReplicatedStorage:WaitForChild("VFX")
 local starfallTemplate  = vfxFolder:WaitForChild("Templates"):WaitForChild("WingedEndowmentPlayer")
 local blackholeTemplate = vfxFolder:WaitForChild("Templates"):WaitForChild("Level7")
@@ -1042,6 +1046,9 @@ local function playStarfallEffect(donorName, recipientName, amount, userId, curr
 
 		W(30)
 		cameraShaker:Stop()
+		if script:FindFirstChild("ScreenGui") then
+			script.ScreenGui.Enabled = false
+		end
 		pcall(function() effectFolder:Destroy() end)
 		pcall(function() disconnectConn:Disconnect() end)
 	end)

@@ -47,42 +47,50 @@ local function getAnimator()
 end
 
 -- ============================================
--- 🚀 PRELOAD ALL ANIMATIONS (ContentProvider Fix)
+-- 🚀 HIGH-PERFORMANCE PRELOADER (0ms INSTANT PLAYBACK)
 -- ============================================
+-- Melakukan background streaming aset secara bertahap (batching)
+-- agar saat pemain mengklik dance atau sync ke leader,
+-- animasinya LANGSUNG berputar 0ms tanpa freeze "diem dulu"!
 function module.preloadAnimations(animationFolder)
 	if isPreloaded then
-		debug("Already preloaded, skipping...")
 		return true
 	end
 
-	debug("⏳ Starting preload via ContentProvider...")
+	isPreloaded = true
 
-	local animationsToPreload = {}
-
-	-- Collect all animations
-	for _, anim in ipairs(animationFolder:GetDescendants()) do
-		if anim:IsA("Animation") then
-			table.insert(animationsToPreload, anim)
-		end
-	end
-
-	debug("Found", #animationsToPreload, "animations to preload")
-
-	-- Unduh aset ke memori HP/PC secara non-blocking
 	task.spawn(function()
-		-- Tambahkan baris di bawah ini untuk BENAR-BENAR mendownload animasinya!
-		ContentProvider:PreloadAsync(animationsToPreload)
-		
-		isPreloaded = true
-		debug("✅ Animations successfully preloaded to memory!")
+		local animationsToPreload = {}
+		for _, anim in ipairs(animationFolder:GetDescendants()) do
+			if anim:IsA("Animation") then
+				table.insert(animationsToPreload, anim)
+			end
+		end
+
+		debug("Starting background preload for", #animationsToPreload, "animations...")
+
+		-- Download aset dalam batch 25 item dengan jeda non-blocking
+		-- agar tidak membebani network / CPU thread saat baru join
+		local BATCH_SIZE = 25
+		for i = 1, #animationsToPreload, BATCH_SIZE do
+			local batch = {}
+			for j = i, math.min(i + BATCH_SIZE - 1, #animationsToPreload) do
+				table.insert(batch, animationsToPreload[j])
+			end
+			pcall(function()
+				ContentProvider:PreloadAsync(batch)
+			end)
+			task.wait(0.04)
+		end
+
+		debug("✅ All animations successfully cached locally!")
 	end)
 
-	-- Return true agar tidak nge-block script yang memanggilnya
 	return true
 end
 
 -- ============================================
--- 🔄 GET PRELOADED TRACK (Cached Just-In-Time Loading)
+-- 🔄 GET PRELOADED TRACK (Persistent Fast Cache)
 -- ============================================
 local loadedTrackCache = setmetatable({}, { __mode = "k" })
 
@@ -92,7 +100,7 @@ function module.getPreloadedTrack(animation)
 
 	local perAnimator = loadedTrackCache[animator]
 	if not perAnimator then
-		perAnimator = setmetatable({}, { __mode = "k" })
+		perAnimator = {}
 		loadedTrackCache[animator] = perAnimator
 	end
 
@@ -110,7 +118,7 @@ function module.getPreloadedTrack(animation)
 		end
 	end
 
-	-- Load JIT (Just-In-Time) saat tarian benar-benar akan diputar
+	-- Buat AnimationTrack dan simpan di cache agar pemanggilan berikutnya 0ms
 	local success, track = pcall(function()
 		return animator:LoadAnimation(animation)
 	end)
@@ -132,9 +140,12 @@ function module.invalidateTrack(animation)
 	if animator and loadedTrackCache[animator] then
 		local t = loadedTrackCache[animator][animation]
 		if t then
-			pcall(function() t:Destroy() end)
+			pcall(function()
+				t:Stop(0)
+				t:Destroy()
+			end)
+			loadedTrackCache[animator][animation] = nil
 		end
-		loadedTrackCache[animator][animation] = nil
 	end
 end
 
@@ -150,9 +161,20 @@ end
 -- ============================================
 function module.clearCache()
 	debug("🗑️ Clearing preload state...")
-	isPreloaded = false
+	for animator, perAnimator in pairs(loadedTrackCache) do
+		if perAnimator then
+			for _, track in pairs(perAnimator) do
+				if typeof(track) == "Instance" and track:IsA("AnimationTrack") then
+					pcall(function()
+						track:Stop(0)
+						track:Destroy()
+					end)
+				end
+			end
+		end
+	end
 	table.clear(loadedTrackCache)
-	debug("✅ State cleared")
+	debug("✅ State cleared & tracks destroyed")
 end
 
 -- ============================================

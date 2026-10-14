@@ -96,9 +96,25 @@ local function refreshLeaderboard()
 			item.Username = "@" .. uInfo.Username
 		end
 
+		local function isDataDifferent(oldData, newData)
+			if not oldData or not newData then return true end
+			if #oldData ~= #newData then return true end
+			for i = 1, math.min(10, #newData) do
+				local o, n = oldData[i], newData[i]
+				if not o or not n then return true end
+				if (o.userId or o.UserId) ~= (n.userId or n.UserId) or (o.level or o.Level) ~= (n.level or n.Level) then
+					return true
+				end
+			end
+			return false
+		end
+
+		local hasChanged = isDataDifferent(cachedTopData, topData)
 		cachedTopData = topData
-		remote:FireAllClients(cachedTopData)
-		debugPrint("Leaderboard refreshed -", #topData, "players")
+		if hasChanged then
+			remote:FireAllClients(cachedTopData)
+		end
+		debugPrint("Leaderboard refreshed -", #topData, "players (Changed:", hasChanged, ")")
 	end
 end
 
@@ -136,7 +152,9 @@ end)
 -- ====================================
 local function onPlayerJoin(player)
 	debugPrint("Player joined:", player.Name)
-	LevelSystem:InitializePlayer(player)
+	if not player:FindFirstChild("leaderstats") then
+		LevelSystem:InitializePlayer(player)
+	end
 end
 
 Players.PlayerAdded:Connect(onPlayerJoin)
@@ -151,7 +169,7 @@ for _, player in ipairs(Players:GetPlayers()) do
 end
 
 -- ====================================
--- AUTO-SAVE & REFRESH LOOP
+-- AUTO-SAVE LOOP (Setiap 10 Menit)
 -- ====================================
 task.spawn(function()
 	while true do
@@ -164,11 +182,7 @@ task.spawn(function()
 	end
 end)
 
-task.spawn(function()
-	task.wait(2) -- Quick initial fetch on startup
+-- Export ke LeaderboardOrchestrator (Round-Robin centralized scheduler)
+_G.UpdateLevelLeaderboard = function()
 	pcall(refreshLeaderboard)
-	while true do
-		task.wait(120) 
-		pcall(refreshLeaderboard)
-	end
-end)
+end

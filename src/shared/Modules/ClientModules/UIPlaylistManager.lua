@@ -101,9 +101,14 @@ function UIPlaylistManager:UpdatePlaylist(musicList, albumName)
 		if titleLabel then titleLabel.Text = music.judul or "Unknown" end
 		if colLabel then colLabel.Text = music.album or "Unknown" end
 
-		-- Dedicated "+" Add to Queue Button
+		-- Dedicated "+" Add to Queue Button (0.3s debounce)
 		if addBtn then
+			local lastAddClick = 0
 			addBtn.MouseButton1Click:Connect(function()
+				local now = os.clock()
+				if now - lastAddClick < 0.3 then return end
+				lastAddClick = now
+
 				-- Visual feedback: change '+' to '✓' briefly
 				addBtn.Text = "✓"
 				addBtn.TextColor3 = Color3.fromRGB(46, 220, 113)
@@ -124,13 +129,18 @@ function UIPlaylistManager:UpdatePlaylist(musicList, albumName)
 			end)
 		end
 
-		-- Favorite toggle
+		-- Favorite toggle (0.3s debounce)
 		local isFavorite = self:IsMusicFavorite(music.id)
 		if favBtn then
 			favBtn.Text = isFavorite and "❤️" or "♡"
 			favBtn.TextColor3 = isFavorite and Color3.fromRGB(255, 90, 120) or Color3.fromRGB(160, 160, 160)
 
+			local lastFavClick = 0
 			favBtn.MouseButton1Click:Connect(function()
+				local now = os.clock()
+				if now - lastFavClick < 0.3 then return end
+				lastFavClick = now
+
 				if self.onToggleFavoriteCallback then
 					self.onToggleFavoriteCallback(music.id)
 				end

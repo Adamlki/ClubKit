@@ -105,6 +105,19 @@ local function cleanAllDuplicates(player, itemName)
 	end
 end
 
+-- 🔥 NETWORK OPTIMIZATION: Buat semua part di tool seringan mungkin
+-- Agar Roblox engine tidak replicate physics state yang tidak perlu
+local function optimizeToolPhysics(tool)
+	for _, descendant in ipairs(tool:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			descendant.Massless = true
+			descendant.CanCollide = false
+			descendant.CanTouch = false
+			descendant.CanQuery = false
+		end
+	end
+end
+
 -- Fungsi utama memberikan item ke player (DIJAMIN TIDAK GANDA)
 local function giveItemToPlayer(player, itemConfig)
 	if not player or not player.Backpack then return end
@@ -113,8 +126,9 @@ local function giveItemToPlayer(player, itemConfig)
 	-- 1. MUSNAHKAN SEMUA ITEM LAMA TERLEBIH DAHULU (Anti-Ganda)
 	cleanAllDuplicates(player, itemConfig.Name)
 
-	-- 2. BERIKAN 1 ITEM BARU
+	-- 2. BERIKAN 1 ITEM BARU (dengan optimasi fisik)
 	local itemClone = itemConfig.Path:Clone()
+	optimizeToolPhysics(itemClone)
 	itemClone.Parent = player.Backpack
 
 	debugPrint(string.format("Gave %s to %s (Rank: %s)", itemConfig.Name, player.Name, RoleSystem:GetPlayerRole(player)))

@@ -23,21 +23,66 @@ pcall(function()
 	PhysicsService:CollisionGroupSetCollidable(GROUP_NAME, GROUP_NAME, false)
 end)
 
--- Fungsi ultra-cepat: hanya menyentuh properti jika nilainya BERBEDA
+local LIMB_NAMES = {
+	["Head"] = true,
+	["LeftUpperArm"] = true,
+	["LeftLowerArm"] = true,
+	["LeftHand"] = true,
+	["RightUpperArm"] = true,
+	["RightLowerArm"] = true,
+	["RightHand"] = true,
+	["LeftUpperLeg"] = true,
+	["LeftLowerLeg"] = true,
+	["LeftFoot"] = true,
+	["RightUpperLeg"] = true,
+	["RightLowerLeg"] = true,
+	["RightFoot"] = true,
+	-- R6 limb compatibility
+	["Left Arm"] = true,
+	["Right Arm"] = true,
+	["Left Leg"] = true,
+	["Right Leg"] = true,
+}
+
 local function optimizeBasePart(part)
 	if not part:IsA("BasePart") then return end
 
+	-- Semua part karakter wajib masuk ke CollisionGroup AllPlayers
+	if part.CollisionGroup ~= GROUP_NAME then
+		part.CollisionGroup = GROUP_NAME
+	end
+
 	local isAccessory = part:FindFirstAncestorWhichIsA("Accessory") ~= nil
-	if not isAccessory then
-		-- Hanya ganti CollisionGroup jika belum sama (Mencegah banjir sinyal fisika)
-		if part.CollisionGroup ~= GROUP_NAME then
-			part.CollisionGroup = GROUP_NAME
-		end
-	else
-		-- Khusus aksesori, matikan shadow hanya jika masih aktif
-		if part.CastShadow then
-			part.CastShadow = false
-		end
+	if isAccessory then
+		-- Aksesoris (topi/sayap/tas/senjata/layered clothing)
+		if part.CanCollide then part.CanCollide = false end
+		if part.CanTouch then part.CanTouch = false end
+		if part.CanQuery then part.CanQuery = false end
+		if not part.Massless then part.Massless = true end
+		if part.CastShadow then part.CastShadow = false end
+		return
+	end
+
+	-- Root & Torso tetap memegang gravitasi, pergerakan, dan zona deteksi
+	if part.Name == "HumanoidRootPart" then
+		part.Massless = false
+		part.CanTouch = true
+		return
+	end
+
+	if part.Name == "UpperTorso" or part.Name == "LowerTorso" or part.Name == "Torso" then
+		part.CanTouch = true
+		return
+	end
+
+	-- Anggota tubuh (Limbs):
+	-- Massless = true & CanTouch = false
+	-- Karakter tetap 100% bebas bergerak & menari, tetapi engine fisika Roblox
+	-- hanya mereplikasi 1 center of mass ke server (memangkas KB/s Sent)
+	if LIMB_NAMES[part.Name] then
+		if part.CanCollide then part.CanCollide = false end
+		if part.CanTouch then part.CanTouch = false end
+		if not part.Massless then part.Massless = true end
 	end
 end
 

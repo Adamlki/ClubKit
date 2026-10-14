@@ -151,8 +151,16 @@ _G.CloseSaweria = closeSaweria
 backdrop.Visible = false
 mainCard.Visible = false
 
-closeBtn.MouseButton1Click:Connect(closeSaweria)
-backdrop.MouseButton1Click:Connect(closeSaweria)
+local lastCloseSaweriaClick = 0
+local function debouncedCloseSaweria()
+	local now = os.clock()
+	if now - lastCloseSaweriaClick < 0.3 then return end
+	lastCloseSaweriaClick = now
+	closeSaweria()
+end
+
+closeBtn.MouseButton1Click:Connect(debouncedCloseSaweria)
+backdrop.MouseButton1Click:Connect(debouncedCloseSaweria)
 
 -- Animasi Tombol Close
 closeBtn.MouseEnter:Connect(function()
@@ -170,7 +178,12 @@ copyLinkBtn.MouseLeave:Connect(function()
 	TweenService:Create(copyLinkBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(50, 48, 60)}):Play()
 end)
 
+local lastCopyClick = 0
 copyLinkBtn.MouseButton1Click:Connect(function()
+	local now = os.clock()
+	if now - lastCopyClick < 0.3 then return end
+	lastCopyClick = now
+
 	linkTextBox:CaptureFocus()
 	linkTextBox.SelectionStart = 1
 	linkTextBox.CursorPosition = #linkTextBox.Text + 1

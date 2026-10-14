@@ -122,11 +122,13 @@ script.Destroying:Connect(function()
 	end
 end)
 
-SerdesLayer._start()
-if isServer then
-	ServerBridge._start()
-else
-	ClientBridge._start()
+if RunService:IsRunning() then
+	SerdesLayer._start()
+	if isServer then
+		ServerBridge._start()
+	else
+		ClientBridge._start()
+	end
 end
 
 return {

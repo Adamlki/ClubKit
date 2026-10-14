@@ -44,13 +44,23 @@ local function setupGui()
 
 	local refreshFrame = scrollingFrame:WaitForChild("RefreshFrame")
 	local refreshBtn = refreshFrame:WaitForChild("ExecuteBtn")
+	local lastRefreshClick = 0
 	refreshBtn.MouseButton1Click:Connect(function()
+		local now = os.clock()
+		if now - lastRefreshClick < 0.3 then return end
+		lastRefreshClick = now
+
 		requestRefresh()
 	end)
 
 	local rejoinFrame = scrollingFrame:WaitForChild("RejoinFrame")
 	local rejoinBtn = rejoinFrame:WaitForChild("ExecuteBtn")
+	local lastRejoinClick = 0
 	rejoinBtn.MouseButton1Click:Connect(function()
+		local now = os.clock()
+		if now - lastRejoinClick < 0.3 then return end
+		lastRejoinClick = now
+
 		requestRejoin()
 	end)
 end

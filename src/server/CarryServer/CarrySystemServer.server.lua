@@ -425,25 +425,32 @@ end
 -- ============================================
 
 local function onPlayerAdded(plr)
-	local canAskCarry = Instance.new("BoolValue")
+	local canAskCarry = plr:FindFirstChild("CanAskCarry") or Instance.new("BoolValue")
 	canAskCarry.Name   = "CanAskCarry"
 	canAskCarry.Value  = true
 	canAskCarry.Parent = plr
 
-	plr.CharacterAdded:Connect(function(character)
-		local carryable = Instance.new("BoolValue")
+	local function onCharacter(character)
+		local carryable = character:FindFirstChild("Carryable") or Instance.new("BoolValue")
 		carryable.Name   = "Carryable"
 		carryable.Value  = true
 		carryable.Parent = character
 
-		local humanoid = character:WaitForChild("Humanoid")
-		humanoid.Died:Connect(function()
-			clearCarryWeld(character)
-			carryable.Value   = true
-			canAskCarry.Value = true
-			restorePhysics(plr.UserId)
-		end)
-	end)
+		local humanoid = character:WaitForChild("Humanoid", 5)
+		if humanoid then
+			humanoid.Died:Connect(function()
+				clearCarryWeld(character)
+				carryable.Value   = true
+				canAskCarry.Value = true
+				restorePhysics(plr.UserId)
+			end)
+		end
+	end
+
+	if plr.Character then
+		task.spawn(onCharacter, plr.Character)
+	end
+	plr.CharacterAdded:Connect(onCharacter)
 end
 
 for _, plr in ipairs(Players:GetPlayers()) do
@@ -457,7 +464,7 @@ Players.PlayerAdded:Connect(onPlayerAdded)
 
 task.spawn(function()
 	while true do
-		task.wait(2)
+		task.wait(5)
 		local now = os.clock()
 
 		for targetId, data in pairs(pendingRequests) do

@@ -25,15 +25,25 @@ local function setSavedData(player, data)
 end
 
 -- ============================================
+-- DIRTY TRACKING (ANTI-SPAM DATASTORE ON LEAVE)
+-- ============================================
+local isDirty = {}
+
+-- ============================================
 -- HELPER: Save data player ke DataStore
 -- ============================================
 local function savePlayerData(player)
+	-- Hanya save jika player benar-benar mengubah favorit animasi di sesi ini
+	if not isDirty[player.UserId] then return end
+
 	local savedData = getSavedData(player)
 	if savedData then
 		local success, errorMessage = pcall(function()
 			favoritedAnimationsStore:SetAsync("Player_" .. player.UserId, savedData)
 		end)
-		if not success then
+		if success then
+			isDirty[player.UserId] = nil
+		else
 			warn("[PersistentAnimations] Gagal save data untuk", player.Name, ":", errorMessage)
 		end
 	end
@@ -81,6 +91,7 @@ local lastUpdate = {}
 Players.PlayerRemoving:Connect(function(player)
 	lastUpdate[player] = nil
 	savePlayerData(player)
+	isDirty[player.UserId] = nil
 end)
 
 -- ============================================
@@ -137,6 +148,7 @@ updateFavoritedAnimationsEvent.OnServerEvent:Connect(function(player, jsonData)
 
 	if success and type(decodedData) == "table" then
 		setSavedData(player, jsonData)
+		isDirty[player.UserId] = true
 	else
 		warn("[PersistentAnimations] Data JSON tidak valid dari", player.Name)
 	end

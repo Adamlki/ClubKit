@@ -47,7 +47,8 @@ function ClientBridge._start()
 		local replTicks = {}
 		local remainingQueue = {}
 
-		for i, v in remainingQueue do
+		for i = #remainingQueue, 1, -1 do
+			local v = remainingQueue[i]
 			if (currentTime - replTicks[v.replRate]) <= (1 / v.replRate - 0.003) then
 				table.insert(SendQueue, v)
 				continue
@@ -257,7 +258,12 @@ function ClientBridge.from(remoteName: string)
 end
 
 function ClientBridge.waitForBridge(remoteName: string)
+	local startTime = os.clock()
 	while not BridgeObjects[remoteName] do
+		if not RunService:IsRunning() or (os.clock() - startTime > 10) then
+			warn("[BridgeNet] Timeout waiting for bridge: " .. tostring(remoteName))
+			return BridgeObjects[remoteName]
+		end
 		task.wait()
 	end
 	return BridgeObjects[remoteName]

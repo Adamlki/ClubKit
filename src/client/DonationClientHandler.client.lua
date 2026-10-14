@@ -48,6 +48,7 @@ local State = {
 	isLoading            = false,
 	isSending            = false,  
 	currentButtons       = {},
+	productPrices        = {},
 	lastPurchasedAmount  = 0,
 	canSendMessage       = false,
 	lastMessageTime      = 0,
@@ -100,6 +101,11 @@ local function openFrame(frame)
 		UI.container.CanvasPosition = Vector2.new(0, 0)
 		updatePlayerProfile()
 		updatePlayerStats()
+	elseif frame == UI.messageFrame then
+		closeFrame(UI.mainFrame)
+		if donationIcon and donationIcon.isSelected then
+			pcall(function() donationIcon:deselect() end)
+		end
 	end
 end
 
@@ -122,6 +128,7 @@ local createProductButton
 local clearProducts
 
 createProductButton = function(productData, index)
+	State.productPrices[productData.Id] = productData.Price
 	local card = UI.templateBtn:Clone()
 	card.Name        = string.format("Product_%02d_%d", index or 0, productData.Id)
 	card.LayoutOrder = index or 0
@@ -230,6 +237,12 @@ end
 -- MESSAGE FRAME LOGIC
 -- ============================================
 local function showMessageFrame(purchasedAmount)
+	-- Tutup frame donasi utama dan unselect topbar icon agar tidak tumpang tindih
+	closeFrame(UI.mainFrame)
+	if donationIcon and donationIcon.isSelected then
+		pcall(function() donationIcon:deselect() end)
+	end
+
 	local amountLabel = UI.messageFrame:FindFirstChild("AmountLabel")
 	if amountLabel then
 		amountLabel.Text = string.format("Kamu baru saja mendonasikan %s Robux!", ClientUI.formatNumber(purchasedAmount))
@@ -239,15 +252,44 @@ local function showMessageFrame(purchasedAmount)
 	textbox.Text = ""
 
 	State.canSendMessage = true
+	State.isSending = false
+	local sendBtn = UI.messageFrame:FindFirstChild("SendBtn")
+	if sendBtn then sendBtn.Text = "KIRIM" end
+
 	openFrame(UI.messageFrame)
+
+	task.defer(function()
+		if textbox and textbox:IsDescendantOf(game) then
+			pcall(function() textbox:CaptureFocus() end)
+		end
+	end)
 end
 
 local function hideMessageFrame(cancelled)
+	-- Selalu tutup message frame dan reset state
 	State.canSendMessage = false
+	UI.messageFrame.Visible = false
 	closeFrame(UI.messageFrame)
 
-	if cancelled then
-		debugLog("Pesan broadcast dibatalkan oleh player")
+	local textbox = UI.messageFrame:FindFirstChild("TextBox")
+	if textbox then textbox.Text = "" end
+
+	local sendBtn = UI.messageFrame:FindFirstChild("SendBtn")
+	if sendBtn then sendBtn.Text = "KIRIM" end
+
+	if cancelled and State.lastPurchasedAmount > 0 and not State.isSending then
+		debugLog("Pesan broadcast dibatalkan oleh player, mengirim pesan default...")
+		local amountToSend = State.lastPurchasedAmount
+		State.lastPurchasedAmount = 0
+		task.spawn(function()
+			local broadcastRemote = ReplicatedStorage:WaitForChild("BroadcastDonationMessage", 5)
+			if broadcastRemote then
+				local defaultMsg = ClientConfig.MESSAGE.DEFAULT_MESSAGE or "Welcome to RASA NADA"
+				pcall(function()
+					broadcastRemote:InvokeServer(defaultMsg, amountToSend)
+				end)
+			end
+		end)
 	end
 end
 
@@ -267,6 +309,8 @@ local function sendMessage()
 		return
 	end
 
+	-- Matikan canSendMessage segera agar tidak bisa terpicu dobel dari Enter + Klik tombol kirim
+	State.canSendMessage = false
 	State.isSending = true
 	local sendBtn = UI.messageFrame:WaitForChild("SendBtn")
 	sendBtn.Text = "MENGIRIM..."
@@ -275,22 +319,26 @@ local function sendMessage()
 		local broadcastRemote = ReplicatedStorage:WaitForChild("BroadcastDonationMessage", 5)
 		if not broadcastRemote then
 			State.isSending = false
+			State.canSendMessage = true
 			sendBtn.Text = "KIRIM"
 			ClientUI.notify("Error", ClientConfig.MESSAGES.SERVER_UNAVAILABLE, 3)
 			return
 		end
 
+		local amountToSend = State.lastPurchasedAmount
 		local ok, success, err = pcall(function()
-			return broadcastRemote:InvokeServer(message, State.lastPurchasedAmount)
+			return broadcastRemote:InvokeServer(message, amountToSend)
 		end)
 
 		State.isSending = false
 		sendBtn.Text = "KIRIM"
 
 		if ok and success then
+			State.lastPurchasedAmount = 0
 			ClientUI.notify("Sukses", ClientConfig.MESSAGES.MESSAGE_SENT, 3)
 			hideMessageFrame(false)
 		else
+			State.canSendMessage = true
 			local errMsg = err or "Gagal mengirim pesan."
 			ClientUI.notify("Info", errMsg, 3)
 		end
@@ -391,11 +439,18 @@ MarketplaceService.PromptProductPurchaseFinished:Connect(function(userId, produc
 	debugLog("Purchase selesai:", productId)
 	updatePlayerStats()
 
-	if State.lastPurchasedAmount >= ClientConfig.MESSAGE.MIN_DONATION then
-		task.wait(0.5)
-		showMessageFrame(State.lastPurchasedAmount)
-	else
-		if donationIcon then donationIcon:deselect() end
+	local purchasedAmount = (State.productPrices and State.productPrices[productId]) or State.lastPurchasedAmount
+	State.lastPurchasedAmount = purchasedAmount
+
+	-- Otomatis tutup frame donasi utama dan unselect icon topbar begitu pembelian berhasil
+	closeFrame(UI.mainFrame)
+	if donationIcon and donationIcon.isSelected then
+		pcall(function() donationIcon:deselect() end)
+	end
+
+	if purchasedAmount >= ClientConfig.MESSAGE.MIN_DONATION then
+		task.wait(0.3)
+		showMessageFrame(purchasedAmount)
 	end
 end)
 
@@ -407,8 +462,13 @@ UI.templateBtn.Visible       = false
 UI.messageFrame.Visible      = false
 UI.notificationFrame.Visible = false
 
--- Close Button MainFrame
+-- Close Button MainFrame (0.3s debounce)
+local lastCloseDonationClick = 0
 UI.closeBtn.MouseButton1Click:Connect(function()
+	local now = os.clock()
+	if now - lastCloseDonationClick < 0.3 then return end
+	lastCloseDonationClick = now
+
 	if donationIcon then donationIcon:deselect() end
 	UI.mainFrame.Visible = false
 end)
@@ -420,12 +480,22 @@ local cancelBtn     = UI.messageFrame:FindFirstChild("CancelBtn")
 local textbox       = UI.messageFrame:FindFirstChild("TextBox")
 
 if messageHeader and messageHeader:FindFirstChild("CloseBtn") then
+	local lastCloseMsgClick = 0
 	messageHeader.CloseBtn.MouseButton1Click:Connect(function()
+		local now = os.clock()
+		if now - lastCloseMsgClick < 0.3 then return end
+		lastCloseMsgClick = now
+
 		hideMessageFrame(true)
 	end)
 end
 if cancelBtn then
+	local lastCancelClick = 0
 	cancelBtn.MouseButton1Click:Connect(function()
+		local now = os.clock()
+		if now - lastCancelClick < 0.3 then return end
+		lastCancelClick = now
+
 		hideMessageFrame(true)
 	end)
 end

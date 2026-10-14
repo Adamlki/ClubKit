@@ -59,7 +59,10 @@ function SerdesLayer._start()
 end
 
 function SerdesLayer._destroy()
-	AutoSerde:Destroy()
+	if AutoSerde then
+		AutoSerde:Destroy()
+		AutoSerde = nil
+	end
 end
 
 --[=[
@@ -77,6 +80,10 @@ end
 ]=]
 function SerdesLayer.CreateIdentifier(id: string): string
 	assert(type(id) == "string", "ID must be a string")
+
+	if not RunService:IsRunning() then
+		return id
+	end
 
 	if not sendDict[id] and not isServer then
 		return SerdesLayer.WaitForIdentifier(id)
@@ -101,7 +108,15 @@ function SerdesLayer.CreateIdentifier(id: string): string
 end
 
 function SerdesLayer.WaitForIdentifier(id: string): string
+	if not RunService:IsRunning() then
+		return id
+	end
+	local startTime = os.clock()
 	while sendDict[id] == nil do
+		if os.clock() - startTime > 10 then
+			warn("[BridgeNet] Timeout waiting for identifier: " .. tostring(id))
+			return id
+		end
 		task.wait()
 	end
 	return sendDict[id]

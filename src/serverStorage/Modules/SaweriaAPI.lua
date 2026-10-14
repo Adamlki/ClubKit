@@ -7,7 +7,8 @@ local HttpService = game:GetService("HttpService")
 local SaweriaAPI = {}
 
 -- CONFIG API
-local WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwCfybjVBntG6MsBmwuDwHpwiiIcob8dtf2wx6OmFI7FiJZDcOPH6ESqcSxowTjB3I/exec"
+local PrivateConfig = require(script.Parent:WaitForChild("PrivateConfig"))
+local WEB_APP_URL = PrivateConfig.SaweriaWebhookURL
 
 -- SISTEM CACHE ANTI-MELEDAK
 local cachedData = nil

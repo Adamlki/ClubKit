@@ -165,6 +165,12 @@ local function fetchDonationData()
 		end
 
 		pcall(updateBoard)
+
+		-- Gunakan template default seperti sistem donate Robux jika belum ada donasi baru di server ini
+		pcall(function()
+			SaweriaScreenBoardHandler:ResetToDefault()
+		end)
+
 		isFirstLoad = false
 		debugPrint(string.format("✅ Data awal ter-load (%d donasi). Semua ditandai sudah diproses (tidak ada notifikasi berulang saat start).", #donationArray))
 		return
@@ -184,6 +190,17 @@ local function fetchDonationData()
 	if hasNewData then
 		while #allDonations > MAX_DONATIONS do 
 			table.remove(allDonations, 1) 
+		end
+
+		-- Memory Guard: Bersihkan processedIds jika sudah terlalu banyak (> 300)
+		local count = 0
+		for _ in pairs(processedIds) do count += 1 end
+		if count > 300 then
+			local newProcessed = {}
+			for idx, d in ipairs(allDonations) do
+				newProcessed[getDonationUniqueId(d, idx)] = true
+			end
+			processedIds = newProcessed
 		end
 
 		pcall(updateBoard)
@@ -230,6 +247,20 @@ local function fetchDonationData()
 			end
 			debugPrint(string.format("🚀 Mengirim notifikasi: %s | Rp %d | Pesan: '%s'", rawDonator, rpAmount, rawMessage))
 
+			-- Cek pengaturan sorot kamera donor
+			local spotlightSettings = ReplicatedStorage:FindFirstChild("DonationSpotlightSettings")
+			local isSpotlightOn = (spotlightSettings and spotlightSettings:GetAttribute("Enabled") == true)
+			local minSaweria = spotlightSettings and spotlightSettings:GetAttribute("MinSaweria") or 50000
+			local shouldSpotlight = isSpotlightOn and (rpAmount >= minSaweria)
+
+			-- Trigger animasi kamera sorot donor ke semua client jika memenuhi syarat
+			if shouldSpotlight then
+				local DonorSpotlightRemote = ReplicatedStorage:FindFirstChild("DonorSpotlightRemote")
+				if DonorSpotlightRemote then
+					DonorSpotlightRemote:FireAllClients(donatorUserId or 0, rawDonator, 5)
+				end
+			end
+
 			local ServerStorage = game:GetService("ServerStorage")
 			local SaweriaEffectEvent = ServerStorage:FindFirstChild("SaweriaEffectEvent")
 			if not SaweriaEffectEvent then
@@ -237,7 +268,7 @@ local function fetchDonationData()
 				SaweriaEffectEvent.Name = "SaweriaEffectEvent"
 				SaweriaEffectEvent.Parent = ServerStorage
 			end
-			SaweriaEffectEvent:Fire(rawDonator, rpAmount)
+			SaweriaEffectEvent:Fire(rawDonator, rpAmount, shouldSpotlight)
 
 			-- Update ScreenTextSaweria di Workspace
 			pcall(function()
@@ -286,6 +317,19 @@ _G.TestSaweria = function(donatorName, amount, message)
 		remoteEvent:FireAllClients(notifData)
 	end
 
+	-- Cek spotlight untuk testing
+	local spotlightSettings = ReplicatedStorage:FindFirstChild("DonationSpotlightSettings")
+	local isSpotlightOn = (spotlightSettings and spotlightSettings:GetAttribute("Enabled") == true)
+	local minSaweria = spotlightSettings and spotlightSettings:GetAttribute("MinSaweria") or 50000
+	local shouldSpotlight = isSpotlightOn and (rpAmount >= minSaweria)
+
+	if shouldSpotlight then
+		local DonorSpotlightRemote = ReplicatedStorage:FindFirstChild("DonorSpotlightRemote")
+		if DonorSpotlightRemote then
+			DonorSpotlightRemote:FireAllClients(donatorUserId or 0, donatorName, 5)
+		end
+	end
+
 	local ServerStorage = game:GetService("ServerStorage")
 	local SaweriaEffectEvent = ServerStorage:FindFirstChild("SaweriaEffectEvent")
 	if not SaweriaEffectEvent then
@@ -293,7 +337,7 @@ _G.TestSaweria = function(donatorName, amount, message)
 		SaweriaEffectEvent.Name = "SaweriaEffectEvent"
 		SaweriaEffectEvent.Parent = ServerStorage
 	end
-	SaweriaEffectEvent:Fire(donatorName, rpAmount)
+	SaweriaEffectEvent:Fire(donatorName, rpAmount, shouldSpotlight)
 
 	-- Update ScreenTextSaweria di Workspace
 	pcall(function()
@@ -338,6 +382,11 @@ local isFetchingAPI = false -- Gembok Anti-Thread Bomb
 while true do
 	task.wait(CHECK_INTERVAL)
 	
+	-- 💡 SMART QUOTA SAVER: Jika server sedang kosong (0 pemain), lewati polling untuk menghemat kuota Google Sheets
+	if #Players:GetPlayers() == 0 then
+		continue
+	end
+
 	-- Hanya jalan jika API tidak sedang ngelag/nyangkut
 	if not isFetchingAPI then
 		isFetchingAPI = true

@@ -25,6 +25,7 @@ function QueueItemPool.new(template)
 	self.template = template
 	self.activeItems = {}
 	self.inactiveItems = {}
+	self.connections = {}
 	return self
 end
 
@@ -32,10 +33,10 @@ function QueueItemPool:Get()
 	local item
 	if #self.inactiveItems > 0 then
 		item = table.remove(self.inactiveItems)
-		item.Visible = true
 	else
 		item = self.template:Clone()
 	end
+	item.Visible = true
 	table.insert(self.activeItems, item)
 	return item
 end
@@ -48,18 +49,35 @@ function QueueItemPool:Return(item)
 		end
 	end
 	item.Visible = false
+	if self.connections[item] then
+		self.connections[item]:Disconnect()
+		self.connections[item] = nil
+	end
 	table.insert(self.inactiveItems, item)
 end
 
 function QueueItemPool:ReturnAll()
-	while #self.activeItems > 0 do
-		self:Return(self.activeItems[1])
+	for _, item in ipairs(self.activeItems) do
+		item.Visible = false
+		if self.connections[item] then
+			self.connections[item]:Disconnect()
+			self.connections[item] = nil
+		end
+		table.insert(self.inactiveItems, item)
 	end
+	table.clear(self.activeItems)
 end
 
 function QueueItemPool:Clear()
-	for _, item in ipairs(self.activeItems) do item:Destroy() end
-	for _, item in ipairs(self.inactiveItems) do item:Destroy() end
+	for _, item in ipairs(self.activeItems) do
+		if self.connections[item] then self.connections[item]:Disconnect() end
+		item:Destroy()
+	end
+	for _, item in ipairs(self.inactiveItems) do
+		if self.connections[item] then self.connections[item]:Disconnect() end
+		item:Destroy()
+	end
+	self.connections = {}
 	self.activeItems = {}
 	self.inactiveItems = {}
 end
@@ -530,6 +548,7 @@ function UIManager:UpdateQueue(queueData)
 
 	for index, songData in ipairs(queueData) do
 		local item = self.queuePool:Get()
+		item.Visible = true
 		if item.Parent ~= self.queueList then
 			item.Parent = self.queueList
 		end
@@ -542,7 +561,7 @@ function UIManager:UpdateQueue(queueData)
 		local info = item:FindFirstChild("InfoContainer")
 		local favBtn = item:FindFirstChild("FavouriteBtn")
 
-		local musicData = songData.musicData or {}
+		local musicData = songData.musicData or songData
 
 		if posLabel then posLabel.Text = tostring(index) end
 		local albCover = musicData.album and MusicModule:GetAlbumCover(musicData.album)
@@ -564,8 +583,13 @@ function UIManager:UpdateQueue(queueData)
 			favBtn.Text = isFav and "❤️" or "♡"
 			favBtn.TextColor3 = isFav and Color3.fromRGB(255, 90, 120) or Color3.fromRGB(140, 140, 140)
 
+			if self.queuePool.connections[item] then
+				self.queuePool.connections[item]:Disconnect()
+				self.queuePool.connections[item] = nil
+			end
+
 			local lastFavClick = 0
-			favBtn.MouseButton1Click:Connect(function()
+			self.queuePool.connections[item] = favBtn.MouseButton1Click:Connect(function()
 				local now = os.clock()
 				if now - lastFavClick < 0.3 then return end
 				lastFavClick = now

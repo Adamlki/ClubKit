@@ -74,7 +74,7 @@ local function getSaweriaRank(playerName, displayName)
 				for rank, donor in ipairs(topSaweria) do
 					if rank > SETTINGS.BatasTopSaweria then break end
 					-- Cek kecocokan nama (Username atau DisplayName)
-					if string.lower(donor.name) == string.lower(playerName) or string.lower(donor.name) == string.lower(displayName) then
+					if string.lower(tostring(donor.name or "")) == string.lower(playerName) then
 						rankFound = rank
 						break
 					end

@@ -19,12 +19,21 @@ end
 
 -- Cache untuk UserInfo (DisplayName & Username)
 local userInfoCache = {}
+local userInfoCacheCount = 0
+local MAX_USERINFO_CACHE = 500
+
 local cachedTopLikes = {
 	AllTime = {},
 	Daily = {},
 }
 
 local function resolveUserInfos(userIds)
+	-- 24/7 Memory Guard: Reset cache jika sudah melebihi batas agar RAM tidak bengkak setelah berhari-hari
+	if userInfoCacheCount > MAX_USERINFO_CACHE then
+		table.clear(userInfoCache)
+		userInfoCacheCount = 0
+	end
+
 	local missingIds = {}
 	for _, id in ipairs(userIds) do
 		if not userInfoCache[id] then
@@ -34,6 +43,7 @@ local function resolveUserInfos(userIds)
 					DisplayName = player.DisplayName,
 					Username = player.Name,
 				}
+				userInfoCacheCount += 1
 			else
 				table.insert(missingIds, id)
 			end
@@ -41,7 +51,6 @@ local function resolveUserInfos(userIds)
 	end
 
 	if #missingIds > 0 then
-		-- Batasi batch maksimal 100 ID per request ke UserService
 		for i = 1, #missingIds, 100 do
 			local batch = {}
 			for j = i, math.min(i + 99, #missingIds) do
@@ -54,6 +63,9 @@ local function resolveUserInfos(userIds)
 
 			if success and results then
 				for _, info in ipairs(results) do
+					if not userInfoCache[info.Id] then
+						userInfoCacheCount += 1
+					end
 					userInfoCache[info.Id] = {
 						DisplayName = info.DisplayName,
 						Username = info.Username,
@@ -62,12 +74,12 @@ local function resolveUserInfos(userIds)
 			end
 		end
 
-		-- Fallback untuk ID yang tidak ditemukan oleh UserService (moderasi, banned, atau privasi)
 		for _, id in ipairs(missingIds) do
 			if not userInfoCache[id] then
 				local s, name = pcall(function()
 					return Players:GetNameFromUserIdAsync(id)
 				end)
+				userInfoCacheCount += 1
 				if s and name and name ~= "" then
 					userInfoCache[id] = {
 						DisplayName = name,
@@ -167,21 +179,25 @@ local function updateLeaderboardBoard()
 	cachedTopLikes = newPayload
 	_G.LikesLeaderboardData = allTimeLikes
 
-	-- HANYA FIRING JIKA ADA PERUBAHAN DATA (0% Trafik jika tidak ada like baru)
 	if hasChanged then
 		updateLikeBoardRemote:FireAllClients(cachedTopLikes)
 	end
 
-	-- [PERBAIKAN]: Otomatis refresh Overhead semua pemain setiap kali data Leaderboard selesai ditarik.
+	-- 100-PLAYER OPTIMIZATION: Staggered update (10 player per batch) agar tidak menyebabkan spike di Heartbeat
 	task.spawn(function()
 		local success2, OverheadManager = pcall(function()
 			return require(game:GetService("ServerScriptService").OverheadSystem.OverheadSystemServer.OverheadManager)
 		end)
 		if success2 and OverheadManager then
-			for _, player in ipairs(Players:GetPlayers()) do
-				pcall(function()
-					OverheadManager:UpdateDonaturRank(player)
-				end)
+			for i, player in ipairs(Players:GetPlayers()) do
+				if player and player.Parent then
+					pcall(function()
+						OverheadManager:UpdateDonaturRank(player)
+					end)
+				end
+				if i % 10 == 0 then
+					task.wait(0.05)
+				end
 			end
 		end
 	end)
@@ -199,7 +215,7 @@ updateLikeBoardRemote.OnServerEvent:Connect(function(player)
 	if not player or not player.Parent then return end
 	local now = os.clock()
 	if now - (requestCooldowns[player.UserId] or 0) < REQUEST_COOLDOWN then
-		return -- Ignore spam requests
+		return
 	end
 	requestCooldowns[player.UserId] = now
 

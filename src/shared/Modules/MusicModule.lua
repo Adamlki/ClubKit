@@ -260,12 +260,8 @@ MusicModule.PLAYLISTS = {
 		{ id = "72402313707716", judul = "Calvin Harris - 5 AM ft. Tinashe", speed = 0.43 },
 		{ id = "109120785081796", judul = "Arizona Zervas - ROXANNE", speed = 0.43 },
 		{ id = "101133558179718", judul = "Aya Nakamura - Copines", speed = 0.43 },
-	},
 
-	-- ==========================================================
-	-- PLAYLIST 2 (4 Lagu)
-	-- ==========================================================
-	["PLAYLIST 2"] = {
+		-- Tambahan Lagu PLAYLIST 2 (Digabung agar tidak menimpa 102 lagu di atas)
 		{ id = "130506595568178", judul = "Love Me Not - Ravyn Lenae", speed = 0.43 },
 		{ id = "123427427221176", judul = "Beretta (Brazilian Funk) - Cvplis", speed = 0.43 },
 		{ id = "135679855800052", judul = "Bazovyy Minimum - SABI, MIA BOYKA", speed = 0.43 },

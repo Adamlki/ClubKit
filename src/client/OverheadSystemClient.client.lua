@@ -62,7 +62,7 @@ local function checkGroupMember(player)
 	if groupCache[player.UserId] ~= nil then
 		return groupCache[player.UserId]
 	end
-	
+
 	local ok, v = pcall(function() return player:IsInGroup(Config.GROUP_ID) end)
 	local isMember = ok and v or false
 	groupCache[player.UserId] = isMember
@@ -97,12 +97,11 @@ local function getFlagEmoji(countryCode)
 	if not countryCode or #countryCode ~= 2 then return "🇮🇩" end
 	countryCode = string.upper(countryCode)
 
-	-- Jika pemain berasal dari negara Eropa dan fitur bendera Eropa aktif, tampilkan bendera Uni Eropa (🇪🇺)
 	local useEU = Config.USE_EU_FLAG_FOR_EUROPE
 	if useEU == nil then useEU = true end
 
 	if useEU and EUROPEAN_COUNTRIES[countryCode] then
-		return utf8.char(0x1F1EA, 0x1F1FA) -- 🇪🇺 European Union
+		return utf8.char(0x1F1EA, 0x1F1FA)
 	end
 
 	local b1 = string.byte(countryCode, 1)
@@ -141,17 +140,18 @@ local function applyTitleEffect(titleFrame, titleLabel, player, character)
 	local g = player:GetAttribute("Overhead_TitleColorG") or 1
 	local b = player:GetAttribute("Overhead_TitleColorB") or 1
 	local base = Color3.new(r, g, b)
-	
+
 	titleFrame.BackgroundColor3 = base
 	if titleLabel then
 		titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	end
+	local gradientEnabled = player:GetAttribute("Overhead_TitleGradient") == true
 	if not gradientEnabled then return end
 
 	local effectType = player:GetAttribute("Overhead_TitleEffect") or "wave"
 	local effectConfig = Config.EFFECTS[effectType:upper()] or Config.EFFECTS.WAVE
 
-	if effectType == "none"      then TitleEffects:CreateNoneEffect(titleLabel, base, character, effectConfig, Config.TEXT_BRIGHTEN_FACTOR)
+	if effectType == "none"          then TitleEffects:CreateNoneEffect(titleLabel, base, character, effectConfig, Config.TEXT_BRIGHTEN_FACTOR)
 	elseif effectType == "wave"      then TitleEffects:CreateWaveEffect(titleLabel, base, character, effectConfig, Config.TEXT_BRIGHTEN_FACTOR)
 	elseif effectType == "pulse"     then TitleEffects:CreatePulseEffect(titleLabel, base, character, effectConfig, Config.TEXT_BRIGHTEN_FACTOR)
 	elseif effectType == "rainbow"   then TitleEffects:CreateRainbowEffect(titleLabel, base, character, effectConfig, Config.TEXT_BRIGHTEN_FACTOR)
@@ -168,14 +168,12 @@ end
 -- ====================================
 -- MAIN RENDER LOOP
 -- ====================================
-
 local function updateOverhead(player, character, overhead)
 	if not player or not character or not overhead then return end
-	
+
 	local mainFrame = overhead:FindFirstChild("MainFrame")
 	if not mainFrame then return end
 
-	-- Elements from hierarchy
 	local titleFrame      = mainFrame:FindFirstChild("TitleFrame")
 	local topTags         = mainFrame:FindFirstChild("TopTagsContainer") or safeFind(mainFrame, "BorderFrame")
 	local nameContainer   = mainFrame:FindFirstChild("NameContainer") or mainFrame:FindFirstChild("TextContainer")
@@ -223,7 +221,6 @@ local function updateOverhead(player, character, overhead)
 
 		local anyTagVisible = false
 
-		-- Top Rupiah (Saweria)
 		local saweriaRank = player:GetAttribute("Overhead_SaweriaRank") or 0
 		if topRupiahFrame then
 			if saweriaRank > 0 and saweriaRank <= (Config.SAWERIA_TOP_RANKS or 10) then
@@ -236,7 +233,6 @@ local function updateOverhead(player, character, overhead)
 			end
 		end
 
-		-- Top Robux
 		local robuxRank = player:GetAttribute("Overhead_RobuxRank") or 0
 		if topRobuxFrame then
 			if robuxRank > 0 and robuxRank <= (Config.DONATION_TOP_RANKS or 10) then
@@ -249,7 +245,6 @@ local function updateOverhead(player, character, overhead)
 			end
 		end
 
-		-- Top Likes
 		local likesRank = player:GetAttribute("Overhead_LikesRank") or 0
 		if topLikesFrame then
 			if likesRank > 0 and likesRank <= 10 then
@@ -293,7 +288,6 @@ local function updateOverhead(player, character, overhead)
 	end
 
 	-- 5. COMBINED ROLE & LEVEL (LayoutOrder = 4)
-	-- Format: OWNER | Level 100, ADMIN | Level 100, VIP | Level 100, PLAYER | Level 100
 	local level = player:GetAttribute("Overhead_Level") or 1
 	local roleText = ""
 	local roleColor = Color3.fromRGB(215, 220, 230)
@@ -326,53 +320,48 @@ end
 local playerConnections = {}
 
 local function setupCharacter(player, character)
-	-- Bersihkan koneksi lama terlebih dahulu untuk mencegah memory leak
 	if playerConnections[player.UserId] then
 		for _, conn in ipairs(playerConnections[player.UserId]) do
 			if conn.Connected then conn:Disconnect() end
 		end
 		playerConnections[player.UserId] = nil
 	end
-	
+
 	local conns = {}
 	local currentOverhead = nil
 
-	-- Fungsi internal untuk attach GUI secara aman
 	local function attachAndRender()
 		local head = character:FindFirstChild("Head")
 		if not head then return end
-		
-		-- Hapus overhead lama jika ada
+
 		if character:FindFirstChild("PlayerOverhead") then
 			character.PlayerOverhead:Destroy()
 		end
-		
-		-- Parent ke Character, bukan Head! Menghindari GUI hancur saat Head diganti oleh Roblox (R15 bug)
+
 		currentOverhead = overheadTemplate:Clone()
 		currentOverhead.Name = "PlayerOverhead"
 		currentOverhead.Adornee = head
+		-- 100-PLAYER MOBILE FPS OPTIMIZATION: Batasi jarak render BillboardGui (default 65 studs)
+		currentOverhead.MaxDistance = Config.MAX_DISTANCE or 65
 		currentOverhead.Parent = character
-		
+
 		updateOverhead(player, character, currentOverhead)
 	end
 
-	-- Eksekusi awal
 	task.spawn(function()
 		if not character:FindFirstChild("Head") then
 			character:WaitForChild("Head", 10)
 		end
 		attachAndRender()
 	end)
-	
-	-- Pantau jika Head diganti oleh sistem bundle Roblox
+
 	table.insert(conns, character.ChildAdded:Connect(function(child)
 		if child.Name == "Head" then
-			task.wait() -- Tunggu properti termuat
+			task.wait()
 			attachAndRender()
 		end
 	end))
-	
-	-- Dengarkan perubahan attribute untuk langsung update UI
+
 	table.insert(conns, player.AttributeChanged:Connect(function(attr)
 		if string.sub(attr, 1, 9) == "Overhead_" or attr == "TotalLikes" then
 			if currentOverhead and currentOverhead.Parent then
@@ -380,14 +369,13 @@ local function setupCharacter(player, character)
 			end
 		end
 	end))
-	
+
 	table.insert(conns, player:GetPropertyChangedSignal("Team"):Connect(function()
 		if currentOverhead and currentOverhead.Parent then
 			updateOverhead(player, character, currentOverhead)
 		end
 	end))
 
-	-- Bersihkan koneksi secara otomatis jika karakter hancur
 	table.insert(conns, character.AncestryChanged:Connect(function(_, parent)
 		if not parent then
 			if playerConnections[player.UserId] then
@@ -398,7 +386,7 @@ local function setupCharacter(player, character)
 			end
 		end
 	end))
-	
+
 	playerConnections[player.UserId] = conns
 end
 

@@ -14,10 +14,8 @@ globalEvent.OnServerEvent:Connect(function(player, toolName, isShooting)
 	if string.len(toolName) > 50 then return end
 	if type(isShooting) ~= "boolean" then return end
 
-	-- 🔥 ARCHITECT FIX: Gunakan RemoteEventManager untuk Anti-Spam
-	if isShooting then
-		if not RemoteEventManager.checkRateLimit(player, "waterGunShoot") then return end
-	end
+	-- 🔥 ARCHITECT FIX: Rate limit berlaku untuk true maupun false agar tidak bisa dipakai broadcast DoS
+	if not RemoteEventManager.checkRateLimit(player, "waterGunShoot") then return end
 
 	-- KEAMANAN: Pastikan pemain benar-benar memegang Tool tersebut
 	local tool = player.Character and player.Character:FindFirstChild(toolName)

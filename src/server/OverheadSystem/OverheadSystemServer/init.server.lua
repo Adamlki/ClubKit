@@ -205,6 +205,7 @@ local updateTitleRemote   = ensureRemoteEvent("UpdateTitle")
 local assignDonaturRemote = ensureRemoteEvent("AssignDonaturRank")
 local checkAccessRemote   = ensureRemoteFunction("CheckAccess")
 local getPlayerDataRemote = ensureRemoteFunction("GetPlayerData")
+local getPlayerTitleRemote = ensureRemoteFunction("GetPlayerTitle")
 
 -- ====================================
 -- CHECK ACCESS
@@ -213,6 +214,21 @@ checkAccessRemote.OnServerInvoke = function(sender)
 	if not sender then return false end
 	local role = RoleSystem:GetPlayerRole(sender)
 	return role == "Owner" or role == "Admin"
+end
+
+-- ====================================
+-- GET PLAYER TITLE (BACKWARD COMPATIBILITY)
+-- ====================================
+getPlayerTitleRemote.OnServerInvoke = function(sender, targetPlayer)
+	if not sender then return nil end
+	local senderRole = RoleSystem:GetPlayerRole(sender)
+	if senderRole ~= "Owner" and senderRole ~= "Admin" then
+		return nil
+	end
+	if typeof(targetPlayer) ~= "Instance" or not targetPlayer:IsA("Player") then
+		return nil
+	end
+	return TitleDataManager:LoadTitleData(targetPlayer.UserId)
 end
 
 -- ====================================
@@ -227,7 +243,7 @@ getPlayerDataRemote.OnServerInvoke = function(sender, targetPlayer)
 		return nil
 	end
 
-	if not targetPlayer then return nil end
+	if typeof(targetPlayer) ~= "Instance" or not targetPlayer:IsA("Player") then return nil end
 
 	local titleData   = TitleDataManager:LoadTitleData(targetPlayer.UserId)
 	local donaturRank = DonaturRankSystem:GetRank(targetPlayer.UserId)
@@ -264,7 +280,7 @@ updateTitleRemote.OnServerEvent:Connect(function(sender, targetPlayer, titleData
 
 	DebugSystem:Log("UpdateTitle Request from", sender and sender.Name or "nil")
 
-	if not sender or not targetPlayer or not titleData then
+	if not sender or typeof(targetPlayer) ~= "Instance" or not targetPlayer:IsA("Player") or not titleData then
 		DebugSystem:Warn("UpdateTitle: Invalid parameters")
 		return
 	end
@@ -280,6 +296,7 @@ updateTitleRemote.OnServerEvent:Connect(function(sender, targetPlayer, titleData
 	-- 🔥 SECURITY FIX: Dekonstruksi & Validasi ketat (Table Injection Protection)
 	local rawTitle = titleData.Title
 	if type(rawTitle) ~= "string" then rawTitle = "" end
+	rawTitle = rawTitle:match("^%s*(.-)%s*$") or ""
 	rawTitle = string.sub(rawTitle, 1, 50) -- Batasi panjang string
 
 	local rawColor = titleData.Color
@@ -292,26 +309,34 @@ updateTitleRemote.OnServerEvent:Connect(function(sender, targetPlayer, titleData
 	if type(gradEffect) ~= "string" then gradEffect = "wave" end
 
 	if rawTitle == "" then
-		TitleDataManager:UpdateCache(targetPlayer.UserId, {
+		local emptyData = {
 			Title = "", Color = Color3.fromRGB(255, 255, 255),
 			GradientEnabled = false, GradientEffect = "wave",
-		})
+		}
+		TitleDataManager:SaveTitleData(targetPlayer.UserId, emptyData)
+		TitleDataManager:UpdateCache(targetPlayer.UserId, emptyData)
 		DebugSystem:Log("Title removed for", targetPlayer.Name)
 	else
-		-- 🔥 COMPLIANCE FIX: Roblox Text Filtering (Bypass Mencegah Ban)
-		local filteredTitle = rawTitle
-		pcall(function()
+		-- 🔥 COMPLIANCE FIX: Roblox Text Filtering (Jangan loloskan rawTitle jika filter gagal!)
+		local filteredTitle = nil
+		local okFilter = pcall(function()
 			local filterResult = TextService:FilterStringAsync(rawTitle, sender.UserId)
 			filteredTitle = filterResult:GetNonChatStringForBroadcastAsync()
 		end)
+		if not okFilter or not filteredTitle then
+			DebugSystem:Warn("UpdateTitle: TextService filter failed, aborting save for safety")
+			return
+		end
 
-		TitleDataManager:UpdateCache(targetPlayer.UserId, {
+		local newTitleData = {
 			Title           = filteredTitle,
 			Color           = rawColor,
 			GradientEnabled = isGradient,
 			GradientEffect  = gradEffect,
-		})
-		DebugSystem:Log("Title updated for", targetPlayer.Name, "->", filteredTitle)
+		}
+		TitleDataManager:SaveTitleData(targetPlayer.UserId, newTitleData)
+		TitleDataManager:UpdateCache(targetPlayer.UserId, newTitleData)
+		DebugSystem:Log("Title updated & saved for", targetPlayer.Name, "->", filteredTitle)
 	end
 
 	-- FIX: Rebuild overhead hanya jika character valid
@@ -329,7 +354,7 @@ assignDonaturRemote.OnServerEvent:Connect(function(sender, targetPlayer, rank)
 
 	DebugSystem:Log("AssignDonaturRank Request from", sender and sender.Name or "nil")
 
-	if not sender or not targetPlayer then
+	if not sender or typeof(targetPlayer) ~= "Instance" or not targetPlayer:IsA("Player") then
 		DebugSystem:Warn("AssignDonaturRank: Invalid parameters")
 		return
 	end

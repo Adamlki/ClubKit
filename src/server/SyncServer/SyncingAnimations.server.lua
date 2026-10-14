@@ -63,30 +63,45 @@ end
 -- ============================================
 -- REMOTE HANDLERS
 -- ============================================
+local dynamicAnimCount = 0
+local MAX_DYNAMIC_ANIMS = 100
+
 animationStartRE.OnServerEvent:Connect(function(player, animationId, shouldPlay, speed, clientFadeTime, isSpam, clientStartTime)
 	-- 🔥 SECURITY FIX: Cegah Type Spoofing
 	if animationId ~= nil and type(animationId) ~= "string" and type(animationId) ~= "number" then return end
 	if type(shouldPlay) ~= "boolean" then return end
-	if speed ~= nil and type(speed) ~= "number" then return end
+	if speed ~= nil and (type(speed) ~= "number" or speed ~= speed) then return end
+	if not RemoteEventManager.checkRateLimit(player, "animationStart") then return end
+
+	-- Validasi clientStartTime agar tidak bisa di-inject NaN / string / angka ekstrem
+	local nowServer = workspace:GetServerTimeNow()
+	if type(clientStartTime) ~= "number" or clientStartTime ~= clientStartTime or math.abs(nowServer - clientStartTime) > 10 then
+		clientStartTime = nowServer
+	end
 
 	local animation = nil
 	if animationId then
-		-- 🔥 OPTIMASI 50+ PLAYERS: O(1) Instant Lookup (Tanpa scan linear loop)
+		local rawStr = tostring(animationId)
+		if #rawStr > 60 then return end
+
+		-- 🔥 OPTIMASI 50+ PLAYERS: O(1) Instant Lookup
 		animation = loadedAnimationsById[animationId]
-		if not animation then
-			local norm = normalizeAnimId(animationId)
+		local norm = normalizeAnimId(animationId)
+		if not animation and norm ~= "" then
 			animation = loadedAnimationsByNormId[norm]
 		end
 
-		-- Fallback: buat Animation baru dan cache agar pemanggilan berikutnya langsung O(1)
-		if not animation then
+		-- Fallback aman dengan batas maksimum cache agar tidak bisa di-exploit menjadi Memory Leak DoS
+		if not animation and norm:match("^%d+$") and dynamicAnimCount < MAX_DYNAMIC_ANIMS then
+			dynamicAnimCount += 1
 			animation = Instance.new("Animation")
-			animation.AnimationId = animationId
+			animation.AnimationId = "rbxassetid://" .. norm
 			loadedAnimationsById[animationId] = animation
-			local norm = normalizeAnimId(animationId)
-			if norm ~= "" then
-				loadedAnimationsByNormId[norm] = animation
-			end
+			loadedAnimationsByNormId[norm] = animation
+		end
+
+		if shouldPlay and not animation then
+			return
 		end
 	end
 	AnimationController.executeAnimation(player, animation, shouldPlay, speed, loadedAnimations, isSpam, clientStartTime)

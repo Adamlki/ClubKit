@@ -6,7 +6,6 @@ local TextChatService  = game:GetService("TextChatService")
 local MessagingService = game:GetService("MessagingService")
 local ServerScriptService = game:GetService("ServerScriptService")
 
--- Sesuaikan path modul dengan struktur project kamu
 local RoleSystem    = require(ServerStorage.Modules.RoleSystem)
 local MessageConfig = require(script.AdminNotifConfig)
 local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
@@ -29,24 +28,35 @@ local function getOrCreate(parent, className, name)
 		end)()
 end
 
-local SendMessageRemote   = getOrCreate(RemoteFolder, "RemoteEvent",    "SendMessage")
-local ReceiveMessageRemote = getOrCreate(RemoteFolder, "RemoteEvent",   "ReceiveMessage")
-local CheckTimerRemote    = getOrCreate(RemoteFolder, "RemoteFunction", "CheckTimer")
-local CheckAccessRemote   = getOrCreate(RemoteFolder, "RemoteFunction", "CheckAccess")
+local SendMessageRemote    = getOrCreate(RemoteFolder, "RemoteEvent",    "SendMessage")
+local ReceiveMessageRemote = getOrCreate(RemoteFolder, "RemoteEvent",    "ReceiveMessage")
+local CheckTimerRemote     = getOrCreate(RemoteFolder, "RemoteFunction", "CheckTimer")
+local CheckAccessRemote    = getOrCreate(RemoteFolder, "RemoteFunction", "CheckAccess")
 
 -- ====================================
--- PLAYER DATA
+-- PLAYER DATA & CHAT PERMISSION CACHE
 -- ====================================
 local PlayerData = {}
 
 local function initPlayerData(userId)
 	if not PlayerData[userId] then
 		PlayerData[userId] = {
-			LastMessageTime    = 0,
-			MessageCount       = 0,
-			LastMinuteReset    = tick(),
-			LastBroadcastTime  = 0
+			LastMessageTime   = 0,
+			MessageCount      = 0,
+			LastMinuteReset   = tick(),
+			LastBroadcastTime = 0,
+			CanChat           = true,
 		}
+		task.spawn(function()
+			local canChat = true
+			local ok, res = pcall(function()
+				return TextChatService:CanUserChatAsync(userId)
+			end)
+			if ok then canChat = (res == true) end
+			if PlayerData[userId] then
+				PlayerData[userId].CanChat = canChat
+			end
+		end)
 	end
 end
 
@@ -58,10 +68,10 @@ end
 -- ROLE HELPERS
 -- ====================================
 local function hasAccess(player)
-	local role        = RoleSystem:GetPlayerRole(player)
-	local minRole     = MessageConfig.Access.MinimumRole
-	local playerPrio  = MessageConfig.Access.RoleHierarchy[role]  or 0
-	local minPrio     = MessageConfig.Access.RoleHierarchy[minRole] or 0
+	local role       = RoleSystem:GetPlayerRole(player)
+	local minRole    = MessageConfig.Access.MinimumRole
+	local playerPrio = MessageConfig.Access.RoleHierarchy[role]    or 0
+	local minPrio    = MessageConfig.Access.RoleHierarchy[minRole] or 0
 	return playerPrio >= minPrio, role
 end
 
@@ -84,10 +94,9 @@ local function getRemainingTime(player, role)
 end
 
 -- ====================================
--- TIMER REMOTE
+-- TIMER & ACCESS REMOTES
 -- ====================================
 CheckTimerRemote.OnServerInvoke = function(player)
-	-- 🔥 ARCHITECT FIX: Anti-DDoS Rate Limiter
 	if not RemoteEventManager.checkRateLimit(player, "adminNotifCheck") then return {} end
 
 	local _, role   = hasAccess(player)
@@ -100,11 +109,7 @@ CheckTimerRemote.OnServerInvoke = function(player)
 	}
 end
 
--- ====================================
--- ACCESS REMOTE
--- ====================================
 CheckAccessRemote.OnServerInvoke = function(player)
-	-- 🔥 ARCHITECT FIX: Anti-DDoS Rate Limiter
 	if not RemoteEventManager.checkRateLimit(player, "adminNotifCheck") then return false end
 
 	local ok, _ = hasAccess(player)
@@ -113,18 +118,14 @@ end
 
 -- ====================================
 -- TEXT FILTERING (Roblox-compliant)
--- Wajib: selalu filter di server, batalkan jika filter gagal.
 -- ====================================
 local function filterText(message, fromPlayer)
 	if not MessageConfig.Validation.EnableFilter then
-		-- EnableFilter sebaiknya SELALU true untuk kepatuhan Roblox.
-		-- Opsi ini hanya untuk keperluan testing lokal.
 		return message
 	end
 
 	local filterResult
 	local ok1, err1 = pcall(function()
-		-- TextFilterContext.PublicChat = filter paling ketat, cocok untuk broadcast
 		filterResult = TextService:FilterStringAsync(
 			message,
 			fromPlayer.UserId,
@@ -134,7 +135,7 @@ local function filterText(message, fromPlayer)
 
 	if not ok1 or not filterResult then
 		warn("[MessageServer] FilterStringAsync gagal:", err1)
-		return nil  -- Batalkan pesan — jangan kirim unfiltered
+		return nil
 	end
 
 	local filteredText
@@ -144,7 +145,7 @@ local function filterText(message, fromPlayer)
 
 	if not ok2 or filteredText == nil then
 		warn("[MessageServer] GetNonChatStringForBroadcastAsync gagal:", err2)
-		return nil  -- Batalkan pesan
+		return nil
 	end
 
 	return filteredText
@@ -166,26 +167,15 @@ local function validateMessage(player, message)
 	initPlayerData(player.UserId)
 	local data = PlayerData[player.UserId]
 
-	-- 1. Cek akses role
 	local ok, role = hasAccess(player)
 	if not ok then
 		return false, "You don't have permission to send broadcast messages."
 	end
 
-	-- 2. [WAJIB Roblox] Cek privacy/parental settings via TextChatService
-	local canChat = false
-	local chatOk, chatErr = pcall(function()
-		canChat = TextChatService:CanUserChatAsync(player.UserId)
-	end)
-	if not chatOk then
-		warn("[MessageServer] CanUserChatAsync gagal:", chatErr)
-		return false, "Unable to verify chat permissions. Please try again."
-	end
-	if not canChat then
+	if data.CanChat == false then
 		return false, "Your account settings do not allow sending broadcast messages."
 	end
 
-	-- 3. Cek timer broadcast (per role)
 	if hasTimer(role) then
 		local remaining = getRemainingTime(player, role)
 		if remaining > 0 then
@@ -193,7 +183,6 @@ local function validateMessage(player, message)
 		end
 	end
 
-	-- 4. Validasi panjang pesan
 	local trimmed = message:match("^%s*(.-)%s*$")
 	if #trimmed < MessageConfig.Validation.MinLength then
 		return false, "Message is too short."
@@ -205,7 +194,6 @@ local function validateMessage(player, message)
 		)
 	end
 
-	-- 5. Cooldown umum (anti-spam)
 	local now = tick()
 	local elapsed = now - data.LastMessageTime
 	if elapsed < MessageConfig.Validation.Cooldown then
@@ -213,7 +201,6 @@ local function validateMessage(player, message)
 		return false, string.format("Please wait %d second(s) before sending another message.", wait)
 	end
 
-	-- 6. Batas pesan per menit
 	if now - data.LastMinuteReset >= 60 then
 		data.MessageCount    = 0
 		data.LastMinuteReset = now
@@ -225,18 +212,24 @@ local function validateMessage(player, message)
 	return true, "Valid", role, trimmed
 end
 
+local function broadcastToServerClients(messageData)
+	for _, targetPlayer in ipairs(Players:GetPlayers()) do
+		local pData = PlayerData[targetPlayer.UserId]
+		if not pData or pData.CanChat ~= false then
+			ReceiveMessageRemote:FireClient(targetPlayer, messageData)
+		end
+	end
+end
+
 -- ====================================
 -- SEND MESSAGE HANDLER
 -- ====================================
 SendMessageRemote.OnServerEvent:Connect(function(player, message, isGlobal)
-	-- 🔥 ARCHITECT FIX: Anti-DDoS Spam (Rate Limiter lapis pertama)
 	if not RemoteEventManager.checkRateLimit(player, "adminNotifSend") then return end
 
-	-- Sanity check tipe data dari client
 	if type(message) ~= "string" then return end
 	if type(isGlobal) ~= "boolean" then isGlobal = false end
 
-	-- 🔥 SECURITY FIX: Sanitize input dari Client untuk mencegah HTML Injection
 	message = string.gsub(message, "&", "&amp;")
 	message = string.gsub(message, "<", "&lt;")
 	message = string.gsub(message, ">", "&gt;")
@@ -253,7 +246,6 @@ SendMessageRemote.OnServerEvent:Connect(function(player, message, isGlobal)
 		return
 	end
 
-	-- Filter teks
 	local filteredMessage = filterText(trimmedMessage, player)
 	if filteredMessage == nil then
 		ReceiveMessageRemote:FireClient(player, {
@@ -263,7 +255,6 @@ SendMessageRemote.OnServerEvent:Connect(function(player, message, isGlobal)
 		return
 	end
 
-	-- Update state player
 	local data = PlayerData[player.UserId]
 	data.LastMessageTime   = tick()
 	data.LastBroadcastTime = tick()
@@ -271,7 +262,6 @@ SendMessageRemote.OnServerEvent:Connect(function(player, message, isGlobal)
 
 	local roleConfig = MessageConfig.RoleDisplay[role] or MessageConfig.RoleDisplay.Player
 
-	-- Tambahkan tag [GLOBAL] jika ini pesan lintas server
 	local finalMessage = filteredMessage
 	if isGlobal then
 		finalMessage = "[GLOBAL] " .. finalMessage
@@ -284,14 +274,12 @@ SendMessageRemote.OnServerEvent:Connect(function(player, message, isGlobal)
 		SenderUsername = player.Name,
 		Role           = role,
 		RoleText       = roleConfig.Text,
-		-- Ubah Color3 menjadi tabel R,G,B agar bisa dikirim via MessagingService
 		RoleColor      = {R = roleConfig.Color.R, G = roleConfig.Color.G, B = roleConfig.Color.B},
 		Message        = finalMessage,
 		Timestamp      = os.time()
 	}
 
 	if isGlobal then
-		-- KIRIM KE SEMUA SERVER
 		local success, err = pcall(function()
 			MessagingService:PublishAsync("GlobalAdminMessage", messageData)
 		end)
@@ -304,40 +292,21 @@ SendMessageRemote.OnServerEvent:Connect(function(player, message, isGlobal)
 			})
 		end
 	else
-		-- KIRIM HANYA KE SERVER INI (LOKAL)
-		-- Ubah warna kembali ke Color3 untuk server ini
 		messageData.RoleColor = Color3.new(messageData.RoleColor.R, messageData.RoleColor.G, messageData.RoleColor.B)
-
-		for _, targetPlayer in ipairs(Players:GetPlayers()) do
-			local targetCanChat = false
-			local ok = pcall(function() targetCanChat = TextChatService:CanUserChatAsync(targetPlayer.UserId) end)
-			if not ok or targetCanChat then
-				ReceiveMessageRemote:FireClient(targetPlayer, messageData)
-			end
-		end
+		broadcastToServerClients(messageData)
 	end
 end)
 
 -- ====================================
--- MESSAGING SERVICE SUBSCRIBER (MENERIMA PESAN GLOBAL)
+-- MESSAGING SERVICE SUBSCRIBER
 -- ====================================
 local subscribeSuccess, subscribeErr = pcall(function()
 	MessagingService:SubscribeAsync("GlobalAdminMessage", function(message)
 		local messageData = message.Data
-
-		-- Kembalikan tabel {R, G, B} menjadi Color3
 		if messageData.RoleColor and type(messageData.RoleColor) == "table" then
 			messageData.RoleColor = Color3.new(messageData.RoleColor.R, messageData.RoleColor.G, messageData.RoleColor.B)
 		end
-
-		-- Broadcast ke semua player di server ini
-		for _, targetPlayer in ipairs(Players:GetPlayers()) do
-			local targetCanChat = false
-			local ok = pcall(function() targetCanChat = TextChatService:CanUserChatAsync(targetPlayer.UserId) end)
-			if not ok or targetCanChat then
-				ReceiveMessageRemote:FireClient(targetPlayer, messageData)
-			end
-		end
+		broadcastToServerClients(messageData)
 	end)
 end)
 
@@ -351,6 +320,9 @@ end
 Players.PlayerAdded:Connect(function(player)
 	initPlayerData(player.UserId)
 end)
+for _, player in ipairs(Players:GetPlayers()) do
+	initPlayerData(player.UserId)
+end
 
 Players.PlayerRemoving:Connect(function(player)
 	cleanPlayerData(player.UserId)

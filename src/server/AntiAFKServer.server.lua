@@ -13,6 +13,8 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TeleportService = game:GetService("TeleportService")
 local RunService = game:GetService("RunService")
+local ServerScriptService = game:GetService("ServerScriptService")
+local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 
 -- Ensure Remotes folder exists
 local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
@@ -37,14 +39,28 @@ local function handlePlayerJoin(player: Player)
 	local joinData = player:GetJoinData()
 	local teleportData = joinData and joinData.TeleportData
 
-	if teleportData and teleportData.isAfkRejoin and teleportData.savedCFrame then
+	if teleportData and type(teleportData) == "table" and teleportData.isAfkRejoin and teleportData.savedCFrame then
 		local comp = teleportData.savedCFrame
 		if type(comp) == "table" and #comp == 12 then
+			for i = 1, 12 do
+				local v = comp[i]
+				if type(v) ~= "number" or v ~= v or math.abs(v) > 50000 then
+					return
+				end
+			end
 			local targetCFrame = CFrame.new(table.unpack(comp))
+			if targetCFrame.Position.Magnitude > 50000 then
+				return
+			end
+			player:SetAttribute("IsAfkRejoin", true)
 
-			-- Connect to CharacterAdded to restore position
+			-- Connect to CharacterAdded to restore position ONCE on rejoin
 			local connection: RBXScriptConnection?
 			connection = player.CharacterAdded:Connect(function(character)
+				if connection then
+					connection:Disconnect()
+					connection = nil
+				end
 				task.wait(0.5) -- Allow humanoid and ragdoll/physics to settle
 				local rootPart = character:WaitForChild("HumanoidRootPart", 8)
 				if rootPart and character.Parent then
@@ -89,6 +105,7 @@ end
 -- AUTO-REJOIN REQUEST HANDLER
 -- ============================================================
 antiAFKRejoinEvent.OnServerEvent:Connect(function(player: Player)
+	if not RemoteEventManager.checkRateLimit(player, "antiAfkRejoin") then return end
 	print(string.format("[AntiAFKServer] 🔄 Permintaan Auto-Rejoin diterima dari %s", player.Name))
 
 	if RunService:IsStudio() then

@@ -339,6 +339,7 @@ function MusicSystem:Start()
 	local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 
 	self.remotes.MusicAction.OnServerEvent:Connect(function(player, action)
+		if type(action) ~= "table" or type(action.type) ~= "string" then return end
 		if action.type == "REQUEST_SYNC" then
 			if not RemoteEventManager.checkRateLimit(player, "musicSync") then return end
 			self.dispatcher:SyncToPlayer(player)

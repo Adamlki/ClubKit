@@ -181,12 +181,12 @@ function ServerBridge._start(): nil
 			if replTicks[v.replRate] then
 				-- subtract 0.003 to make sure we don't accidentally skip any frames due to rounding errors
 				if (currentTime - replTicks[v.replRate]) <= (1 / v.replRate - 0.003) then
-					passingReplRates[v.replRate] = true
 					if not passingReplRates[v.replRate] then
 						table.insert(remainingQueue, v)
 						continue
 					end
 				end
+				passingReplRates[v.replRate] = true
 			end
 
 			if replTicksSignal[v.replRate] == nil then

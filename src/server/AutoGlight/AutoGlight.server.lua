@@ -66,6 +66,8 @@ local isPlaying       = false
 local soundPlaying    = false
 local colorChaseStep  = 0
 local currentStagePhase = 0
+local loopVersion     = 0
+local lastColorTime   = 0
 
 -- ============================================================
 -- MOTOR & PHASE

@@ -184,10 +184,12 @@ local function filterMessage(message, fromUserId)
 		end
 	end
 
-	-- Jika filtering gagal atau jaringan TextService sedang timeout, gunakan pesan asli yang sudah di-trim
-	local trimmed = message:match("^%s*(.-)%s*$")
-	if trimmed and #trimmed > 0 then
-		return trimmed
+	-- KEAMANAN ROBLOX TOS: Jangan pernah menampilkan teks mentah tanpa filter di live server!
+	if game:GetService("RunService"):IsStudio() then
+		local trimmed = message:match("^%s*(.-)%s*$")
+		if trimmed and #trimmed > 0 then
+			return trimmed
+		end
 	end
 
 	return CONFIG.DEFAULT_MESSAGE

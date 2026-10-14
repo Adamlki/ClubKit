@@ -6,7 +6,7 @@ local TextChatService   = game:GetService("TextChatService")
 local DonationConfig        = require(script.DonationConfig)
 local DonationDataStore     = require(script.DonationDataStore)
 local ProcessReceiptHandler = require(script.ProcessReceiptHandler)
-local ScreenBoardHandler    = require(script.ScreenBoardHandler)  -- FITUR BARU
+local ScreenBoardHandler    = require(script.ScreenBoardHandler)
 
 -- ============================================
 -- HELPER
@@ -41,20 +41,36 @@ local receiveRemote        = getOrCreate(ReplicatedStorage, "RemoteEvent",    "R
 local getPlayerStatsRemote = getOrCreate(ReplicatedStorage, "RemoteFunction", "GetPlayerDonationStats")
 
 -- ============================================
--- STATE
+-- STATE & 100-PLAYER CHAT PERMISSION CACHE
 -- ============================================
 local broadcastQueue      = {}
 local isProcessingQueue   = false
 local playerCooldowns     = {}  -- [userId] = lastBroadcastTime
 local verifiedPurchases   = {}  -- [userId] = {[timestamp] = {amount, claimed}}
+local canChatCache        = {}  -- [userId] = boolean (100-Player Optimization: 1x cek per session)
 
 local addToQueue = nil
 local processQueue = nil
 
+local function cachePlayerChatPermission(player)
+	task.spawn(function()
+		local ok, result = pcall(function()
+			return TextChatService:CanUserChatAsync(player.UserId)
+		end)
+		if player and player.Parent then
+			canChatCache[player.UserId] = (not ok) or (result == true)
+		end
+	end)
+end
+
+Players.PlayerAdded:Connect(cachePlayerChatPermission)
+for _, p in ipairs(Players:GetPlayers()) do
+	cachePlayerChatPermission(p)
+end
+
 -- ============================================
 -- SECURITY
 -- ============================================
-
 local function recordPurchase(userId, amount)
 	if not verifiedPurchases[userId] then
 		verifiedPurchases[userId] = {}
@@ -65,8 +81,6 @@ local function recordPurchase(userId, amount)
 	debugLog("BROADCAST", "Purchase recorded:", userId, amount)
 
 	if not isSmall then
-		-- Timeout fallback: jika player tidak mengirim pesan dalam 90 detik (misal AFK/close UI/disconnect),
-		-- otomatis kirim pesan default sehingga broadcast dan efek panggung tetap muncul!
 		task.delay(120, function()
 			local userPurchases = verifiedPurchases[userId]
 			if userPurchases and userPurchases[purchaseTime] and not userPurchases[purchaseTime].claimed then
@@ -93,7 +107,6 @@ end
 
 local function verifyPurchase(userId, amount)
 	local startTime = os.clock()
-	-- Beri toleransi waktu hingga 3 detik jika ProcessReceipt di server sedang memproses DataStore
 	repeat
 		local purchases = verifiedPurchases[userId]
 		if purchases then
@@ -127,12 +140,11 @@ end
 local function cleanupPlayerSecurity(userId)
 	verifiedPurchases[userId] = nil
 	playerCooldowns[userId]   = nil
+	canChatCache[userId]      = nil
 end
 
 -- ============================================
 -- TEXT FILTERING
--- [WAJIB Roblox] Filter custom message dari donor sebelum broadcast.
--- Jika gagal, kembalikan nil (pesan TIDAK dikirim).
 -- ============================================
 local function filterBroadcastMessage(message, fromPlayer)
 	if not DonationConfig.BROADCAST.ENABLED then return message end
@@ -148,7 +160,7 @@ local function filterBroadcastMessage(message, fromPlayer)
 
 	if not ok1 or not filterResult then
 		debugLog("ERROR", "FilterStringAsync gagal:", err1)
-		return nil  -- Batalkan, jangan kirim unfiltered
+		return nil
 	end
 
 	local filteredText
@@ -167,7 +179,6 @@ end
 -- ============================================
 -- BROADCAST / QUEUE
 -- ============================================
-
 local function getPlayerQueueCount(userId)
 	local count = 0
 	for _, item in ipairs(broadcastQueue) do
@@ -178,22 +189,11 @@ local function getPlayerQueueCount(userId)
 	return count
 end
 
---[[
-    Kirim broadcast ke semua player yang bisa menerima chat.
-    [WAJIB Roblox] Periksa CanUserChatAsync() per penerima.
---]]
 local function fireBroadcastToAll(displayName, amount, message, userId, totalAmount)
 	for _, targetPlayer in ipairs(Players:GetPlayers()) do
-		task.spawn(function()
-			local canChat = false
-			local ok = pcall(function()
-				canChat = TextChatService:CanUserChatAsync(targetPlayer.UserId)
-			end)
-			-- Jika pengecekan gagal (error jaringan), tetap kirim agar broadcast tidak hilang
-			if not ok or canChat then
-				receiveRemote:FireClient(targetPlayer, displayName, amount, message, userId, totalAmount)
-			end
-		end)
+		if canChatCache[targetPlayer.UserId] ~= false then
+			receiveRemote:FireClient(targetPlayer, displayName, amount, message, userId, totalAmount)
+		end
 	end
 end
 
@@ -216,13 +216,11 @@ processQueue = function()
 
 		fireBroadcastToAll(item.displayName, item.amount, item.message, item.userId, totalAmount)
 
-		-- Cek pengaturan sorot kamera donor
 		local spotlightSettings = ReplicatedStorage:FindFirstChild("DonationSpotlightSettings")
 		local isSpotlightOn = (spotlightSettings and spotlightSettings:GetAttribute("Enabled") == true)
 		local minRobux = spotlightSettings and spotlightSettings:GetAttribute("MinRobux") or 500
 		local shouldSpotlight = isSpotlightOn and (item.amount >= minRobux)
 
-		-- Trigger animasi kamera sorot donor ke semua client jika memenuhi syarat
 		if shouldSpotlight then
 			local DonorSpotlightRemote = ReplicatedStorage:FindFirstChild("DonorSpotlightRemote")
 			if DonorSpotlightRemote then
@@ -230,7 +228,6 @@ processQueue = function()
 			end
 		end
 
-		-- 🔥 PICU EFEK ROBUX BERSAMAAN DENGAN NOTIFIKASI PESAN & SCREEN BOARD!
 		local ServerStorage = game:GetService("ServerStorage")
 		local RobuxDonationEffectEvent = ServerStorage:FindFirstChild("RobuxDonationEffectEvent")
 		if not RobuxDonationEffectEvent then
@@ -241,18 +238,11 @@ processQueue = function()
 		local player = Players:GetPlayerByUserId(item.userId)
 		RobuxDonationEffectEvent:Fire(player or item.displayName, item.amount, shouldSpotlight)
 
-		-- ============================================
-		-- SCREEN BOARD UPDATE (FITUR BARU)
-		-- Setiap broadcast yang masuk antrian juga ditampilkan
-		-- di screen board jika amount >= SCREEN_BOARD.MIN_DONATION.
-		-- Message yang dipakai adalah yang sudah difilter dari antrian.
-		-- ============================================
 		if DonationConfig.SCREEN_BOARD.ENABLED then
-			local player = Players:GetPlayerByUserId(item.userId)
-			if player then
-				ScreenBoardHandler:ShowDonationMessage(player, item.amount, item.message)
+			local donorPlr = Players:GetPlayerByUserId(item.userId)
+			if donorPlr then
+				ScreenBoardHandler:ShowDonationMessage(donorPlr, item.amount, item.message)
 			else
-				-- Player sudah disconnect, tapi tetap update board dengan data yang ada
 				local fakePlayer = {
 					UserId      = item.userId,
 					Name        = item.displayName,
@@ -273,7 +263,6 @@ end
 addToQueue = function(player, message, amount, skipVerification)
 	local userId = player.UserId
 
-	-- Batas antrian dicek terlebih dahulu
 	if getPlayerQueueCount(userId) >= DonationConfig.BROADCAST.MAX_QUEUE_PER_PLAYER then
 		return false, "Terlalu banyak pesan dalam antrian."
 	end
@@ -281,7 +270,6 @@ addToQueue = function(player, message, amount, skipVerification)
 		return false, "Antrian penuh."
 	end
 
-	-- Verifikasi purchase (kecuali untuk auto-broadcast kecil / fallback)
 	if not skipVerification then
 		local verified, verifiedAmount = verifyPurchase(userId, amount)
 		if not verified then
@@ -295,7 +283,6 @@ addToQueue = function(player, message, amount, skipVerification)
 		end
 	end
 
-	-- Trim whitespace dan potong kalau terlalu panjang
 	message = message:match("^%s*(.-)%s*$")
 	if #message > DonationConfig.BROADCAST.MAX_MESSAGE_LENGTH then
 		message = message:sub(1, DonationConfig.BROADCAST.MAX_MESSAGE_LENGTH)
@@ -319,9 +306,8 @@ addToQueue = function(player, message, amount, skipVerification)
 end
 
 -- ============================================
--- REMOTES  Products
+-- REMOTES - Products & Stats
 -- ============================================
-
 local cachedProducts = nil
 getProductsRemote.OnServerInvoke = function(player)
 	debugLog("BROADCAST", player.Name, "meminta daftar produk")
@@ -336,11 +322,14 @@ getProductsRemote.OnServerInvoke = function(player)
 	return cachedProducts
 end
 
--- ============================================
--- REMOTES - Get Player Donation Stats (Robux + Rupiah)
--- ============================================
+local statsCooldown = {}
 getPlayerStatsRemote.OnServerInvoke = function(clientPlayer)
 	if not clientPlayer then return {robux = 0, rupiah = 0} end
+	local now = os.clock()
+	if now - (statsCooldown[clientPlayer.UserId] or 0) < 3 then
+		return {robux = 0, rupiah = 0}
+	end
+	statsCooldown[clientPlayer.UserId] = now
 
 	local robuxData = DonationDataStore:GetPlayerDonation(clientPlayer.UserId)
 	local totalRobux = 0
@@ -356,10 +345,9 @@ getPlayerStatsRemote.OnServerInvoke = function(clientPlayer)
 		local okData, donations = pcall(function() return SaweriaAPI:GetDonationData() end)
 		if okData and type(donations) == "table" then
 			local pName = clientPlayer.Name:lower()
-			local pDisplay = clientPlayer.DisplayName:lower()
 			for _, d in ipairs(donations) do
 				local dName = tostring(d.donator or d.nama or d.Nama or ""):lower()
-				if dName == pName or dName == pDisplay then
+				if dName == pName then
 					local raw = tostring(d.amount or d.jumlah or d.Jumlah or "0"):gsub("%D", "")
 					local amt = tonumber(raw) or 0
 					totalRupiah = totalRupiah + amt
@@ -375,9 +363,8 @@ getPlayerStatsRemote.OnServerInvoke = function(clientPlayer)
 end
 
 -- ============================================
--- REMOTES  Custom Broadcast Message
+-- REMOTES - Custom Broadcast Message
 -- ============================================
-
 broadcastRemote.OnServerInvoke = function(player, message, amount)
 	if not player or not player.Parent then
 		return false, "Player tidak valid."
@@ -389,7 +376,6 @@ broadcastRemote.OnServerInvoke = function(player, message, amount)
 		return false, "Donasi tidak mencukupi untuk broadcast."
 	end
 
-	-- [WAJIB Roblox] Filter konten sebelum dikirim
 	local filtered = filterBroadcastMessage(message, player)
 	if filtered == nil then
 		return false, "Pesan tidak dapat dikirim karena gagal melewati filter konten."
@@ -399,17 +385,10 @@ broadcastRemote.OnServerInvoke = function(player, message, amount)
 end
 
 -- ============================================
--- INITIALIZATION
+-- INITIALIZATION & CALLBACKS
 -- ============================================
-
 ProcessReceiptHandler:Initialize()
---DonationDataStore:StartPeriodicSave()
 
--- ============================================
--- PROCESS RECEIPT CALLBACKS
--- ============================================
-
--- Callback 1: Simpan ke DataStore (total saja, tanpa history)
 ProcessReceiptHandler:RegisterCallback("SaveToDataStore", function(player, productId, amount, receiptInfo)
 	local ok, isNew = DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
 	if not ok then
@@ -418,17 +397,14 @@ ProcessReceiptHandler:RegisterCallback("SaveToDataStore", function(player, produ
 	return ok, isNew
 end)
 
--- Callback 2: Catat untuk verifikasi keamanan
 ProcessReceiptHandler:RegisterCallback("RecordPurchase", function(player, productId, amount, receiptInfo)
 	recordPurchase(player.UserId, amount)
 	return true
 end)
 
--- Callback 3: Auto-broadcast untuk semua donasi
 ProcessReceiptHandler:RegisterCallback("AutoBroadcastAll", function(player, productId, amount, receiptInfo)
 	if not DonationConfig.BROADCAST.ENABLED then return true end
 
-	-- Donasi kecil (< MIN_DONATION): gunakan pesan default, skip verifikasi & cooldown
 	if amount < DonationConfig.BROADCAST.MIN_DONATION then
 		local defaultMsg = DonationConfig.DEFAULT_SMALL_DONATION_MESSAGE
 		local ok, reason = addToQueue(player, defaultMsg, amount, true)
@@ -438,7 +414,6 @@ ProcessReceiptHandler:RegisterCallback("AutoBroadcastAll", function(player, prod
 		return ok
 	end
 
-	-- Donasi besar (>= MIN_DONATION): donor akan kirim custom message via UI
 	debugLog("BROADCAST", "Menunggu custom message dari:", player.Name)
 	return true
 end)
@@ -446,18 +421,9 @@ end)
 -- ============================================
 -- PLAYER CLEANUP
 -- ============================================
-
 Players.PlayerRemoving:Connect(function(player)
 	DonationDataStore:CleanupPlayer(player)
 	cleanupPlayerSecurity(player.UserId)
-
-	-- (REMOVED) Tidak lagi menghapus pesan dari antrian saat player keluar.
-	-- Hak donasi tetap berjalan agar player tidak rugi jika putus koneksi.
-
+	statsCooldown[player.UserId] = nil
 	debugLog("BROADCAST", "Cleanup selesai:", player.Name)
 end)
-
-debugLog("BROADCAST", "DonationServerHandler initialized")
-debugLog("BROADCAST", "Environment:", DonationConfig.IS_TEST_MODE and "STUDIO" or "LIVE")
-debugLog("BROADCAST", "MIN_DONATION:", DonationConfig.BROADCAST.MIN_DONATION)
-debugLog("BROADCAST", "SCREEN_BOARD MIN_DONATION:", DonationConfig.SCREEN_BOARD.MIN_DONATION)

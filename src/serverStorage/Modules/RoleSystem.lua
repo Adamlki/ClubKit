@@ -67,6 +67,7 @@ local giveGamePassStore = DataStoreService:GetDataStore(RoleSystem.Config.DATAST
 -- OWNERSHIP CACHE
 -- ====================================
 local playerOwnershipCache = {}
+local ownershipLoadingLocks = {}
 
 -- ====================================
 -- EVENTS
@@ -242,6 +243,25 @@ end
 function RoleSystem:CachePlayerOwnership(player)
 	local userId = player.UserId
 
+	if playerOwnershipCache[userId] then
+		if playerOwnershipCache[userId].DisconnectedAt then
+			playerOwnershipCache[userId].DisconnectedAt = nil
+		end
+		return playerOwnershipCache[userId]
+	end
+
+	if ownershipLoadingLocks[userId] then
+		local waited = 0
+		while ownershipLoadingLocks[userId] and waited < 10 do
+			waited += task.wait(0.05)
+		end
+		if playerOwnershipCache[userId] then
+			return playerOwnershipCache[userId]
+		end
+	end
+
+	ownershipLoadingLocks[userId] = true
+
 	local ownership = {
 		VIP = false,
 		GivenPass = "None",
@@ -272,6 +292,7 @@ function RoleSystem:CachePlayerOwnership(player)
 
 	-- Simpan hasil DataStore dulu agar role bisa langsung dipakai
 	playerOwnershipCache[userId] = ownership
+	ownershipLoadingLocks[userId] = nil
 
 	-- 2. GamePass check ASYNC di background (tidak blocking PlayerAdded)
 	-- Hanya untuk player yang belum punya GivenPass dari DataStore
@@ -430,14 +451,32 @@ end
 -- ====================================
 -- GIVE PASS MANAGEMENT (EXTENDED: VIP, Moderator, Admin)
 -- ====================================
-function RoleSystem:GivePassToPlayer(targetUserId, passType, giverUserId)
+function RoleSystem:GivePassToPlayer(targetUserId, passType, giverUserId, callback)
 	if passType == "VVIP" then
 		passType = "VIP" -- Konversi VVIP ke VIP
 	end
 
 	if passType ~= "VIP" and passType ~= "Moderator" and passType ~= "Admin" then
 		warn(string.format("[RoleSystem] GivePassToPlayer: invalid passType '%s'", tostring(passType)))
+		if type(callback) == "function" then
+			task.spawn(callback, false, "Invalid pass type")
+		end
 		return false, "Invalid pass type"
+	end
+
+	-- Proteksi Downgrade: Jangan timpa role Admin/Moderator jika player membeli/menerima VIP
+	local existing = playerOwnershipCache[targetUserId]
+	if passType == "VIP" and existing and (existing.GivenPass == "Admin" or existing.GivenPass == "Moderator") then
+		existing.VIP = true
+		existing.CheckedAt = os.clock()
+		local player = game.Players:GetPlayerByUserId(targetUserId)
+		if player then
+			self:UpdatePlayerRole(player)
+		end
+		if type(callback) == "function" then
+			task.spawn(callback, true, "Pass given successfully")
+		end
+		return true, "Pass given successfully"
 	end
 
 	-- Key format TIDAK DIUBAH agar data production tetap kompatibel
@@ -454,7 +493,7 @@ function RoleSystem:GivePassToPlayer(targetUserId, passType, giverUserId)
 	if success then
 		-- Update cache langsung di memori server agar instan tanpa lag atau delay
 		playerOwnershipCache[targetUserId] = {
-			VIP = (passType == "VIP"),
+			VIP = (passType == "VIP") or (existing and existing.VIP == true) or false,
 			GivenPass = passType,
 			CheckedAt = os.clock()
 		}
@@ -469,9 +508,15 @@ function RoleSystem:GivePassToPlayer(targetUserId, passType, giverUserId)
 				targetUserId, passType, tostring(giverUserId)))
 		end
 
+		if type(callback) == "function" then
+			task.spawn(callback, true, "Pass given successfully")
+		end
 		return true, "Pass given successfully"
 	else
 		warn(string.format("[RoleSystem] GivePassToPlayer FAILED | userId: %d | passType: %s", targetUserId, passType))
+		if type(callback) == "function" then
+			task.spawn(callback, false, "DataStore error")
+		end
 		return false, "DataStore error"
 	end
 end
@@ -612,7 +657,6 @@ if not checkGroupVIPRemote then
 	checkGroupVIPRemote.Parent = RemotesFolder
 end
 
-local groupCheckCooldown = {}
 
 if RunService:IsServer() then
 	checkGroupVIPRemote.OnServerInvoke = function(player)

@@ -126,7 +126,11 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 			safeSetAttr(character, "CurrentDanceID", animation.AnimationId)
 		end
 
-		character:SetAttribute("DanceStartTime", clientStartTime or workspace:GetServerTimeNow())
+		local validStartTime = workspace:GetServerTimeNow()
+		if type(clientStartTime) == "number" and clientStartTime == clientStartTime and math.abs(validStartTime - clientStartTime) <= 10 then
+			validStartTime = clientStartTime
+		end
+		character:SetAttribute("DanceStartTime", validStartTime)
 		safeSetAttr(character, "DanceSpeed", speed)
 
 		if isSpam then

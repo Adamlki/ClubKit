@@ -28,11 +28,11 @@ LevelSystem.Config = {
 		["Moderator"] = true,
 	},
 
-	LEVEL_UP_INTERVAL = 900, -- 12 seconds
+	LEVEL_UP_INTERVAL = 900, -- 15 menit (900 detik)
 	DEFAULT_LEVEL = 1,
 	MAX_LEVEL = nil, -- nil = no limit
 
-	DEBUG_ENABLED = false 
+	DEBUG_ENABLED = false
 }
 
 -- ====================================
@@ -47,8 +47,9 @@ local LeaderboardStore = DataStoreService:GetOrderedDataStore(LevelSystem.Config
 local playerLevelCache = {}
 local playerTimers = {}
 local activeConnections = {}
-local saveCooldowns = {} -- BARU: Mencegah spam DataStore
-local loadingLocks = {} -- ANTI-RACE: Mencegah multiple GetAsync saat join bersamaan
+local saveCooldowns = {}
+local loadingLocks = {}
+local lastSyncedLevel = {} -- 100-PLAYER OPTIMIZATION: Cegah penulisan OrderedDataStore berulang jika level belum berubah
 
 -- ====================================
 -- EVENTS
@@ -104,23 +105,29 @@ local function datastoreSetAsync(key, value)
 end
 
 -- ====================================
--- LEADERBOARD SYNC
+-- LEADERBOARD SYNC (DENGAN DIRTY-CHECK KUOTA ORDERED DATASTORE)
 -- ====================================
--- 🔥 ARCHITECT FIX: Gunakan (player, level) bukan (userId, level)
 local function syncLeaderboard(player, level)
 	local userId = player.UserId
 
-	-- Gatekeeper Absolute: Cek role tanpa takut 'nil' saat leave
+	-- Jika level belum berubah sejak sync terakhir di sesi ini, hemat kuota OrderedDataStore!
+	if lastSyncedLevel[userId] == level then
+		return
+	end
+
 	local role = RoleSystem:GetPlayerRole(player)
 	if LevelSystem.Config.EXCLUDED_ROLES[role] then
 		debugWarn("Pemain " .. player.Name .. " (" .. role .. ") di-exclude dari Leaderboard.")
+		lastSyncedLevel[userId] = level
 		pcall(function() LeaderboardStore:RemoveAsync(tostring(userId)) end)
-		return -- Jangan lanjutkan proses save ke Leaderboard!
+		return
 	end
+
+	lastSyncedLevel[userId] = level
 
 	task.spawn(function()
 		for attempt = 1, LevelSystem.Config.DATASTORE_RETRY_ATTEMPTS do
-			local success, err = pcall(function()
+			local success = pcall(function()
 				LeaderboardStore:SetAsync(tostring(userId), level)
 			end)
 			if success then
@@ -167,22 +174,20 @@ function LevelSystem:LoadPlayerLevel(player)
 
 	loadingLocks[userId] = true
 	local key = self.Config.DATASTORE_PREFIX .. tostring(userId)
-	
+
 	local success, data = datastoreGetAsync(key)
 	loadingLocks[userId] = nil
-	
-	-- 🔥 ARCHITECT FIX 1: Cegah Data Wipe akibat Roblox Down
+
 	if not success then
 		player:Kick("\n[Server Error]\nGagal memuat data level Anda karena gangguan jaringan Roblox.\n\nSilakan coba lagi beberapa saat untuk mencegah data Anda hilang/ter-reset.")
 		return self.Config.DEFAULT_LEVEL
 	end
-	
-	-- 🔥 ARCHITECT FIX 2: Cegah Memory Leak Ghost Session (Join-Leave super cepat)
+
 	if not player.Parent then
 		debugWarn("Pemain " .. player.Name .. " keluar sebelum data selesai dimuat. Membatalkan inisialisasi memori.")
 		return self.Config.DEFAULT_LEVEL
 	end
-	
+
 	local level = self.Config.DEFAULT_LEVEL
 	local timeInGame = 0
 
@@ -196,21 +201,20 @@ function LevelSystem:LoadPlayerLevel(player)
 		TimeInGame = timeInGame,
 		SessionStartTime = os.clock()
 	}
+	lastSyncedLevel[userId] = level
 	return level
 end
 
--- BARU: Tambahan forceSave agar bisa di-bypass saat keluar game
 function LevelSystem:SavePlayerLevel(player, forceSave)
 	local userId = player.UserId
 	local cache = playerLevelCache[userId]
 
 	if not cache then return false end
 
-	-- ANTI SPAM DATASTORE LIMIT
 	local lastSave = saveCooldowns[userId] or 0
 	if not forceSave and (os.clock() - lastSave) < self.Config.SAVE_COOLDOWN then
 		debug("Save dibatalkan untuk", player.Name, "- Masih dalam cooldown.")
-		return true -- Anggap sukses karena datanya toh aman di Cache
+		return true
 	end
 
 	local sessionTime = os.clock() - cache.SessionStartTime
@@ -224,10 +228,8 @@ function LevelSystem:SavePlayerLevel(player, forceSave)
 
 	local success = datastoreSetAsync(key, data)
 	if success then
-		saveCooldowns[userId] = os.clock() -- Catat waktu save terakhir
-
-		-- 🔥 ARCHITECT FIX: Panggil dengan 'player', BUKAN 'userId'
-		syncLeaderboard(player, cache.Level) 
+		saveCooldowns[userId] = os.clock()
+		syncLeaderboard(player, cache.Level)
 		return true
 	end
 	return false
@@ -246,6 +248,7 @@ end
 function LevelSystem:SetPlayerLevel(player, newLevel)
 	local userId = player.UserId
 	if not playerLevelCache[userId] then self:LoadPlayerLevel(player) end
+	if not playerLevelCache[userId] then return false end
 
 	local oldLevel = playerLevelCache[userId].Level
 	playerLevelCache[userId].Level = newLevel
@@ -255,9 +258,6 @@ function LevelSystem:SetPlayerLevel(player, newLevel)
 		local levelValue = leaderstats:FindFirstChild("Level")
 		if levelValue then levelValue.Value = newLevel end
 	end
-
-	-- BARIS INI TELAH DIHAPUS AGAR TIDAK SPAM KE ORDERED DATASTORE
-	-- syncLeaderboard(userId, newLevel) 
 
 	levelUpEvent:Fire(player, oldLevel, newLevel)
 	return true
@@ -287,7 +287,6 @@ local function startLevelTimer(player)
 			LevelSystem:AddLevels(player, 1)
 		end
 	end)
-
 end
 
 local function stopLevelTimer(player)
@@ -296,20 +295,18 @@ local function stopLevelTimer(player)
 end
 
 function LevelSystem:InitializePlayer(player)
-	local level = self:LoadPlayerLevel(player) -- 
+	local level = self:LoadPlayerLevel(player)
 
 	local leaderstats = player:FindFirstChild("leaderstats") or Instance.new("Folder")
 	leaderstats.Name = "leaderstats"
-	leaderstats.Parent = player -- 
+	leaderstats.Parent = player
 
 	local levelValue = leaderstats:FindFirstChild("Level") or Instance.new("IntValue")
 	levelValue.Name = "Level"
 	levelValue.Parent = leaderstats
-	levelValue.Value = level -- 
+	levelValue.Value = level
 
-	-- BARIS SYNC LEADERBOARD DIHAPUS DARI SINI AGAR TIDAK SPAM SAAT JOIN --
-
-	startLevelTimer(player) -- 
+	startLevelTimer(player)
 	return level
 end
 
@@ -339,10 +336,7 @@ function LevelSystem:SetupCommands(player, roleSystem)
 			if not args[2] then return end
 			local targetPlayer = Players:FindFirstChild(args[2])
 			if targetPlayer then LevelSystem:SetPlayerLevel(targetPlayer, LevelSystem.Config.DEFAULT_LEVEL) end
-
-			-- 🔥 ARCHITECT FIX: Command untuk menghapus Ghost Data dari Leaderboard
 		elseif command == "/hideboard" then
-			-- Jika tidak mengetik ID target, maka akan menghapus diri sendiri
 			local targetId = tonumber(args[2]) or player.UserId
 			pcall(function()
 				LeaderboardStore:RemoveAsync(tostring(targetId))
@@ -372,25 +366,22 @@ end
 -- ====================================
 function LevelSystem:CleanupPlayer(player)
 	local userId = player.UserId
-	
-	-- Hapus koneksi chat
+	if not playerLevelCache[userId] then return end
+
 	if activeConnections[userId] then
 		for _, connection in ipairs(activeConnections[userId]) do
 			connection:Disconnect()
 		end
 		activeConnections[userId] = nil
 	end
-	
-	-- Hentikan timer
+
 	stopLevelTimer(player)
-	
-	-- Simpan data terakhir (bypass cooldown)
 	self:SavePlayerLevel(player, true)
-	
-	-- Hapus dari cache
+
 	playerLevelCache[userId] = nil
 	saveCooldowns[userId] = nil
 	loadingLocks[userId] = nil
+	lastSyncedLevel[userId] = nil
 end
 
 Players.PlayerRemoving:Connect(function(player)
@@ -408,28 +399,24 @@ if RunService:IsServer() and RunService:IsRunning() then
 			local players = Players:GetPlayers()
 			local totalPlayers = #players
 			local completed = 0
-			
+
 			for i, player in ipairs(players) do
 				task.spawn(function()
-					-- Paksa save mengabaikan cooldown
-					LevelSystem:SavePlayerLevel(player, true) 
-					completed += 1 -- Tandai bahwa pemain ini sudah selesai disave
+					LevelSystem:SavePlayerLevel(player, true)
+					completed += 1
 				end)
-				
-				-- 🔥 KUNCI ANTI-LAG: Kasih napas ke Roblox API setiap 10 pemain
+
 				if i % 10 == 0 then
 					task.wait(0.2)
 				end
 			end
-			
-			-- TAHAN SERVER JANGAN SAMPAI MATI!
-			-- Tunggu sampai semua save selesai (maksimal 25 detik agar tidak force kill oleh Roblox)
+
 			local elapsed = 0
 			while completed < totalPlayers and elapsed < 25 do
 				task.wait(1)
 				elapsed += 1
 			end
-			
+
 			print("[LevelSystem] " .. completed .. "/" .. totalPlayers .. " data pemain berhasil diselamatkan sebelum shutdown!")
 		end)
 	end)

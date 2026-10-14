@@ -222,7 +222,7 @@ local function fetchDonationData()
 			end
 			local donatorUserId = nil
 			for _, p in ipairs(Players:GetPlayers()) do
-				if p.Name:lower() == rawDonator:lower() or p.DisplayName:lower() == rawDonator:lower() then
+				if p.Name:lower() == rawDonator:lower() then
 					donatorUserId = p.UserId
 					break
 				end

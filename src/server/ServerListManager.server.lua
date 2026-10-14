@@ -184,7 +184,15 @@ local DEMO_SERVERS = {
 	},
 }
 
+local cachedDiscoveryList = nil
+local lastDiscoveryFetch = 0
+local DISCOVERY_CACHE_TTL = 5
+
 local function getDiscoveryServers()
+	local now = os.clock()
+	if cachedDiscoveryList and (now - lastDiscoveryFetch) < DISCOVERY_CACHE_TTL then
+		return cachedDiscoveryList
+	end
 	local list = {}
 	local thisServer = getCurrentServerData()
 	table.insert(list, thisServer)
@@ -234,6 +242,8 @@ local function getDiscoveryServers()
 		end
 	end
 
+	cachedDiscoveryList = list
+	lastDiscoveryFetch = os.clock()
 	return list
 end
 

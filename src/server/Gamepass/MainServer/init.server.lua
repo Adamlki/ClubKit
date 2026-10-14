@@ -82,6 +82,9 @@ shopRequest.OnServerInvoke = function(player, requestData)
 	if not ValidationManager:ValidatePlayer(player) then
 		return {success = false, error = "Invalid player"}
 	end
+	if type(requestData) ~= "table" or type(requestData.action) ~= "string" then
+		return {success = false, error = "Invalid request"}
+	end
 
 	local action = requestData.action
 
@@ -153,7 +156,7 @@ Players.PlayerRemoving:Connect(function(player)
 
 	-- Cleanup
 	AntiSpamManager:CleanupPlayer(player.UserId)
-	RoleSystem:InvalidateOwnershipCache(player.UserId)
+	RoleSystem:HandlePlayerRemoving(player.UserId)
 
 	Logger:Debug(string.format("Cleaned up data for %s", player.Name))
 end)

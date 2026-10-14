@@ -9,39 +9,53 @@ local CONFIG = {
 	-- window = periode waktu dalam detik
 
 	-- Animation & Emotes
-	animationStart = { count = 5, window = 1 },      -- 5 animasi per detik
-	changeSpeed = { count = 20, window = 1 },        -- 20 speed change per detik (slider debounce 50ms = max 20/s)
-	startSync = { count = 2, window = 2 },           -- 2 sync per 2 detik
-	updateFavoritedAnimations = { count = 2, window = 5 }, -- 2 save per 5 detik
+	animationStart = { count = 20, window = 1 },     -- 20 animasi per detik (mendukung spam dance)
+	changeSpeed = { count = 20, window = 1 },        -- 20 speed change per detik
+	changeAnimationSpeed = { count = 20, window = 1 },
+	startSync = { count = 3, window = 2 },           -- 3 sync per 2 detik
+	updateFavoritedAnimations = { count = 3, window = 5 },
 
 	-- Carry System
-	carryRequest = { count = 3, window = 3 },        -- 3 carry request per 3 detik
-	carryResponse = { count = 5, window = 2 },       -- 5 response per 2 detik
-	carryEnd = { count = 5, window = 1 },            -- 5 end per detik
+	carryRequest = { count = 3, window = 3 },
+	carryResponse = { count = 5, window = 2 },
+	carryEnd = { count = 5, window = 1 },
 
 	-- Donation System
-	requestDonationState = { count = 2, window = 5 }, -- 2 request per 5 detik
+	requestDonationState = { count = 2, window = 5 },
 
 	-- Music System
-	musicAction = { count = 5, window = 2 },         -- 5 music action per 2 detik
-	musicSync = { count = 3, window = 5 },           -- 3 sync per 5 detik
+	musicAction = { count = 5, window = 2 },
+	musicSync = { count = 3, window = 5 },
 
 	-- Bio & Title
-	setBioStatus = { count = 3, window = 5 },        -- 3 bio update per 5 detik
-	updateTitle = { count = 3, window = 5 },         -- 3 title update per 5 detik
+	setBioStatus = { count = 3, window = 5 },
+	updateTitle = { count = 3, window = 5 },
+	assignDonatur = { count = 3, window = 5 },
+	customTitleAction = { count = 3, window = 3 },
 
 	-- Message System
-	sendMessage = { count = 5, window = 3 },         -- 5 message per 3 detik
+	sendMessage = { count = 5, window = 3 },
+	adminNotifCheck = { count = 5, window = 3 },
+	adminNotifSend = { count = 3, window = 3 },
 
 	-- Admin Actions
-	teamAction = { count = 5, window = 2 },          -- 5 team action per 2 detik
-	giveRole = { count = 3, window = 3 },            -- 3 role change per 3 detik
+	teamAction = { count = 5, window = 2 },
+	giveRole = { count = 3, window = 3 },
+	adminRoleAction = { count = 3, window = 3 },
 
-	-- Accessory
-	toggleAccessory = { count = 5, window = 2 },     -- 5 toggle per 2 detik
+	-- Accessory & Weapons
+	toggleAccessory = { count = 5, window = 2 },
+	accessoryHatToggle = { count = 5, window = 2 },
+	waterGunShoot = { count = 12, window = 1 },
 
-	-- Refresh
-	refreshCharacter = { count = 2, window = 5 },    -- 2 refresh per 5 detik
+	-- Profile & Likes
+	getPlayerInfo = { count = 3, window = 5 },
+	CheckLike = { count = 6, window = 2 },
+	LikePlayerInvoke = { count = 3, window = 3 },
+
+	-- Refresh & Anti-AFK
+	refreshCharacter = { count = 2, window = 5 },
+	antiAfkRejoin = { count = 1, window = 30 },
 
 	-- Default untuk remote yang tidak terdaftar
 	default = { count = 10, window = 1 }             -- 10 request per detik

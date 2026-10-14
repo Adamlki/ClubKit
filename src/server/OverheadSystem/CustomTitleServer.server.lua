@@ -13,6 +13,8 @@
 local Players           = game:GetService("Players")
 local DataStoreService  = game:GetService("DataStoreService")
 local TextService       = game:GetService("TextService")
+local ServerScriptService = game:GetService("ServerScriptService")
+local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage     = game:GetService("ServerStorage")
 local RunService        = game:GetService("RunService")
@@ -133,6 +135,7 @@ local applyCustomTitleRemote   = getOrCreateRemote("RemoteFunction", "ApplyCusto
 -- ====================================
 getCustomTitleDataRemote.OnServerInvoke = function(player)
 	if not player then return nil end
+	if not RemoteEventManager.checkRateLimit(player, "customTitleAction") then return nil end
 	local userId = player.UserId
 
 	local chances = getPlayerChances(userId)
@@ -160,6 +163,7 @@ end
 -- ====================================
 previewCustomTitleRemote.OnServerEvent:Connect(function(player, titleData)
 	if not player or not player.Parent then return end
+	if not RemoteEventManager.checkRateLimit(player, "customTitleAction") then return end
 	if type(titleData) ~= "table" then return end
 
 	local rawTitle = tostring(titleData.Title or "")
@@ -170,12 +174,13 @@ previewCustomTitleRemote.OnServerEvent:Connect(function(player, titleData)
 
 	if rawTitle == "" then return end
 
-	-- Roblox Text Filtering for safety
-	local filteredTitle = rawTitle
-	pcall(function()
+	-- Roblox Text Filtering for safety (jangan tampilkan rawTitle jika filter gagal)
+	local filteredTitle = nil
+	local okFilter = pcall(function()
 		local filterResult = TextService:FilterStringAsync(rawTitle, player.UserId)
 		filteredTitle = filterResult:GetNonChatStringForBroadcastAsync()
 	end)
+	if not okFilter or not filteredTitle then return end
 
 	local rawColor = titleData.Color
 	if typeof(rawColor) ~= "Color3" then
@@ -245,6 +250,9 @@ applyCustomTitleRemote.OnServerInvoke = function(player, titleData)
 	if not player or not player.Parent then
 		return false, "Player tidak valid."
 	end
+	if not RemoteEventManager.checkRateLimit(player, "customTitleAction") then
+		return false, "Terlalu banyak permintaan, tunggu sebentar."
+	end
 	if type(titleData) ~= "table" then
 		return false, "Format data tidak valid."
 	end
@@ -271,12 +279,15 @@ applyCustomTitleRemote.OnServerInvoke = function(player, titleData)
 	-- Cancel any ongoing preview timer
 	activePreviews[userId] = nil
 
-	-- Roblox Text Filtering
-	local filteredTitle = rawTitle
-	pcall(function()
+	-- Roblox Text Filtering (wajib lolos sebelum disimpan ke DataStore & potongan kesempatan)
+	local filteredTitle = nil
+	local okFilter = pcall(function()
 		local filterResult = TextService:FilterStringAsync(rawTitle, userId)
 		filteredTitle = filterResult:GetNonChatStringForBroadcastAsync()
 	end)
+	if not okFilter or not filteredTitle then
+		return false, "Gagal memfilter teks title, silakan coba lagi.", chances, isUnlimited
+	end
 
 	local rawColor = titleData.Color
 	if typeof(rawColor) ~= "Color3" then

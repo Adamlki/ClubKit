@@ -126,13 +126,23 @@ _G.UpdateRobuxLeaderboard = function()
 	updateLeaderboard()
 end
 
--- ============================================
--- KETIKA CLIENT MEMINTA DATA (Saat Baru Masuk)
--- ============================================
+local clientBoardCooldown = {}
+
 updateTopBoardRemote.OnServerEvent:Connect(function(player)
+	if not player then return end
+	local now = os.clock()
+	if now - (clientBoardCooldown[player.UserId] or 0) < 15 then
+		return
+	end
+	clientBoardCooldown[player.UserId] = now
+
 	if cachedDonors and (cachedDonors.AllTime or #cachedDonors > 0) then
 		pcall(function()
 			updateTopBoardRemote:FireClient(player, cachedDonors)
 		end)
 	end
+end)
+
+game:GetService("Players").PlayerRemoving:Connect(function(player)
+	clientBoardCooldown[player.UserId] = nil
 end)

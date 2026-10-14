@@ -122,10 +122,24 @@ function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
-	-- Cari harga produk dari config
+	-- Cari harga produk dari config donasi board
 	local amount = DonationConfig.PRODUCT_PRICES[productId]
 	if not amount then
-		-- Jangan return NotProcessedYet! Buang receipt agar antrean Roblox tidak nyangkut permanen.
+		local giftCallback = registeredCallbacks["GiftSystem"]
+		if giftCallback then
+			local ok, success = pcall(function()
+				return giftCallback(player, productId, 0, receiptInfo)
+			end)
+			if ok and success == true then
+				markReceiptProcessed(purchaseId)
+				activeProcessing[purchaseId] = nil
+				return Enum.ProductPurchaseDecision.PurchaseGranted
+			elseif ok and success == false then
+				activeProcessing[purchaseId] = nil
+				return Enum.ProductPurchaseDecision.NotProcessedYet
+			end
+		end
+
 		warn("[RECEIPT] Unknown productId:", productId, "- clearing invalid receipt to prevent deadlock!")
 		activeProcessing[purchaseId] = nil
 		return Enum.ProductPurchaseDecision.PurchaseGranted

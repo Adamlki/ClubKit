@@ -97,13 +97,11 @@ end
 -- ============================================
 -- LEADERSTATS (TOTAL LIKES)
 -- ============================================
-Players.PlayerAdded:Connect(function(player)
+local function setupPlayer(player)
 	task.spawn(function()
-		-- Tunggu folder leaderstats yang dibuat oleh sistem lain
 		local leaderstats = player:WaitForChild("leaderstats", 15)
 		if not leaderstats then return end
 		
-		-- Buat stat Likes
 		local likeStat = leaderstats:FindFirstChild("Likes")
 		if not likeStat then
 			likeStat = Instance.new("IntValue")
@@ -112,14 +110,19 @@ Players.PlayerAdded:Connect(function(player)
 			likeStat.Parent = leaderstats
 		end
 		
-		-- Terus perbarui jika attribute TotalLikes berubah
 		player:GetAttributeChangedSignal("TotalLikes"):Connect(function()
-			if likeStat then
+			if likeStat and player.Parent then
 				likeStat.Value = player:GetAttribute("TotalLikes") or 0
 			end
 		end)
 	end)
-end)
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+	setupPlayer(player)
+end
+
+Players.PlayerAdded:Connect(setupPlayer)
 
 Players.PlayerRemoving:Connect(function(player)
 	likeDebounces[player.UserId] = nil

@@ -335,10 +335,10 @@ function RoleSystem:InvalidateOwnershipCache(userId)
 end
 
 function RoleSystem:HandlePlayerRemoving(userId)
+	groupCheckCooldown[userId] = nil
 	if playerOwnershipCache[userId] then
 		playerOwnershipCache[userId].DisconnectedAt = os.clock()
 		
-		-- Memory Leak Prevention: Hapus cache setelah 65 detik jika tidak rejoin
 		task.delay(65, function()
 			if playerOwnershipCache[userId] and playerOwnershipCache[userId].DisconnectedAt then
 				if os.clock() - playerOwnershipCache[userId].DisconnectedAt >= 60 then
@@ -612,8 +612,20 @@ if not checkGroupVIPRemote then
 	checkGroupVIPRemote.Parent = RemotesFolder
 end
 
+local groupCheckCooldown = {}
+
 if RunService:IsServer() then
 	checkGroupVIPRemote.OnServerInvoke = function(player)
+		if not player then return false, "Invalid player" end
+
+		local now = os.clock()
+		local lastCheck = groupCheckCooldown[player.UserId] or 0
+		if (now - lastCheck) < 30 then
+			local remaining = math.ceil(30 - (now - lastCheck))
+			return false, string.format("Mohon tunggu %d detik sebelum memeriksa kembali.", remaining)
+		end
+		groupCheckCooldown[player.UserId] = now
+
 		local targetGroupId = RoleSystem.Config.GroupId or 192828493
 		local isMember = false
 

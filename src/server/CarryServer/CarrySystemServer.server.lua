@@ -44,6 +44,7 @@ local pendingRequests = {} -- [targetUserId] = {carrier, style, time}
 local activeCarries   = {} -- bidirectional: [userId] = partnerUserId
 local savedPhysics    = {} -- [userId] = { [part] = {CanCollide, Massless} }
 local savedHumanoidStates = {} -- [userId] = {WalkSpeed, JumpPower, ...}
+local antiWeightConnections = {} -- [userId] = RBXScriptConnection
 
 -- ============================================
 -- UTILITY FUNCTIONS
@@ -287,7 +288,10 @@ local function startCarry(carrier, target, style)
 		applyCarriedState(tHum)
 
 		-- Anti-Glitch jika target mengeluarkan Tool saat digendong
-		local antiWeightConn = tChar.DescendantAdded:Connect(function(descendant)
+		if antiWeightConnections[target.UserId] then
+			antiWeightConnections[target.UserId]:Disconnect()
+		end
+		antiWeightConnections[target.UserId] = tChar.DescendantAdded:Connect(function(descendant)
 			if descendant:IsA("BasePart") then
 				descendant.Massless = true
 				descendant.CanCollide = false
@@ -315,13 +319,15 @@ local function startCarry(carrier, target, style)
 			if cleanupDone then return end
 			
 			-- Pastikan status carry masih aktif sebelum dibersihkan
-			-- Mencegah double-execution jika penggendong keluar dari game
 			if activeCarries[carrier.UserId] ~= target.UserId then return end
 			
 			cleanupDone = true
 
 			task.defer(function()
-				if antiWeightConn then antiWeightConn:Disconnect() end
+				if antiWeightConnections[target.UserId] then
+					antiWeightConnections[target.UserId]:Disconnect()
+					antiWeightConnections[target.UserId] = nil
+				end
 				
 				activeCarries[carrier.UserId] = nil
 				activeCarries[target.UserId]  = nil
@@ -398,6 +404,11 @@ local function endCarry(player1, player2)
 	local function cleanupSinglePlayer(player)
 		if not player then return end
 		activeCarries[player.UserId] = nil
+		
+		if antiWeightConnections[player.UserId] then
+			antiWeightConnections[player.UserId]:Disconnect()
+			antiWeightConnections[player.UserId] = nil
+		end
 		
 		local char, _, hum = getCharHRP(player)
 		if char then
@@ -655,6 +666,11 @@ Players.PlayerRemoving:Connect(function(player)
 
 	if player.Character then
 		clearCarryWeld(player.Character)
+	end
+
+	if antiWeightConnections[player.UserId] then
+		antiWeightConnections[player.UserId]:Disconnect()
+		antiWeightConnections[player.UserId] = nil
 	end
 
 	restorePhysics(player.UserId)

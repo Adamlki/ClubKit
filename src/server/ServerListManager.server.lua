@@ -237,14 +237,27 @@ local function getDiscoveryServers()
 	return list
 end
 
--- ============================================================
--- REMOTE CALLBACKS
--- ============================================================
+local serverListCooldown = {}
+local teleportCooldown = {}
+
 getServerListRF.OnServerInvoke = function(player)
+	if not player then return {} end
+	local now = os.clock()
+	if now - (serverListCooldown[player.UserId] or 0) < 5 then
+		return {}
+	end
+	serverListCooldown[player.UserId] = now
 	return getDiscoveryServers()
 end
 
 teleportToServerRF.OnServerInvoke = function(player, targetJobId)
+	if not player then return false, "Invalid player" end
+	local now = os.clock()
+	if now - (teleportCooldown[player.UserId] or 0) < 10 then
+		return false, "Mohon tunggu beberapa detik sebelum mencoba teleportasi lagi."
+	end
+	teleportCooldown[player.UserId] = now
+
 	if not targetJobId or targetJobId == actualJobId then
 		return false, "Anda sudah berada di dalam server ini."
 	end
@@ -264,5 +277,10 @@ teleportToServerRF.OnServerInvoke = function(player, targetJobId)
 
 	return true, "Sedang memindahkan Anda ke server..."
 end
+
+Players.PlayerRemoving:Connect(function(player)
+	serverListCooldown[player.UserId] = nil
+	teleportCooldown[player.UserId] = nil
+end)
 
 print("[ServerListManager] Initialized successfully.")

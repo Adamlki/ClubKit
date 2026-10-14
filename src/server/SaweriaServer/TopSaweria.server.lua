@@ -356,7 +356,16 @@ local function updateUIs()
 	end
 end
 
+local clientRequestCooldown = {}
+
 UpdateSaweriaEvent.OnServerEvent:Connect(function(plr)
+	if not plr then return end
+	local now = os.clock()
+	if now - (clientRequestCooldown[plr.UserId] or 0) < 15 then
+		return
+	end
+	clientRequestCooldown[plr.UserId] = now
+
 	if not cachedSaweriaPayload or not cachedSaweriaPayload.AllTime or #cachedSaweriaPayload.AllTime == 0 then
 		pcall(updateUIs)
 	end
@@ -365,6 +374,10 @@ UpdateSaweriaEvent.OnServerEvent:Connect(function(plr)
 			UpdateSaweriaEvent:FireClient(plr, cachedSaweriaPayload)
 		end)
 	end
+end)
+
+Players.PlayerRemoving:Connect(function(plr)
+	clientRequestCooldown[plr.UserId] = nil
 end)
 
 -- Export ke LeaderboardOrchestrator (Round-Robin centralized scheduler)

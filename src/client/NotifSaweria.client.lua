@@ -10,6 +10,7 @@ local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
 local RunService = game:GetService("RunService")
+local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
 
 local DEBUG_ENABLED = RunService:IsStudio()
 local DEBUG_PREFIX = "[SaweriaClientUI]"
@@ -45,20 +46,11 @@ notifFrame.Visible = false
 
 -- Format Rupiah dengan titik ribuan
 local function formatIDR(amount)
-	local formatted = tostring(math.floor(math.abs(amount)))
-	local k
-	while true do
-		formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", "%1.%2")
-		if k == 0 then break end
-	end
-	return formatted
+	return FormatUtils.formatNumber(math.abs(amount))
 end
 
 local function parseClientAmount(val)
-	if type(val) == "number" then return math.floor(val) end
-	if type(val) ~= "string" then return 0 end
-	local clean = val:gsub("%D", "")
-	return tonumber(clean) or 0
+	return FormatUtils.cleanNumber(val)
 end
 
 local function playSaweriaSound()

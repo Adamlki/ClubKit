@@ -12,6 +12,7 @@ local camera    = workspace.CurrentCamera
 
 local CinematicRemote      = RS:WaitForChild("CinematicRemote")
 local RequestDonationState = RS:WaitForChild("RequestDonationState")
+local FormatUtils          = require(RS:WaitForChild("Utils"):WaitForChild("FormatUtils"))
 
 -- ============================================================
 -- REFERENSI GUI (Pastikan script ini ada di dalam ScreenGui-nya)
@@ -76,13 +77,7 @@ local function toColor3(ct)
 end
 
 local function formatRupiah(amount)
-	local formatted = tostring(math.floor(tonumber(amount) or 0))
-	local k
-	while true do  
-		formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1.%2')
-		if k == 0 then break end
-	end
-	return "Rp " .. formatted
+	return FormatUtils.formatRupiah(amount)
 end
 
 local function resetCinematic()

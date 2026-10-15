@@ -9,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local SaweriaAPI = require(game:GetService("ServerStorage"):WaitForChild("Modules"):WaitForChild("SaweriaAPI"))
 local SaweriaScreenBoardHandler = require(script.Parent:WaitForChild("SaweriaScreenBoardHandler"))
+local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
 
 -- ========================================
 -- CONFIG & DEBUG SETTINGS
@@ -47,18 +48,7 @@ debugPrint("✅ Donation system initialized")
 -- FORMAT RUPIAH
 -- ========================================
 local function formatRupiah(amount)
-	local str = tostring(math.floor(amount))
-	local result = ""
-	local count = 0
-	for i = #str, 1, -1 do
-		if count == 3 then
-			result = "." .. result
-			count = 0
-		end
-		result = str:sub(i, i) .. result
-		count = count + 1
-	end
-	return "Rp " .. result
+	return FormatUtils.formatRupiah(amount)
 end
 
 -- ========================================

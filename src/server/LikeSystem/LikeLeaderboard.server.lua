@@ -2,6 +2,9 @@ local DataStoreService = game:GetService("DataStoreService")
 local UserService = game:GetService("UserService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
+
+local LeaderboardRegistry = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("LeaderboardRegistry"))
 
 local ORDERED_DATASTORE_NAME = "PlayerLikes_Ordered_v1"
 local MAX_PLAYERS = 30
@@ -233,7 +236,10 @@ Players.PlayerRemoving:Connect(function(player)
 	requestCooldowns[player.UserId] = nil
 end)
 
--- Export ke LeaderboardOrchestrator (Round-Robin centralized scheduler)
-_G.UpdateLikeLeaderboard = function()
+-- Export ke LeaderboardRegistry & LeaderboardOrchestrator
+local function refreshLikeLeaderboard()
 	pcall(updateLeaderboardBoard)
 end
+
+LeaderboardRegistry.register("Likes", refreshLikeLeaderboard)
+_G.UpdateLikeLeaderboard = refreshLikeLeaderboard

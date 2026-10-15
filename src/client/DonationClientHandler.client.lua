@@ -92,6 +92,10 @@ end
 -- ============================================
 -- POP-UP CONTROLLER
 -- ============================================
+local function closeFrame(frame)
+	frame.Visible = false
+end
+
 local function openFrame(frame)
 	frame.Visible = true
 	if frame == UI.mainFrame then
@@ -107,10 +111,6 @@ local function openFrame(frame)
 			pcall(function() donationIcon:deselect() end)
 		end
 	end
-end
-
-local function closeFrame(frame)
-	frame.Visible = false
 end
 
 _G.CloseRobuxDonation = function()

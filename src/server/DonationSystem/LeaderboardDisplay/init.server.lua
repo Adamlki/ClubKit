@@ -2,7 +2,9 @@
 --!optimize 2
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players           = game:GetService("Players")
+local ServerScriptService = game:GetService("ServerScriptService")
 
+local LeaderboardRegistry = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("LeaderboardRegistry"))
 local DonationLeaderboard = require(script.DonationLeaderboard)
 
 local REFRESH_INTERVAL = 120   -- detik antar refresh otomatis (dinaikkan ke 120 untuk mencegah rate limit)
@@ -120,11 +122,14 @@ function updateLeaderboard()
 	end
 end
 
--- Export ke LeaderboardOrchestrator (Round-Robin centralized scheduler)
-_G.UpdateRobuxLeaderboard = function()
+-- Export ke LeaderboardRegistry & LeaderboardOrchestrator
+local function refreshRobuxLeaderboard()
 	leaderboard:ClearCache()
 	updateLeaderboard()
 end
+
+LeaderboardRegistry.register("Robux", refreshRobuxLeaderboard)
+_G.UpdateRobuxLeaderboard = refreshRobuxLeaderboard
 
 local clientBoardCooldown = {}
 

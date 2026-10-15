@@ -8,6 +8,7 @@ local Players      = game:GetService("Players")
 local RS           = game:GetService("ReplicatedStorage")
 local TS           = game:GetService("TweenService")
 local SG           = game:GetService("StarterGui")
+local StringUtils  = require(RS:WaitForChild("Utils"):WaitForChild("StringUtils"))
 
 local player       = Players.LocalPlayer
 local playerGui    = player:WaitForChild("PlayerGui")
@@ -153,13 +154,7 @@ local function formatTime(seconds)
 end
 
 local function sanitizeHtml(text)
-	text = tostring(text or "")
-	text = text:gsub("&", "&amp;")
-	text = text:gsub("<", "&lt;")
-	text = text:gsub(">", "&gt;")
-	text = text:gsub('"', "&quot;")
-	text = text:gsub("'", "&apos;")
-	return text
+	return StringUtils.sanitizeHtml(text)
 end
 
 -- ====================================

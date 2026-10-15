@@ -7,6 +7,7 @@
 -- ============================================================
 
 local RunService = game:GetService("RunService")
+local LeaderboardRegistry = require(script.Parent:WaitForChild("Modules"):WaitForChild("LeaderboardRegistry"))
 
 local CONFIG = {
 	DEBUG_ENABLED = false,
@@ -27,43 +28,39 @@ local categories = {
 	{
 		name = "Robux Leaderboard (All-Time & Daily)",
 		execute = function()
-			if _G.UpdateRobuxLeaderboard then
-				_G.UpdateRobuxLeaderboard()
-			else
-				debugPrint("⚠️ _G.UpdateRobuxLeaderboard belum siap.")
+			local ok = LeaderboardRegistry.execute("Robux")
+			if not ok then
+				debugPrint("⚠️ Robux Leaderboard update handler belum siap.")
 			end
 		end
 	},
 	{
 		name = "Saweria Leaderboard (Top Donators)",
 		execute = function()
-			if _G.UpdateSaweriaLeaderboard then
-				_G.UpdateSaweriaLeaderboard()
-			else
-				debugPrint("⚠️ _G.UpdateSaweriaLeaderboard belum siap.")
+			local ok = LeaderboardRegistry.execute("Saweria")
+			if not ok then
+				debugPrint("⚠️ Saweria Leaderboard update handler belum siap.")
 			end
 		end
 	},
 	{
 		name = "Likes Leaderboard (Total & Daily)",
 		execute = function()
-			if _G.UpdateLikeLeaderboard then
-				_G.UpdateLikeLeaderboard()
-			else
-				debugPrint("⚠️ _G.UpdateLikeLeaderboard belum siap.")
+			local ok = LeaderboardRegistry.execute("Likes")
+			if not ok then
+				debugPrint("⚠️ Likes Leaderboard update handler belum siap.")
 			end
 		end
 	},
 	{
 		name = "Levels Leaderboard (Top Exp/Level)",
 		execute = function()
-			if _G.UpdateLevelLeaderboard then
-				_G.UpdateLevelLeaderboard()
-			else
-				debugPrint("⚠️ _G.UpdateLevelLeaderboard belum siap.")
+			local ok = LeaderboardRegistry.execute("Levels")
+			if not ok then
+				debugPrint("⚠️ Levels Leaderboard update handler belum siap.")
 			end
 		end
-	}
+	},
 }
 
 -- ============================================================

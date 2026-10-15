@@ -21,19 +21,13 @@ local function getLeaderboardBoard(boardName)
 	return workspace:FindFirstChild(boardName, true)
 end
 
+local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
+
 -- ==============================================================================
 -- NUMBER FORMATTING
 -- ==============================================================================
 local function formatThousands(num, separator)
-	separator = separator or ","
-	local val = math.floor(tonumber(num) or 0)
-	local str = tostring(val)
-	local k
-	while true do
-		str, k = string.gsub(str, "^(-?%d+)(%d%d%d)", "%1" .. separator .. "%2")
-		if k == 0 then break end
-	end
-	return str
+	return FormatUtils.formatNumber(num, separator or ",")
 end
 
 local UserService = game:GetService("UserService")

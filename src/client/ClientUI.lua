@@ -2,7 +2,10 @@ local TweenService    = game:GetService("TweenService")
 local StarterGui      = game:GetService("StarterGui")
 local TextChatService = game:GetService("TextChatService")
 local Players         = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
+local StringUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("StringUtils"))
 local ClientConfig = require(script.Parent:WaitForChild("ClientConfig"))
 
 local ClientUI = {}
@@ -37,25 +40,11 @@ function ClientUI.notify(title, text, duration)
 end
 
 function ClientUI.formatNumber(num)
-	num = tonumber(num) or 0
-	local formatted = tostring(num)
-	while true do
-		local k
-		formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", "%1.%2")
-		if k == 0 then break end
-	end
-	return formatted
+	return FormatUtils.formatNumber(num)
 end
 
 local function sanitizeHtml(text)
-	if not text then return "" end
-	text = tostring(text)
-	text = text:gsub("&", "&amp;")
-	text = text:gsub("<", "&lt;")
-	text = text:gsub(">", "&gt;")
-	text = text:gsub('"', "&quot;")
-	text = text:gsub("'", "&apos;")
-	return text
+	return StringUtils.sanitizeHtml(text)
 end
 
 -- ============================================

@@ -11,6 +11,7 @@ _G.__SaweriaDonationHandlerLoaded = true
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService      = game:GetService("TweenService")
+local FormatUtils       = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
 
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -57,14 +58,7 @@ local isOpen = false
 local saweriaIcon = nil
 
 local function formatNumber(num)
-	num = tonumber(num) or 0
-	local formatted = tostring(math.floor(num))
-	local k
-	while true do
-		formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", "%1.%2")
-		if k == 0 then break end
-	end
-	return formatted
+	return FormatUtils.formatNumber(num, ".")
 end
 
 -- ==============================================================================

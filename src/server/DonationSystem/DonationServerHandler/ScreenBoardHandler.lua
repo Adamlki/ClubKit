@@ -5,6 +5,8 @@ local TextService   = game:GetService("TextService")
 local workspace     = game:GetService("Workspace")
 
 local RunService    = game:GetService("RunService")
+local ServerScriptService = game:GetService("ServerScriptService")
+local ServerConfig = require(ServerScriptService:WaitForChild("Config"):WaitForChild("ServerConfig"))
 local DonationConfig = require(script.Parent.DonationConfig)
 
 -- ============================================
@@ -235,7 +237,8 @@ task.spawn(function()
 		displayname.Text = "RASA NADA (@rasanada)"
 		displaymessage.Text = DonationConfig.SCREEN_BOARD.DEFAULT_MESSAGE
 		if avatarImage then
-			avatarImage.Image = "rbxthumb://type=AvatarHeadShot&id=8978185974&w=420&h=420"
+			local ownerId = ServerConfig.GetPrimaryOwnerId()
+			avatarImage.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(ownerId) .. "&w=420&h=420"
 		end
 		debugLog("Screen board Robux diinisialisasi dengan pesan default")
 	else

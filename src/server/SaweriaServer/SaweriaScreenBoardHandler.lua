@@ -3,6 +3,13 @@ local TweenService = game:GetService("TweenService")
 local TextService = game:GetService("TextService")
 local RunService = game:GetService("RunService")
 local workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
+
+local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
+local ServerConfig = require(ServerScriptService:WaitForChild("Config"):WaitForChild("ServerConfig"))
+
+local SaweriaScreenBoardHandler = {}
 
 -- ============================================
 -- KONFIGURASI SAWERIA SCREEN BOARD
@@ -21,14 +28,7 @@ local CONFIG = {
 -- HELPER FORMAT RUPIAH
 -- ============================================
 local function formatRupiah(num)
-	local val = math.floor(tonumber(num) or 0)
-	local str = tostring(val)
-	local k
-	while true do
-		str, k = string.gsub(str, "^(-?%d+)(%d%d%d)", "%1.%2")
-		if k == 0 then break end
-	end
-	return str
+	return FormatUtils.formatNumber(num, ".")
 end
 
 -- ============================================
@@ -269,7 +269,8 @@ task.spawn(function()
 		displayname.Text = "RASA NADA (@rasanada)"
 		displaymessage.Text = CONFIG.DEFAULT_MESSAGE
 		if avatarImage then
-			avatarImage.Image = "rbxthumb://type=AvatarHeadShot&id=8978185974&w=420&h=420"
+			local ownerId = ServerConfig.GetPrimaryOwnerId()
+			avatarImage.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(ownerId) .. "&w=420&h=420"
 		end
 		print("[SaweriaScreenBoard] ✅ ScreenTextSaweria berhasil diinisialisasi dengan pesan default")
 	else
@@ -282,7 +283,8 @@ function SaweriaScreenBoardHandler:ResetToDefault()
 		displayname.Text = "RASA NADA (@rasanada)"
 		displaymessage.Text = CONFIG.DEFAULT_MESSAGE
 		if avatarImage then
-			avatarImage.Image = "rbxthumb://type=AvatarHeadShot&id=8978185974&w=420&h=420"
+			local ownerId = ServerConfig.GetPrimaryOwnerId()
+			avatarImage.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(ownerId) .. "&w=420&h=420"
 		end
 		print("[SaweriaScreenBoard] 🔄 ScreenTextSaweria di-reset ke template default")
 	end

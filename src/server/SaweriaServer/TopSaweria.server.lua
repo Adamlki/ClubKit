@@ -6,8 +6,11 @@ local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
 local RunService = game:GetService("RunService")
 local SaweriaAPI = require(game:GetService("ServerStorage"):WaitForChild("Modules"):WaitForChild("SaweriaAPI"))
+local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
+local LeaderboardRegistry = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("LeaderboardRegistry"))
 
 local IS_STUDIO = RunService:IsStudio()
 local UPDATE_INTERVAL = IS_STUDIO and 30 or 60 -- Interval aman 60s untuk mencegah lonjakan ping (network spike) & micro-freeze
@@ -27,13 +30,7 @@ local cacheCount = 0
 local MAX_CACHE_LIMIT = 500
 
 local function formatRupiah(amount)
-	local formatted = tostring(math.floor(tonumber(amount) or 0))
-	local k
-	while true do  
-		formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1.%2')
-		if k == 0 then break end
-	end
-	return "Rp " .. formatted
+	return FormatUtils.formatRupiah(amount)
 end
 
 local function getDonations()
@@ -54,9 +51,8 @@ local function aggregateDonations(donations, filterDate)
 		end
 		if include then
 			local name = d.donator or d.nama or d.Nama or "Anonymous"
-			local rawAmt = tostring(d.amount or d.jumlah or d.Jumlah or "0")
-			local cleanAmt = rawAmt:gsub("%D", "") 
-			local amt = tonumber(cleanAmt) or 0
+			local rawAmt = d.amount or d.jumlah or d.Jumlah or 0
+			local amt = FormatUtils.cleanNumber(rawAmt)
 			totals[name] = (totals[name] or 0) + amt
 		end
 	end
@@ -380,10 +376,13 @@ Players.PlayerRemoving:Connect(function(plr)
 	clientRequestCooldown[plr.UserId] = nil
 end)
 
--- Export ke LeaderboardOrchestrator (Round-Robin centralized scheduler)
-_G.UpdateSaweriaLeaderboard = function()
+-- Export ke LeaderboardRegistry & LeaderboardOrchestrator
+local function refreshSaweriaLeaderboard()
 	pcall(updateUIs)
 end
+
+LeaderboardRegistry.register("Saweria", refreshSaweriaLeaderboard)
+_G.UpdateSaweriaLeaderboard = refreshSaweriaLeaderboard
 
 -- Inisialisasi awal saat server baru menyala (agar client yang baru masuk langsung dapat data patung)
 task.spawn(function()

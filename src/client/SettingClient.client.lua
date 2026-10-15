@@ -4,15 +4,7 @@
 if _G.__SettingClientLoaded then return end
 _G.__SettingClientLoaded = true
 
-_G.HideDonationEffects = false
-_G.IsDonationEffectsHidden = function()
-	return _G.HideDonationEffects == true
-end
-_G.HideAdminNotif = false
-_G.HideDonationNotif = false
-_G.IsDonationNotifHidden = function()
-	return _G.HideDonationNotif == true
-end
+local ClientSettingsState = require(script.Parent:WaitForChild("Modules"):WaitForChild("ClientSettingsState"))
 
 -- ============================================
 -- CONFIGURATION
@@ -571,7 +563,7 @@ end
 -- ============================================
 function DonationEffectSystem:SetVisible(visible)
 	local shouldHide = not visible
-	_G.HideDonationEffects = shouldHide
+	ClientSettingsState.setDonationEffectsHidden(shouldHide)
 
 	-- 1. Sembunyikan/hancurkan objek donasi 3D di Workspace (DonationEffect tag)
 	for _, effect in ipairs(collectionService:GetTagged("DonationEffect")) do
@@ -686,11 +678,9 @@ end
 -- ============================================
 -- ADMIN NOTIFICATION SYSTEM
 -- ============================================
-_G.HideAdminNotif = false
-
 function AdminNotifSystem:SetVisible(visible)
 	local shouldHide = not visible
-	_G.HideAdminNotif = shouldHide
+	ClientSettingsState.setAdminNotifHidden(shouldHide)
 
 	if shouldHide then
 		local notifGui = playerGui:FindFirstChild("MessageNotifications")
@@ -713,7 +703,7 @@ end
 -- ============================================
 function DonationNotifSystem:SetVisible(visible)
 	local shouldHide = not visible
-	_G.HideDonationNotif = shouldHide
+	ClientSettingsState.setDonationNotifHidden(shouldHide)
 
 	if shouldHide then
 		-- 1. Sembunyikan notifikasi Saweria jika sedang tampil di layar

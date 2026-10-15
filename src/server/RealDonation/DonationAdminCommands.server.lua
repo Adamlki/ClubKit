@@ -10,6 +10,10 @@ local ServerStorage = game:GetService("ServerStorage")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TextChatService = game:GetService("TextChatService")
 local RunService = game:GetService("RunService")
+local ServerScriptService = game:GetService("ServerScriptService")
+
+local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
+local ServerConfig = require(ServerScriptService:WaitForChild("Config"):WaitForChild("ServerConfig"))
 
 -- ========== CONFIGURATION ==========
 local CONFIG = {
@@ -49,8 +53,8 @@ local function isOwner(player)
 		return true 
 	end
 
-	-- 2. Hardcoded Owner ID (Adamlki)
-	if player.UserId == 8978185974 then 
+	-- 2. Cek Owner terdaftar di ServerConfig
+	if ServerConfig.IsOwner(player.UserId) then 
 		return true 
 	end
 
@@ -89,9 +93,12 @@ local function hasStaffPermission(player)
 		return true 
 	end
 
-	-- 2. Hardcoded Owner / Staff ID
-	if player.UserId == 8978185974 or player.UserId == 7979929622 then 
+	-- 2. Cek Owner & Staff terdaftar di ServerConfig
+	if ServerConfig.IsOwner(player.UserId) then 
 		return true 
+	end
+	for _, adminId in ipairs(ServerConfig.AdminIds) do
+		if player.UserId == adminId then return true end
 	end
 
 	-- 3. Cek Pemilik Game (User / Group Rank >= 250)
@@ -273,7 +280,7 @@ local function handleSaweriaCommand(player, args)
 
 	if _G.TestSaweria then
 		_G.TestSaweria(donatorName, amount, message)
-		local formattedRp = tostring(amount):reverse():gsub("%d%d%d", "%1."):reverse():gsub("^%.", "")
+		local formattedRp = FormatUtils.formatNumber(amount, ".")
 		sendFeedback(player, "🧪 Fake Donate Sukses", string.format("%s • Rp %s\nPesan: '%s'", donatorName, formattedRp, message))
 		print(string.format("[ADMIN CMD] 🧪 Fake Saweria dipicu: %s | Rp %d | '%s'", donatorName, amount, message))
 	else

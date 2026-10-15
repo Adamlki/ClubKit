@@ -9,6 +9,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local RoleSystem    = require(ServerStorage.Modules.RoleSystem)
 local MessageConfig = require(script.AdminNotifConfig)
 local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
+local StringUtils   = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("StringUtils"))
 
 -- ====================================
 -- REMOTE SETUP
@@ -230,11 +231,7 @@ SendMessageRemote.OnServerEvent:Connect(function(player, message, isGlobal)
 	if type(message) ~= "string" then return end
 	if type(isGlobal) ~= "boolean" then isGlobal = false end
 
-	message = string.gsub(message, "&", "&amp;")
-	message = string.gsub(message, "<", "&lt;")
-	message = string.gsub(message, ">", "&gt;")
-	message = string.gsub(message, '"', "&quot;")
-	message = string.gsub(message, "'", "&apos;")
+	message = StringUtils.sanitizeHtml(message)
 
 	local isValid, errorMsg, role, trimmedMessage = validateMessage(player, message)
 

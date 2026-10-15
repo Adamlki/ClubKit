@@ -2,6 +2,9 @@ local Players            = game:GetService("Players")
 local UserService        = game:GetService("UserService")
 local ReplicatedStorage  = game:GetService("ReplicatedStorage")
 local ServerStorage      = game:GetService("ServerStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
+
+local LeaderboardRegistry = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("LeaderboardRegistry"))
 
 local DEBUG_ENABLED = false 
 local DEBUG_PREFIX = "[LevelBoard Server]"
@@ -182,7 +185,10 @@ task.spawn(function()
 	end
 end)
 
--- Export ke LeaderboardOrchestrator (Round-Robin centralized scheduler)
-_G.UpdateLevelLeaderboard = function()
+-- Export ke LeaderboardRegistry & LeaderboardOrchestrator
+local function updateLevelLeaderboard()
 	pcall(refreshLeaderboard)
-end
+end
+
+LeaderboardRegistry.register("Levels", updateLevelLeaderboard)
+_G.UpdateLevelLeaderboard = updateLevelLeaderboard

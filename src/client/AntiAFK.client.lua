@@ -1,14 +1,3 @@
---!strict
--- ============================================================
--- ANTI-AFK 24/7 AUTO-REJOIN & RESTORE POSITION (CLIENT)
--- ============================================================
--- Sistem murni berjalan di background (100% silent tanpa GUI).
--- Memantau aktivitas pemain (keyboard, mouse, touchscreen).
--- Pada menit ke-18 tidak ada aktivitas, otomatis me-rejoin
--- server dan mengembalikan posisi karakter sebelum batas
--- 20 menit Roblox (Error 278) tercapai.
--- ============================================================
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
@@ -20,18 +9,15 @@ local player = Players.LocalPlayer
 -- ============================================================
 local IDLE_THRESHOLD_SECONDS = 18 * 60 -- 18 Menit (1080 detik)
 
--- State
 local lastActivityTime = os.clock()
 local isRejoining = false
 
--- RemoteEvent Setup
 local remotesFolder = ReplicatedStorage:WaitForChild("Remotes", 10)
 local antiAFKRejoinEvent: RemoteEvent? = nil
 if remotesFolder then
 	antiAFKRejoinEvent = remotesFolder:WaitForChild("AntiAFKRejoin", 10) :: RemoteEvent?
 end
 
--- Bersihkan sisa GUI lama jika ada
 local playerGui = player:FindFirstChild("PlayerGui")
 if playerGui then
 	local oldGui = playerGui:FindFirstChild("AntiAfkGui")
@@ -63,6 +49,12 @@ local function executeRejoin()
 
 	if antiAFKRejoinEvent then
 		antiAFKRejoinEvent:FireServer()
+		-- ANTI-STUCK: lepas latch jika teleport gagal / simulasi Studio, supaya sistem bisa coba lagi
+		task.delay(90, function()
+			if isRejoining and player.Parent then
+				isRejoining = false
+			end
+		end)
 	else
 		warn("[AntiAFK] RemoteEvent AntiAFKRejoin tidak ditemukan di ReplicatedStorage.Remotes!")
 	end
@@ -85,7 +77,6 @@ UserInputService.InputChanged:Connect(function(input)
 	end
 end)
 
--- Cadangan deteksi via sinyal engine player.Idled
 player.Idled:Connect(function(timeIdled)
 	if timeIdled and timeIdled >= IDLE_THRESHOLD_SECONDS and not isRejoining then
 		executeRejoin()
@@ -109,10 +100,8 @@ task.spawn(function()
 end)
 
 -- ============================================================
--- TESTING TRIGGER (Opsional untuk Developer)
+-- TESTING TRIGGER (Developer)
 -- ============================================================
--- Bisa dipicu untuk pengetesan cepat via Console/Studio:
--- game.Players.LocalPlayer:SetAttribute("TestAFK", true)
 player:GetAttributeChangedSignal("TestAFK"):Connect(function()
 	if player:GetAttribute("TestAFK") == true then
 		player:SetAttribute("TestAFK", nil)

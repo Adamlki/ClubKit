@@ -1,16 +1,3 @@
---!strict
--- ============================================================
--- CUSTOM TITLE CLIENT (DRIVES MANUAL STARTERGUI INSTANCE)
--- ============================================================
--- Operates StarterGui.CustomTitleGui (Manual Studio GUI):
---   - No procedural/hardcoded Instance.new UI generation
---   - Text color ALWAYS pure white (Color3.fromRGB(255, 255, 255))
---   - 15 Color Presets in 3-column Grid (White, Black, Crimson Red, ...)
---   - 3x Chances quota saved in DataStore CustomTitleChances_V1
---   - "Cek Dulu (5s)": 5-second overhead preview, hides GUI, then reopens
---   - "Simpan Title": Deducts 1 chance and permanently saves to PlayerTitles_V4
--- ============================================================
-
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui        = game:GetService("StarterGui")
@@ -18,7 +5,6 @@ local StarterGui        = game:GetService("StarterGui")
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- References to Manual Studio GUI in PlayerGui
 local screenGui     = playerGui:WaitForChild("CustomTitleGui", 30)
 if not screenGui then return end
 local mainFrame     = screenGui:WaitForChild("MainFrame", 10)
@@ -52,7 +38,6 @@ local applyBtn       = actionRow:WaitForChild("ApplyBtn")
 local floatingToast  = screenGui:WaitForChild("FloatingToast")
 local toastText      = floatingToast:WaitForChild("ToastText")
 
--- State
 local state = {
 	title = "",
 	color = Color3.fromRGB(255, 255, 255),
@@ -64,14 +49,12 @@ local state = {
 	isPreviewing = false,
 }
 
--- Remotes
 local titleRemotes             = ReplicatedStorage:WaitForChild("TitleRemotes", 15)
 local getCustomTitleDataRemote = titleRemotes and titleRemotes:WaitForChild("GetCustomTitleData", 10)
 local previewCustomTitleRemote = titleRemotes and titleRemotes:WaitForChild("PreviewCustomTitle", 10)
 local previewEndedRemote       = titleRemotes and titleRemotes:WaitForChild("PreviewEnded", 10)
 local applyCustomTitleRemote   = titleRemotes and titleRemotes:WaitForChild("ApplyCustomTitle", 10)
 
--- Notification Helper
 local function showNotification(titleText, msgText, duration)
 	pcall(function()
 		StarterGui:SetCore("SendNotification", {
@@ -82,7 +65,6 @@ local function showNotification(titleText, msgText, duration)
 	end)
 end
 
--- Update Chances UI
 local function updateChancesUI()
 	local chanceIcon = chancesBadge:FindFirstChild("ChanceIcon")
 	if state.isUnlimited then
@@ -111,7 +93,6 @@ local function updateChancesUI()
 	end
 end
 
--- Update In-GUI Preview Banner (TEXT SELALU PUTIH BERSIH)
 local function updatePreviewBanner()
 	local displayText = state.title ~= "" and state.title or "CONTOH TITLE"
 	livePreviewText.Text = displayText
@@ -133,7 +114,6 @@ local function setColor(c)
 	updatePreviewBanner()
 end
 
--- Connect 15 Preset Buttons in EffectFrame Grid (0.3s debounce)
 local lastColorClick = 0
 for _, child in ipairs(effectFrame:GetChildren()) do
 	if child:IsA("TextButton") then
@@ -147,7 +127,6 @@ for _, child in ipairs(effectFrame:GetChildren()) do
 	end
 end
 
--- Manual RGB Inputs Handler
 local function updateFromRGBInputs()
 	local r = validateRGB(redBox.Text)
 	local g = validateRGB(greenBox.Text)
@@ -160,7 +139,6 @@ redBox:GetPropertyChangedSignal("Text"):Connect(updateFromRGBInputs)
 greenBox:GetPropertyChangedSignal("Text"):Connect(updateFromRGBInputs)
 blueBox:GetPropertyChangedSignal("Text"):Connect(updateFromRGBInputs)
 
--- Title Input Text Change
 entryTitle:GetPropertyChangedSignal("Text"):Connect(function()
 	local t = entryTitle.Text
 	if #t > 50 then
@@ -177,7 +155,6 @@ entryTitle:GetPropertyChangedSignal("Text"):Connect(function()
 	updatePreviewBanner()
 end)
 
--- Close Button Click (0.3s debounce)
 local lastCloseTitleClick = 0
 closeBtn.MouseButton1Click:Connect(function()
 	local now = os.clock()
@@ -187,9 +164,7 @@ closeBtn.MouseButton1Click:Connect(function()
 	mainFrame.Visible = false
 end)
 
--- ====================================
--- "CEK DULU" (5-SECOND PREVIEW) LOGIC
--- ====================================
+
 local previewDebounce = false
 local lastPreviewClick = 0
 previewBtn.MouseButton1Click:Connect(function()
@@ -209,14 +184,11 @@ previewBtn.MouseButton1Click:Connect(function()
 	previewDebounce = true
 	state.isPreviewing = true
 
-	-- 1. Otomatis sembunyikan GUI
 	mainFrame.Visible = false
 
-	-- 2. Tampilkan toast preview 5 detik
 	floatingToast.Visible = true
 	toastText.Text = "👁️ Title terpasang di kepalamu (5 detik)..."
 
-	-- 3. Kirim data preview ke server (Solid background, text selalu putih)
 	if previewCustomTitleRemote then
 		previewCustomTitleRemote:FireServer({
 			Title = state.title,
@@ -226,7 +198,6 @@ previewBtn.MouseButton1Click:Connect(function()
 		})
 	end
 
-	-- 4. Countdown 5 detik
 	task.spawn(function()
 		for sec = 5, 1, -1 do
 			toastText.Text = string.format("👁️ Title terpasang di kepalamu (%d detik)...", sec)
@@ -237,13 +208,11 @@ previewBtn.MouseButton1Click:Connect(function()
 		state.isPreviewing = false
 		previewDebounce = false
 
-		-- 5. Munculkan kembali GUI
 		mainFrame.Visible = true
 		showNotification("Preview Selesai", "Klik 'Simpan Title' jika kamu sudah cocok!", 4)
 	end)
 end)
 
--- Remote fallback when preview ends on server
 if previewEndedRemote then
 	previewEndedRemote.OnClientEvent:Connect(function()
 		if state.isPreviewing then
@@ -255,9 +224,7 @@ if previewEndedRemote then
 	end)
 end
 
--- ====================================
--- "SIMPAN TITLE" (APPLY) LOGIC
--- ====================================
+
 local applyDebounce = false
 local lastApplyClick = 0
 applyBtn.MouseButton1Click:Connect(function()
@@ -342,7 +309,6 @@ local function loadInitialData()
 	end
 end
 
--- Real-time Level listener from leaderstats
 local function setupLevelListener()
 	local leaderstats = player:FindFirstChild("leaderstats") or player:WaitForChild("leaderstats", 10)
 	if leaderstats then
@@ -366,7 +332,6 @@ task.spawn(loadInitialData)
 setColor(Color3.fromRGB(255, 255, 255))
 updateChancesUI()
 
--- Expose open/close for TopbarPlus
 _G.ToggleCustomTitleGui = function()
 	mainFrame.Visible = not mainFrame.Visible
 end

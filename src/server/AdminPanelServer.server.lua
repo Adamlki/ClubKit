@@ -224,4 +224,4 @@ UpdateSpotlightSettingsRemote.OnServerInvoke = function(sender, newSettings)
 			enabled and "AKTIF" or "NONAKTIF", minRobux, minSaweria
 		)
 	}
-end
+end

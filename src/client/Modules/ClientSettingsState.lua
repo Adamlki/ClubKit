@@ -1,10 +1,3 @@
---!strict
--- ============================================================
--- ClientSettingsState (Client Module)
--- Centralized reactive state for client settings & toggles
--- Maintains 100% backwards compatibility with _G flags
--- ============================================================
-
 local ClientSettingsState = {}
 
 local state = {
@@ -14,16 +7,14 @@ local state = {
 }
 
 local changeListeners: { (key: string, value: boolean) -> () } = {}
-
--- Sinkronisasi awal ke _G untuk kompatibilitas skrip legacy
 _G.HideDonationEffects = false
 _G.IsDonationEffectsHidden = function()
 	return state.HideDonationEffects == true
 end
 
 _G.HideAdminNotif = false
-
 _G.HideDonationNotif = false
+
 _G.IsDonationNotifHidden = function()
 	return state.HideDonationNotif == true
 end

@@ -13,8 +13,8 @@ local RoleSystem = require(ServerStorage:WaitForChild("Modules"):WaitForChild("R
 LevelSystem.Config = {
 	DATASTORE_NAME = "PlayerLevel_v1",
 	DATASTORE_PREFIX = "Level_",
-	DATASTORE_RETRY_ATTEMPTS = 3,
-	DATASTORE_RETRY_DELAY = 1,
+	DATASTORE_RETRY_ATTEMPTS = 5,
+	DATASTORE_RETRY_DELAY = 1.5,
 
 	-- Anti-Spam Save (Dalam Detik)
 	SAVE_COOLDOWN = 60,
@@ -49,6 +49,7 @@ local playerTimers = {}
 local activeConnections = {}
 local saveCooldowns = {}
 local loadingLocks = {}
+local activeSaves = {} -- FIX KELUAR-MASUK CEPAT: Tahan LoadPlayerLevel jika sesi sebelumnya sedang proses SetAsync
 local lastSyncedLevel = {} -- 100-PLAYER OPTIMIZATION: Cegah penulisan OrderedDataStore berulang jika level belum berubah
 
 -- ====================================
@@ -74,7 +75,7 @@ local function debugWarn(...)
 end
 
 -- ====================================
--- DATASTORE OPERATIONS (WITH RETRY)
+-- DATASTORE OPERATIONS (WITH EXPONENTIAL BACKOFF)
 -- ====================================
 local function datastoreGetAsync(key)
 	for attempt = 1, LevelSystem.Config.DATASTORE_RETRY_ATTEMPTS do
@@ -83,7 +84,7 @@ local function datastoreGetAsync(key)
 		end)
 		if success then return true, result end
 		if attempt < LevelSystem.Config.DATASTORE_RETRY_ATTEMPTS then
-			task.wait(LevelSystem.Config.DATASTORE_RETRY_DELAY)
+			task.wait(LevelSystem.Config.DATASTORE_RETRY_DELAY * attempt)
 		end
 	end
 	debugWarn("Failed to load data for key:", key)
@@ -97,7 +98,7 @@ local function datastoreSetAsync(key, value)
 		end)
 		if success then return true end
 		if attempt < LevelSystem.Config.DATASTORE_RETRY_ATTEMPTS then
-			task.wait(LevelSystem.Config.DATASTORE_RETRY_DELAY)
+			task.wait(LevelSystem.Config.DATASTORE_RETRY_DELAY * attempt)
 		end
 	end
 	debugWarn("Failed to save data for key:", key)
@@ -135,7 +136,7 @@ local function syncLeaderboard(player, level)
 				return
 			end
 			if attempt < LevelSystem.Config.DATASTORE_RETRY_ATTEMPTS then
-				task.wait(LevelSystem.Config.DATASTORE_RETRY_DELAY)
+				task.wait(LevelSystem.Config.DATASTORE_RETRY_DELAY * attempt)
 			end
 		end
 	end)
@@ -161,12 +162,23 @@ end
 -- ====================================
 function LevelSystem:LoadPlayerLevel(player)
 	local userId = player.UserId
+
+	-- FIX KELUAR-MASUK CEPAT / AUTO-REJOIN AFK:
+	-- Tunggu jika proses save dari sesi sebelumnya masih berjalan agar cache baru tidak terhapus!
+	local saveWait = 0
+	while activeSaves[userId] and saveWait < 10 do
+		saveWait += task.wait(0.1)
+	end
+
 	if playerLevelCache[userId] then
 		return playerLevelCache[userId].Level
 	end
 
 	if loadingLocks[userId] then
-		repeat task.wait(0.05) until not loadingLocks[userId]
+		local lockWait = 0
+		repeat
+			lockWait += task.wait(0.05)
+		until not loadingLocks[userId] or lockWait >= 15
 		if playerLevelCache[userId] then
 			return playerLevelCache[userId].Level
 		end
@@ -178,13 +190,40 @@ function LevelSystem:LoadPlayerLevel(player)
 	local success, data = datastoreGetAsync(key)
 	loadingLocks[userId] = nil
 
-	if not success then
-		player:Kick("\n[Server Error]\nGagal memuat data level Anda karena gangguan jaringan Roblox.\n\nSilakan coba lagi beberapa saat untuk mencegah data Anda hilang/ter-reset.")
+	if not player or not player.Parent then
+		debugWarn("Pemain keluar sebelum data selesai dimuat. Membatalkan inisialisasi memori.")
 		return self.Config.DEFAULT_LEVEL
 	end
 
-	if not player.Parent then
-		debugWarn("Pemain " .. player.Name .. " keluar sebelum data selesai dimuat. Membatalkan inisialisasi memori.")
+	-- FIX MASUK BARENGAN 100 PEMAIN:
+	-- Jangan langsung Kick pemain jika DataStore Roblox sedang padat/throttling!
+	-- Gunakan mode ReadOnlyFallback (tidak akan menimpa DataStore saat keluar sampai data asli berhasil dimuat di background).
+	if not success then
+		warn("[LevelSystem] DataStore sibuk saat memuat level " .. player.Name .. " - menggunakan mode aman (ReadOnlyFallback) tanpa Kick.")
+		playerLevelCache[userId] = {
+			Level = self.Config.DEFAULT_LEVEL,
+			TimeInGame = 0,
+			SessionStartTime = os.clock(),
+			IsFallback = true,
+		}
+		-- Coba muat ulang di background setelah 15 detik
+		task.delay(15, function()
+			if player and player.Parent and playerLevelCache[userId] and playerLevelCache[userId].IsFallback then
+				local okRetry, retryData = datastoreGetAsync(key)
+				if okRetry and player and player.Parent and playerLevelCache[userId] and playerLevelCache[userId].IsFallback then
+					local gainedLevels = playerLevelCache[userId].Level - self.Config.DEFAULT_LEVEL
+					local realLevel = (retryData and type(retryData) == "table" and retryData.Level) or self.Config.DEFAULT_LEVEL
+					local realTime = (retryData and type(retryData) == "table" and retryData.TimeInGame) or 0
+					playerLevelCache[userId].Level = realLevel + math.max(0, gainedLevels)
+					playerLevelCache[userId].TimeInGame = realTime
+					playerLevelCache[userId].IsFallback = false
+					lastSyncedLevel[userId] = playerLevelCache[userId].Level
+					local leaderstats = player:FindFirstChild("leaderstats")
+					local levelVal = leaderstats and leaderstats:FindFirstChild("Level")
+					if levelVal then levelVal.Value = playerLevelCache[userId].Level end
+				end
+			end
+		end)
 		return self.Config.DEFAULT_LEVEL
 	end
 
@@ -199,17 +238,20 @@ function LevelSystem:LoadPlayerLevel(player)
 	playerLevelCache[userId] = {
 		Level = level,
 		TimeInGame = timeInGame,
-		SessionStartTime = os.clock()
+		SessionStartTime = os.clock(),
+		IsFallback = false,
 	}
 	lastSyncedLevel[userId] = level
 	return level
 end
 
-function LevelSystem:SavePlayerLevel(player, forceSave)
+function LevelSystem:SavePlayerLevel(player, forceSave, snapshotCache)
 	local userId = player.UserId
-	local cache = playerLevelCache[userId]
+	local cache = snapshotCache or playerLevelCache[userId]
 
 	if not cache then return false end
+	-- Proteksi Data Loss: Jangan pernah timpa DataStore jika data asli gagal dimuat (IsFallback)
+	if cache.IsFallback then return false end
 
 	local lastSave = saveCooldowns[userId] or 0
 	if not forceSave and (os.clock() - lastSave) < self.Config.SAVE_COOLDOWN then
@@ -275,15 +317,13 @@ end
 -- ====================================
 local function startLevelTimer(player)
 	local userId = player.UserId
-	if playerTimers[userId] then return end
-
-	local running = true
-	playerTimers[userId] = running
+	local token = os.clock()
+	playerTimers[userId] = token
 
 	task.spawn(function()
-		while running and player.Parent and playerTimers[userId] do
+		while player.Parent and playerTimers[userId] == token do
 			task.wait(LevelSystem.Config.LEVEL_UP_INTERVAL)
-			if not running or not player.Parent or not playerTimers[userId] then break end
+			if not player.Parent or playerTimers[userId] ~= token then break end
 			LevelSystem:AddLevels(player, 1)
 		end
 	end)
@@ -291,11 +331,12 @@ end
 
 local function stopLevelTimer(player)
 	local userId = player.UserId
-	if playerTimers[userId] then playerTimers[userId] = nil end
+	playerTimers[userId] = nil
 end
 
 function LevelSystem:InitializePlayer(player)
 	local level = self:LoadPlayerLevel(player)
+	if not player or not player.Parent then return level end
 
 	local leaderstats = player:FindFirstChild("leaderstats") or Instance.new("Folder")
 	leaderstats.Name = "leaderstats"
@@ -315,7 +356,12 @@ end
 -- ====================================
 function LevelSystem:SetupCommands(player, roleSystem)
 	local userId = player.UserId
-	if not activeConnections[userId] then activeConnections[userId] = {} end
+	if activeConnections[userId] then
+		for _, conn in ipairs(activeConnections[userId]) do
+			conn:Disconnect()
+		end
+	end
+	activeConnections[userId] = {}
 
 	local connection = player.Chatted:Connect(function(message)
 		local args = string.split(message, " ")
@@ -362,11 +408,18 @@ function LevelSystem:GetStats()
 end
 
 -- ====================================
--- CLEANUP SYSTEM (ANTI MEMORY LEAK)
+-- CLEANUP SYSTEM (ANTI MEMORY LEAK & ANTI RACE CONDITION REJOIN)
 -- ====================================
 function LevelSystem:CleanupPlayer(player)
 	local userId = player.UserId
-	if not playerLevelCache[userId] then return end
+	local snapshot = playerLevelCache[userId]
+	if not snapshot then return end
+
+	-- Hapus cache dari tabel SEBELUM yielding SetAsync agar jika dipanggil 2x atau player rejoin cepat tidak bentrok!
+	playerLevelCache[userId] = nil
+	saveCooldowns[userId] = nil
+	loadingLocks[userId] = nil
+	stopLevelTimer(player)
 
 	if activeConnections[userId] then
 		for _, connection in ipairs(activeConnections[userId]) do
@@ -375,13 +428,11 @@ function LevelSystem:CleanupPlayer(player)
 		activeConnections[userId] = nil
 	end
 
-	stopLevelTimer(player)
-	self:SavePlayerLevel(player, true)
-
-	playerLevelCache[userId] = nil
-	saveCooldowns[userId] = nil
-	loadingLocks[userId] = nil
+	activeSaves[userId] = true
+	self:SavePlayerLevel(player, true, snapshot)
 	lastSyncedLevel[userId] = nil
+	saveCooldowns[userId] = nil
+	activeSaves[userId] = nil
 end
 
 Players.PlayerRemoving:Connect(function(player)

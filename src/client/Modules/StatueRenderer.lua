@@ -1,10 +1,3 @@
---!strict
--- ============================================================
--- StatueRenderer (ClubKit Client Module)
--- Unified podium avatar statue renderer for Top 3 Donators
--- (Supports Robux, Saweria, and any future leaderboards)
--- ============================================================
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
@@ -88,8 +81,6 @@ end
 
 function StatueRenderer:_findPosPart(rank: number): BasePart?
 	local targetName = self.config.posPrefix .. rank
-
-	-- 1. Cari di DonatorPositions
 	local folder = Workspace:FindFirstChild("DonatorPositions") or Workspace:FindFirstChild("DonatorPositions", true)
 	if folder then
 		local p = folder:FindFirstChild(targetName) or folder:FindFirstChild(targetName, true)
@@ -105,8 +96,6 @@ function StatueRenderer:_findPosPart(rank: number): BasePart?
 			if altPart and altPart:IsA("BasePart") then return altPart end
 		end
 	end
-
-	-- 2. Cari di workspace secara rekursif
 	local p = Workspace:FindFirstChild(targetName, true)
 	if p and p:IsA("BasePart") then return p end
 
@@ -134,7 +123,6 @@ function StatueRenderer:Update(rawTop3Data: any)
 		return
 	end
 
-	-- 1. Evaluasi cache untuk render ulang halus
 	for rank = 1, 3 do
 		local data = top3Data[rank]
 		if data then
@@ -150,7 +138,6 @@ function StatueRenderer:Update(rawTop3Data: any)
 			data.resolvedUserId = userId
 
 			if self.activeUserIds[rank] == userId and self.activeStatues[rank] then
-				-- Cache Hit: Perbarui UI saja
 				local head = self.activeStatues[rank]:FindFirstChild("Head")
 				if head then
 					local oldGui = head:FindFirstChildOfClass("BillboardGui")
@@ -161,7 +148,6 @@ function StatueRenderer:Update(rawTop3Data: any)
 					end
 				end
 			else
-				-- Cache Miss: Bersihkan patung lama
 				if self.activeStatues[rank] then
 					destroyStatue(self.activeStatues[rank])
 					self.activeStatues[rank] = nil
@@ -177,7 +163,6 @@ function StatueRenderer:Update(rawTop3Data: any)
 		end
 	end
 
-	-- 2. Rakit avatar baru secara bertahap (Staggered loading)
 	task.spawn(function()
 		local universalStartTime = Workspace:GetServerTimeNow()
 		for rank = 1, 3 do
@@ -290,7 +275,7 @@ function StatueRenderer:_connectRemote()
 			self:Update(data)
 		end)
 
-		-- Polling awal saat client load
+
 		task.spawn(function()
 			task.wait(1)
 			remote:FireServer()

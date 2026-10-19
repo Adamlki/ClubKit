@@ -1,3 +1,6 @@
+--!optimize 2
+--!native
+
 -- ============================================
 -- SINGLETON PROTECTION (Mencegah script & icon berjalan ganda)
 -- ============================================
@@ -182,7 +185,6 @@ clearProducts = function()
 	end
 	State.currentButtons = {}
 
-	-- Destroy any stray or duplicate product cards in container (except templateBtn)
 	for _, child in ipairs(UI.container:GetChildren()) do
 		if child:IsA("GuiObject") and child ~= UI.templateBtn and child.Name:match("^Product_") then
 			child:Destroy()
@@ -237,7 +239,6 @@ end
 -- MESSAGE FRAME LOGIC
 -- ============================================
 local function showMessageFrame(purchasedAmount)
-	-- Tutup frame donasi utama dan unselect topbar icon agar tidak tumpang tindih
 	closeFrame(UI.mainFrame)
 	if donationIcon and donationIcon.isSelected then
 		pcall(function() donationIcon:deselect() end)
@@ -266,7 +267,6 @@ local function showMessageFrame(purchasedAmount)
 end
 
 local function hideMessageFrame(cancelled)
-	-- Selalu tutup message frame dan reset state
 	State.canSendMessage = false
 	UI.messageFrame.Visible = false
 	closeFrame(UI.messageFrame)
@@ -279,14 +279,13 @@ local function hideMessageFrame(cancelled)
 
 	if cancelled and State.lastPurchasedAmount > 0 and not State.isSending then
 		debugLog("Pesan broadcast dibatalkan oleh player, mengirim pesan default...")
-		local amountToSend = State.lastPurchasedAmount
 		State.lastPurchasedAmount = 0
 		task.spawn(function()
 			local broadcastRemote = ReplicatedStorage:WaitForChild("BroadcastDonationMessage", 5)
 			if broadcastRemote then
 				local defaultMsg = ClientConfig.MESSAGE.DEFAULT_MESSAGE or "Welcome to RASA NADA"
 				pcall(function()
-					broadcastRemote:InvokeServer(defaultMsg, amountToSend)
+					broadcastRemote:InvokeServer(defaultMsg)
 				end)
 			end
 		end)
@@ -325,9 +324,8 @@ local function sendMessage()
 			return
 		end
 
-		local amountToSend = State.lastPurchasedAmount
 		local ok, success, err = pcall(function()
-			return broadcastRemote:InvokeServer(message, amountToSend)
+			return broadcastRemote:InvokeServer(message)
 		end)
 
 		State.isSending = false

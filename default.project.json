@@ -9,6 +9,69 @@
       "$path": "src/shared",
       "$ignoreUnknownInstances": true
     },
+    "StarterGui": {
+      "$ignoreUnknownInstances": true,
+      "AdminPanel": {
+        "$className": "ScreenGui",
+        "$ignoreUnknownInstances": true,
+        "AdminPanelHandler": {
+          "$path": "src/starterGui_scripts/AdminPanel/AdminPanelHandler.client.lua"
+        }
+      },
+      "CarryGui": {
+        "$className": "ScreenGui",
+        "$ignoreUnknownInstances": true,
+        "CarryHandler": {
+          "$path": "src/starterGui_scripts/CarryGui/CarryHandler.client.lua"
+        }
+      },
+      "GamepassShop": {
+        "$className": "ScreenGui",
+        "$ignoreUnknownInstances": true,
+        "MainClient": {
+          "$path": "src/starterGui_scripts/GamepassShop/MainClient"
+        }
+      },
+      "Level4Donation": {
+        "$className": "ScreenGui",
+        "$ignoreUnknownInstances": true,
+        "Level4DonationHandler": {
+          "$path": "src/starterGui_scripts/Level4Donation/Level4DonationHandler.client.lua"
+        }
+      },
+      "MobileFreecam": {
+        "$className": "ScreenGui",
+        "$ignoreUnknownInstances": true,
+        "FreecamScript": {
+          "$path": "src/starterGui_scripts/MobileFreecam/FreecamScript.client.lua"
+        }
+      },
+      "MyHat": {
+        "$className": "ScreenGui",
+        "$ignoreUnknownInstances": true,
+        "MyhatHandler": {
+          "$path": "src/starterGui_scripts/MyHat/MyhatHandler.client.lua"
+        }
+      },
+      "PlayerMenuHandler": {
+        "$className": "ScreenGui",
+        "$ignoreUnknownInstances": true,
+        "PlayerMenuHandler": {
+          "$path": "src/starterGui_scripts/PlayerMenuHandler/PlayerMenuHandler.client.lua"
+        }
+      },
+      "SultanNotifGui": {
+        "$className": "ScreenGui",
+        "$ignoreUnknownInstances": true,
+        "MainFrame": {
+          "$className": "Frame",
+          "$ignoreUnknownInstances": true,
+          "NotifController": {
+            "$path": "src/starterGui_scripts/SultanNotifGui/MainFrame/NotifController.client.lua"
+          }
+        }
+      }
+    },
     "ServerScriptService": {
       "$path": "src/server",
       "$ignoreUnknownInstances": true

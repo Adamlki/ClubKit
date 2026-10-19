@@ -287,19 +287,11 @@ function module.handleSyncRequest(player, targetPlayer, condition, loadedAnimati
 			local oldTargetName = player.Character and player.Character:GetAttribute("Syncing")
 
 			if player.Character then
-				local leaderChar = trueLeaderOfTarget.Character
-				local leaderDanceId = leaderChar and leaderChar:GetAttribute("CurrentDanceID")
-				local leaderStartTime = leaderChar and leaderChar:GetAttribute("DanceStartTime")
-				local leaderSpeed = leaderChar and leaderChar:GetAttribute("DanceSpeed")
-
-				if leaderDanceId and leaderDanceId ~= "" then
-					safeSetAttr(player.Character, "CurrentDanceID", leaderDanceId)
-					safeSetAttr(player.Character, "DanceStartTime", leaderStartTime or workspace:GetServerTimeNow())
-					safeSetAttr(player.Character, "DanceSpeed", leaderSpeed or 1)
-				else
-					safeSetAttr(player.Character, "CurrentDanceID", nil)
-					safeSetAttr(player.Character, "DanceStartTime", nil)
-				end
+				-- FIX 100+ PLAYERS SYNC DANCE: Bersihkan CurrentDanceID/DanceStartTime/DanceSpeed pada Follower
+				-- agar Single Source of Truth selalu dibaca langsung dari karakter Leader saat Leader ganti dance/speed!
+				safeSetAttr(player.Character, "CurrentDanceID", nil)
+				safeSetAttr(player.Character, "DanceStartTime", nil)
+				safeSetAttr(player.Character, "DanceSpeed", nil)
 				player.Character:SetAttribute("Syncing", trueLeaderOfTarget.Name)
 			end
 
@@ -332,3 +324,4 @@ function module.handleSyncRequest(player, targetPlayer, condition, loadedAnimati
 end
 
 return module
+

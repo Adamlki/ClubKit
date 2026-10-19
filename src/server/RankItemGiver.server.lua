@@ -1,7 +1,5 @@
 -- ====================================
--- RANK ITEM GIVER SYSTEM (SERVER-GRADE OPTIMIZED)
--- Opsi A: Event-Driven (Tanpa Loop, Bebas Lag)
--- Place in ServerScriptService
+-- RANK ITEM GIVER SYSTEM
 -- ====================================
 
 local ServerStorage = game:GetService("ServerStorage")
@@ -16,10 +14,8 @@ local RoleSystem = require(ServerStorage.Modules.RoleSystem)
 -- CONFIGURATION
 -- ====================================
 local Config = {
-	-- Debug mode (set false untuk disable semua debug message)
 	DebugMode = false,
 
-	-- Daftar item berdasarkan rank
 	RankItems = {
 		{
 			Name = "AFK",
@@ -69,18 +65,15 @@ local function debugPrint(...)
 	end
 end
 
--- Mengecek apakah player memiliki rank minimum
 local function hasMinimumRank(player, minimumHierarchy)
 	local playerRole = RoleSystem:GetPlayerRole(player)
 	local playerHierarchy = RoleSystem.Config.RoleHierarchy[playerRole] or 0
 	return playerHierarchy >= minimumHierarchy
 end
 
--- Membersihkan SEMUA item ganda/duplikat dari Backpack & Tangan pemain
 local function cleanAllDuplicates(player, itemName)
 	local removed = 0
 
-	-- Hapus dari backpack
 	if player.Backpack then
 		for _, item in ipairs(player.Backpack:GetChildren()) do
 			if item.Name == itemName and item:IsA("Tool") then
@@ -90,7 +83,6 @@ local function cleanAllDuplicates(player, itemName)
 		end
 	end
 
-	-- Hapus dari character (tangan / sedang di-equip)
 	if player.Character then
 		for _, item in ipairs(player.Character:GetChildren()) do
 			if item.Name == itemName and item:IsA("Tool") then
@@ -105,8 +97,6 @@ local function cleanAllDuplicates(player, itemName)
 	end
 end
 
--- 🔥 NETWORK OPTIMIZATION: Buat semua part di tool seringan mungkin
--- Agar Roblox engine tidak replicate physics state yang tidak perlu
 local function optimizeToolPhysics(tool)
 	for _, descendant in ipairs(tool:GetDescendants()) do
 		if descendant:IsA("BasePart") then
@@ -118,15 +108,13 @@ local function optimizeToolPhysics(tool)
 	end
 end
 
--- Fungsi utama memberikan item ke player (DIJAMIN TIDAK GANDA)
+
 local function giveItemToPlayer(player, itemConfig)
 	if not player or not player.Backpack then return end
 	if not itemConfig.Path or not itemConfig.Path.Parent then return end
 
-	-- 1. MUSNAHKAN SEMUA ITEM LAMA TERLEBIH DAHULU (Anti-Ganda)
 	cleanAllDuplicates(player, itemConfig.Name)
 
-	-- 2. BERIKAN 1 ITEM BARU (dengan optimasi fisik)
 	local itemClone = itemConfig.Path:Clone()
 	optimizeToolPhysics(itemClone)
 	itemClone.Parent = player.Backpack
@@ -134,16 +122,13 @@ local function giveItemToPlayer(player, itemConfig)
 	debugPrint(string.format("Gave %s to %s (Rank: %s)", itemConfig.Name, player.Name, RoleSystem:GetPlayerRole(player)))
 end
 
--- Mengecek dan membagikan semua item sesuai hak pemain
 local function checkAndGiveItems(player)
 	if not player or not player.Parent then return end
 
 	for _, itemConfig in ipairs(Config.RankItems) do
 		if hasMinimumRank(player, itemConfig.MinimumHierarchy) then
-			-- Jika rank cukup, berikan itemnya
 			giveItemToPlayer(player, itemConfig)
 		else
-			-- Jika rank tidak cukup (misal VIPnya dicabut), tarik/musnahkan itemnya
 			cleanAllDuplicates(player, itemConfig.Name)
 		end
 	end
@@ -154,18 +139,16 @@ end
 -- ====================================
 
 local function onPlayerAdded(player)
-	-- Initialize role
 	RoleSystem:InitializePlayer(player)
 
-	-- Setiap kali pemain Spawn / Respawn / Mati lalu hidup lagi
 	player.CharacterAdded:Connect(function(character)
-		-- WAJIB: Tunggu sampai Roblox selesai meload penampilan asli (baju, dll)
-		if not player:HasAppearanceLoaded() then
-			player.CharacterAppearanceLoaded:Wait()
+		local waited = 0
+		while not player:HasAppearanceLoaded() and player.Parent and waited < 5 do
+			waited += task.wait(0.2)
 		end
 		
-		-- Beri jeda sedikit tambahan agar Backpack & UI selesai loading sepenuhnya
-		task.wait(0.5) 
+		task.wait(0.5)
+		if not player or not player.Parent or not character or not character.Parent then return end
 		checkAndGiveItems(player)
 	end)
 end
@@ -174,7 +157,6 @@ end
 -- ROLE CHANGE HANDLER
 -- ====================================
 
--- Jika pemain tiba-tiba beli role / diubah rolenya oleh Admin di tengah permainan
 RoleSystem.RoleChanged:Connect(function(player, oldRole, newRole)
 	debugPrint(string.format("Role changed: %s (%s -> %s)", player.Name, oldRole, newRole))
 
@@ -188,14 +170,11 @@ end)
 -- INITIALIZATION
 -- ====================================
 
--- Daftarkan pemain yang baru masuk
 Players.PlayerAdded:Connect(onPlayerAdded)
 
--- Jika script ini baru di-save/update saat game sedang berjalan (Testing di Studio)
 for _, player in ipairs(Players:GetPlayers()) do
 	task.spawn(function()
 		onPlayerAdded(player)
-		-- Paksa berikan item jika karakter pemain sudah terlanjur spawn
 		if player.Character then
 			task.spawn(function()
 				task.wait(0.5)

@@ -6,7 +6,44 @@ local ServerStorage = game:GetService("ServerStorage")
 local RoleSystem = require(ServerStorage.Modules.RoleSystem)
 
 local GiftManager = {}
-local pendingGifts = {} -- Memori sementara: [GiverUserId] = {TargetId, GiftType}
+local pendingGifts = {} -- Memori sementara: [GiverUserId] = {TargetId, GiftType, Timestamp}
+local GIFT_INTENT_TTL = 15 * 60 -- detik; data gift yang lebih tua dari ini dianggap basi
+
+local function findGiftTypeForProduct(productId)
+	if not RoleSystem.Config.GiftProducts then return nil end
+	for gType, prodId in pairs(RoleSystem.Config.GiftProducts) do
+		if prodId == productId then
+			return gType
+		end
+	end
+	return nil
+end
+
+-- Target hanya valid jika konteksnya cocok dengan produk yang benar-benar dibeli
+local function resolveGiftTarget(player, matchedGiftType)
+	local giftData = pendingGifts[player.UserId]
+	if giftData and giftData.GiftType == matchedGiftType
+		and (os.time() - (giftData.Timestamp or 0)) <= GIFT_INTENT_TTL then
+		return giftData.TargetId
+	end
+
+	local attrTarget = player:GetAttribute("PendingGiftTarget")
+	local attrType = player:GetAttribute("PendingGiftType")
+	local attrTime = player:GetAttribute("PendingGiftTime") or 0
+	if attrTarget and attrType == matchedGiftType
+		and (os.time() - attrTime) <= GIFT_INTENT_TTL then
+		return attrTarget
+	end
+
+	return nil
+end
+
+local function clearGiftContext(player)
+	pendingGifts[player.UserId] = nil
+	player:SetAttribute("PendingGiftTarget", nil)
+	player:SetAttribute("PendingGiftType", nil)
+	player:SetAttribute("PendingGiftTime", nil)
+end
 
 function GiftManager:Init(ProcessReceiptHandler)
 	local remotesFolder = ReplicatedStorage:WaitForChild("Remotes")
@@ -15,7 +52,9 @@ function GiftManager:Init(ProcessReceiptHandler)
 	promptGiftEvent.Parent = remotesFolder
 
 	promptGiftEvent.OnServerEvent:Connect(function(giver, targetPlayer, giftType)
-		if not giver or not targetPlayer or not targetPlayer.Parent then return end
+		if not giver or not giver.Parent then return end
+		if typeof(targetPlayer) ~= "Instance" or not targetPlayer:IsA("Player") then return end
+		if not targetPlayer.Parent then return end
 		if giver == targetPlayer then return end
 		if not RoleSystem.Config.GiftProducts or not RoleSystem.Config.GiftProducts[giftType] then return end
 
@@ -27,51 +66,33 @@ function GiftManager:Init(ProcessReceiptHandler)
 
 		giver:SetAttribute("PendingGiftTarget", targetPlayer.UserId)
 		giver:SetAttribute("PendingGiftType", giftType)
+		giver:SetAttribute("PendingGiftTime", os.time())
 
 		MarketplaceService:PromptProductPurchase(giver, RoleSystem.Config.GiftProducts[giftType])
 	end)
 
 	ProcessReceiptHandler:RegisterCallback("GiftSystem", function(player, productId, amount, receiptInfo)
-		local isGiftProduct = false
-		local matchedGiftType = nil
-		if RoleSystem.Config.GiftProducts then
-			for gType, prodId in pairs(RoleSystem.Config.GiftProducts) do
-				if prodId == productId then
-					isGiftProduct = true
-					matchedGiftType = gType
-					break
-				end
-			end
+		local matchedGiftType = findGiftTypeForProduct(productId)
+		if not matchedGiftType then
+			return nil -- bukan produk gift; biarkan ProcessReceiptHandler memutuskan
 		end
 
-		-- Jika bukan produk Gift, return nil agar ProcessReceiptHandler tahu ini unknown productId
-		if not isGiftProduct then
-			return nil
-		end
-
-		local giverId = player.UserId
-		local giftData = pendingGifts[giverId]
-
-		local targetId = (giftData and giftData.TargetId) or player:GetAttribute("PendingGiftTarget")
-		local giftType = (giftData and giftData.GiftType) or player:GetAttribute("PendingGiftType") or matchedGiftType or "VIP"
+		local targetId = resolveGiftTarget(player, matchedGiftType)
 
 		if targetId then
-			local success = RoleSystem:GivePassToPlayer(targetId, giftType, giverId)
+			local success = RoleSystem:GivePassToPlayer(targetId, matchedGiftType, player.UserId)
 			if success then
-				pendingGifts[giverId] = nil
-				player:SetAttribute("PendingGiftTarget", nil)
-				player:SetAttribute("PendingGiftType", nil)
+				clearGiftContext(player)
 				return true
 			end
-			return false
+			return false -- DataStore gagal — biarkan Roblox retry
 		end
 
-		-- Fallback jika targetId hilang (mis. pembeli disconnect sebelum memilih target): berikan ke pembeli sendiri agar Robux tidak hangus
-		local fallbackSuccess = RoleSystem:GivePassToPlayer(giverId, giftType, giverId)
-		if fallbackSuccess then
-			pendingGifts[giverId] = nil
-			return true
-		end
+		-- Tidak ada target valid untuk produk ini: JANGAN berikan ke pembeli sendiri.
+		-- Tahan receipt (NotProcessedYet) supaya produk gift tidak bisa dibeli tanpa target.
+		warn(string.format(
+			"[GiftManager] ⚠️ Gift receipt tanpa target valid | userId: %d | productId: %d | purchaseId: %s — receipt DITAHAN (NotProcessedYet).",
+			player.UserId, productId, tostring(receiptInfo and receiptInfo.PurchaseId)))
 		return false
 	end)
 

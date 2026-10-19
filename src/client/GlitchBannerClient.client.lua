@@ -1,35 +1,20 @@
--- ==============================================================================
--- GLITCH BANNER CLIENT (CYBERPUNK TV SLIDESHOW)
--- Menampilkan slideshow gambar di ModelTV (GlitchFoto) dengan efek glitch transisi.
--- ==============================================================================
--- 💡 PETUNJUK PENGGUNA:
--- Untuk menambah atau mengurangi foto, cukup edit daftar ID di bawah ini (IMAGE_LIST).
--- Anda bisa memasukkan format "rbxassetid://123456" atau hanya angka saja "123456".
--- Tidak perlu mengubah kode apapun di bawahnya!
--- ==============================================================================
+
 
 local IMAGE_LIST = {
-	"rbxassetid://85415938671065",  -- Foto 1: Valor House Banner
-	"rbxassetid://89819761494578", -- Foto 2: Poster
-	"rbxassetid://107557873401344", -- Foto 3: Floor Set Artwork
-	-- Tambahkan foto Anda berikutnya di sini, contoh:
-	-- "rbxassetid://ID_FOTO_BARU",
+	"rbxassetid://85415938671065",
+	"rbxassetid://89819761494578",
+	"rbxassetid://107557873401344",
 }
 
--- Durasi tiap foto tampil sebelum berganti (dalam detik)
 local DISPLAY_DURATION = 6
 
--- Durasi efek glitch saat pergantian gambar (dalam detik)
 local GLITCH_DURATION = 0.35
 
--- ==============================================================================
--- LOGIKA INTERNAL & SINKRONISASI
--- ==============================================================================
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local ContentProvider = game:GetService("ContentProvider")
 
--- Format ID gambar otomatis jika pengguna hanya mengetik angka
+
 local function normalizeAssetId(raw)
 	if not raw then return "" end
 	local s = tostring(raw):gsub("%s+", "")
@@ -43,7 +28,6 @@ local function normalizeAssetId(raw)
 	return s
 end
 
--- Preload gambar agar saat transisi tidak blank / loading
 task.spawn(function()
 	local preloadInstances = {}
 	for _, id in ipairs(IMAGE_LIST) do
@@ -59,7 +43,6 @@ task.spawn(function()
 	end
 end)
 
--- Mencari instance target di Workspace
 local function findBannerElements()
 	local glitchModel = workspace:FindFirstChild("GlitchFoto", true)
 	if not glitchModel then return nil end
@@ -72,7 +55,6 @@ local function findBannerElements()
 	return root, mainImage
 end
 
--- Menyiapkan Layer Efek Glitch di dalam BannerRoot
 local function setupGlitchLayers(root, mainImage)
 	local container = root:FindFirstChild("GlitchFXContainer")
 	if container then return container end
@@ -86,7 +68,6 @@ local function setupGlitchLayers(root, mainImage)
 	container.ZIndex = 5
 	container.Parent = root
 
-	-- 1. Layer Red / Magenta (Chromatic Aberration)
 	local redLayer = Instance.new("ImageLabel")
 	redLayer.Name = "GlitchRed"
 	redLayer.Size = UDim2.new(1, 0, 1, 0)
@@ -99,7 +80,6 @@ local function setupGlitchLayers(root, mainImage)
 	redLayer.ZIndex = 6
 	redLayer.Parent = container
 
-	-- 2. Layer Cyan / Blue (Chromatic Aberration)
 	local cyanLayer = Instance.new("ImageLabel")
 	cyanLayer.Name = "GlitchCyan"
 	cyanLayer.Size = UDim2.new(1, 0, 1, 0)
@@ -112,7 +92,6 @@ local function setupGlitchLayers(root, mainImage)
 	cyanLayer.ZIndex = 7
 	cyanLayer.Parent = container
 
-	-- 3. White Flash Overlay
 	local flash = Instance.new("Frame")
 	flash.Name = "GlitchFlash"
 	flash.Size = UDim2.new(1, 0, 1, 0)
@@ -121,7 +100,6 @@ local function setupGlitchLayers(root, mainImage)
 	flash.ZIndex = 8
 	flash.Parent = container
 
-	-- 4. Horizontal Slices / Tear Bars (Cyberpunk Scanline Jitter)
 	local slices = {}
 	for i = 1, 4 do
 		local slice = Instance.new("Frame")
@@ -138,7 +116,6 @@ local function setupGlitchLayers(root, mainImage)
 	return container
 end
 
--- Fungsi Animasi Glitch saat berpindah ke gambar baru
 local isGlitching = false
 local function playGlitchTransition(root, mainImage, nextImageId)
 	if isGlitching then return end
@@ -159,7 +136,6 @@ local function playGlitchTransition(root, mainImage, nextImageId)
 	local halfDuration = GLITCH_DURATION * 0.45
 	local swapped = false
 
-	-- Persiapkan gambar layer aberasi
 	if redLayer then redLayer.Image = mainImage.Image end
 	if cyanLayer then cyanLayer.Image = mainImage.Image end
 
@@ -174,17 +150,14 @@ local function playGlitchTransition(root, mainImage, nextImageId)
 			if cyanLayer then cyanLayer.Image = nextImageId end
 		end
 
-		-- Hitung intensitas getar (peak di tengah, memudar di akhir)
 		local intensity = 1 - math.abs(progress - 0.5) * 2
 		local maxOffset = 28 * intensity
 
-		-- Jitter posisi gambar utama
 		mainImage.Position = UDim2.new(
 			0.5, math.random(-maxOffset, maxOffset),
 			0.5, math.random(-maxOffset * 0.4, maxOffset * 0.4)
 		)
 
-		-- Jitter layer aberasi warna merah & cyan
 		if redLayer then
 			redLayer.Position = UDim2.new(
 				0.5, math.random(-maxOffset * 1.4, maxOffset * 1.4),
@@ -201,7 +174,6 @@ local function playGlitchTransition(root, mainImage, nextImageId)
 			cyanLayer.ImageTransparency = math.clamp(1 - (intensity * 0.65), 0.35, 1)
 		end
 
-		-- Flash putih samar acak
 		if flash then
 			if math.random() > 0.65 and intensity > 0.3 then
 				flash.BackgroundTransparency = math.random(85, 95) / 100
@@ -210,7 +182,6 @@ local function playGlitchTransition(root, mainImage, nextImageId)
 			end
 		end
 
-		-- Garis slice / tearing acak
 		for _, slice in ipairs(slices) do
 			if math.random() > 0.4 and intensity > 0.25 then
 				slice.Position = UDim2.new(
@@ -228,7 +199,6 @@ local function playGlitchTransition(root, mainImage, nextImageId)
 		RunService.RenderStepped:Wait()
 	end
 
-	-- Reset & stabilkan tampilan kembali ke normal
 	mainImage.Position = UDim2.new(0.5, 0, 0.5, 0)
 	mainImage.Image = nextImageId
 	mainImage.ImageTransparency = 0
@@ -243,12 +213,7 @@ local function playGlitchTransition(root, mainImage, nextImageId)
 
 	isGlitching = false
 end
-
--- ==============================================================================
--- MAIN LOOP (Tersinkronisasi Antar Semua Pemain via GetServerTimeNow)
--- ==============================================================================
 task.spawn(function()
-	-- Tunggu hingga instance ModelTV & ImageLabel ter-load di workspace
 	local root, mainImage
 	while not mainImage do
 		root, mainImage = findBannerElements()
@@ -262,24 +227,20 @@ task.spawn(function()
 	while true do
 		task.wait(1.0)
 
-		-- Pastikan target masih valid
 		if not mainImage or not mainImage.Parent then
 			root, mainImage = findBannerElements()
 		end
 
 		if mainImage and #IMAGE_LIST > 0 then
-			-- Waktu global server yang seragam untuk semua pemain
 			local serverTime = workspace:GetServerTimeNow()
 			local currentCycle = math.floor(serverTime / DISPLAY_DURATION)
 			local imageIndex = (currentCycle % #IMAGE_LIST) + 1
 			local targetImage = normalizeAssetId(IMAGE_LIST[imageIndex])
 
 			if lastCycleIndex == -1 then
-				-- Pertama kali pemain bergabung: langsung set gambar saat ini tanpa glitch
 				lastCycleIndex = currentCycle
 				mainImage.Image = targetImage
 			elseif lastCycleIndex ~= currentCycle then
-				-- Waktu berganti: picu efek glitch transisi!
 				lastCycleIndex = currentCycle
 				if #IMAGE_LIST > 1 then
 					playGlitchTransition(root, mainImage, targetImage)

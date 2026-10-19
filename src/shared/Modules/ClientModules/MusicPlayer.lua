@@ -675,9 +675,15 @@ function MusicPlayer:PreloadSong(soundId)
 			end
 
 			-- Batasi maksimal 3 sound cache agar hemat RAM di HP
+			-- FIX CACHE EVICTION: Hapus juga key dari self.preloadedCache saat Sound lama di-Destroy
 			local existingSounds = self.preloadFolder:GetChildren()
 			if #existingSounds >= 3 then
-				existingSounds[1]:Destroy()
+				local oldest = existingSounds[1]
+				local evictedId = string.match(oldest.Name, "%d+")
+				if evictedId then
+					self.preloadedCache[evictedId] = nil
+				end
+				oldest:Destroy()
 			end
 
 			-- Buat sound instance tersembunyi & tanpa suara (Volume = 0)

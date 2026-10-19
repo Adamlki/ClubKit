@@ -1,8 +1,4 @@
---!strict
--- ============================================================
--- CarryPhysics (Server Module)
--- Handles welds, physical states, collisions, and humanoid restoration
--- ============================================================
+--!optimize 2
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CarryConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("CarryConfig"))

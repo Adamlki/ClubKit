@@ -36,9 +36,12 @@ end
 function MusicPlayerManager:OnPlayerAdded(player)
 	RoleSystem:InitializePlayer(player)
 
-	-- Load player favorites
+	-- FIX MASUK BARENGAN 100 PEMAIN: Stagger load MusicFavorites (jeda 5-12 detik) agar detik pertama join fokus ke Role & Level
 	task.spawn(function()
-		self.favoriteManager:LoadPlayerFavorites(player.UserId)
+		task.wait(math.random(50, 120) / 10)
+		if validatePlayer(player) then
+			self.favoriteManager:LoadPlayerFavorites(player.UserId)
+		end
 	end)
 
 	task.wait(1)
@@ -74,7 +77,7 @@ end
 function MusicPlayerManager:OnPlayerRemoving(player)
 	local userId = player.UserId
 
-	self.queueManager:RemoveUserSongs(userId)
+	local removedSongs = self.queueManager:RemoveUserSongs(userId)
 	local initiatorId = self.skipVoteManager.skipVote and self.skipVoteManager.skipVote.initiatorId
 	local votePassed = self.skipVoteManager:UpdateVoteOnPlayerLeave(userId, self.dispatcher)
 	if votePassed and self.playNextCallback then
@@ -92,7 +95,10 @@ function MusicPlayerManager:OnPlayerRemoving(player)
 	self.favoriteManager:CleanupPlayer(userId)
 	self.cooldownService:CleanupPlayer(userId)
 
-	self.dispatcher:SyncQueueOnly()
+	-- FIX KELUAR BARENGAN 100 PEMAIN: Hanya broadcast SyncQueueOnly ke semua klien jika pemain yang keluar memang punya lagu di antrean!
+	if removedSongs and removedSongs > 0 then
+		self.dispatcher:SyncQueueOnly()
+	end
 end
 
 -- ====================================

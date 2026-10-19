@@ -177,8 +177,11 @@ end
 -- CINEMATIC TRANSITION
 -- ==========================================
 local isTransitioning = false
+local pendingCameraCallback = nil
 
 local function playCinematicTransition(callback)
+	-- FIX CAMERA STUCK BUG: Jangan buang callback jika event baru masuk saat transisi masih berjalan!
+	pendingCameraCallback = callback
 	if isTransitioning then return end
 	isTransitioning = true
 	
@@ -214,9 +217,13 @@ local function playCinematicTransition(callback)
 	
 	topTweenIn.Completed:Wait()
 	
-	-- Ganti kamera saat layar tertutup hitam pekat
-	if callback then callback() end
-	task.wait(0.2) -- Jeda sebentar agar pergantian terasa smooth
+	-- Eksekusi callback terbaru saat layar tertutup hitam pekat
+	if pendingCameraCallback then
+		local cb = pendingCameraCallback
+		pendingCameraCallback = nil
+		cb()
+	end
+	task.wait(0.2)
 	
 	-- Buka layar kembali
 	local topTweenOut = TweenService:Create(topFrame, tweenInfo, {Position = UDim2.new(0, 0, -0.5, 0)})
@@ -227,6 +234,13 @@ local function playCinematicTransition(callback)
 	
 	topTweenOut.Completed:Wait()
 	screenGui:Destroy()
+	
+	-- Jika ada event perubahan state kamera yang masuk saat layar sedang membuka, jalankan segera
+	if pendingCameraCallback then
+		local cb = pendingCameraCallback
+		pendingCameraCallback = nil
+		cb()
+	end
 	
 	isTransitioning = false
 end

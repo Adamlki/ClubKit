@@ -39,19 +39,34 @@ if not NotifEvent then
 	NotifEvent.Parent = ReplicatedStorage
 end
 
--- 2. Setup Modul Robux Leaderboard (Sesuaikan path jika berbeda)
--- Berdasarkan gambarmu, pathnya kira-kira di sini:
+-- 2. Gunakan cache terpusat dari _G.LeaderboardControl (LeaderboardOrchestrator)
+-- FIX QUOTA DATASTORE: Mencegah pembuatan instance DonationLeaderboard ke-2 yang memicu GetSortedAsync ganda
 local ServerScriptService = game:GetService("ServerScriptService")
-local DonationLeaderboardModule = ServerScriptService.DonationSystem.LeaderboardDisplay.DonationLeaderboard
-local DonationLeaderboard = require(DonationLeaderboardModule)
-local robuxBoard = DonationLeaderboard.new()
+local fallbackRobuxBoard = nil
 
--- Fungsi mengecek Rank Robux
 local function getRobuxRank(userId)
-	local topDonors = robuxBoard:GetTopDonors(SETTINGS.BatasTopRobux)
-	for _, donor in ipairs(topDonors) do
-		if donor.UserId == userId then
-			return donor.Rank
+	local topDonors = nil
+	if _G.LeaderboardControl and _G.LeaderboardControl.GetData then
+		local ok, data = pcall(_G.LeaderboardControl.GetData)
+		if ok and type(data) == "table" and #data > 0 then
+			topDonors = data
+		end
+	end
+
+	if not topDonors then
+		if not fallbackRobuxBoard then
+			local DonationLeaderboardModule = ServerScriptService.DonationSystem.LeaderboardDisplay.DonationLeaderboard
+			local DonationLeaderboard = require(DonationLeaderboardModule)
+			fallbackRobuxBoard = DonationLeaderboard.new()
+		end
+		topDonors = fallbackRobuxBoard:GetTopDonors(SETTINGS.BatasTopRobux)
+	end
+
+	if type(topDonors) == "table" then
+		for _, donor in ipairs(topDonors) do
+			if donor.Rank and donor.Rank <= SETTINGS.BatasTopRobux and donor.UserId == userId then
+				return donor.Rank
+			end
 		end
 	end
 	return nil

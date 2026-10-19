@@ -25,8 +25,7 @@ local CONFIG = {
 	MaxHotbarSlots = 9,
 
 	AnimSpeed = 0.3,
-	ClickCooldown = 0.5, -- Proteksi anti-spam jeda klik use/lepas tool (0.5 detik)
-
+	ClickCooldown = 0.5,
 	Colors = {
 		Container = Color3.fromRGB(15, 15, 15),
 		Background = Color3.fromRGB(5, 5, 5),
@@ -42,7 +41,6 @@ local CONFIG = {
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Deteksi jumlah tool yang dimiliki pemain saat ini (di Backpack + Karakter)
 local function getTotalTools()
 	local count = 0
 	local backpack = player:FindFirstChild("Backpack")
@@ -85,7 +83,7 @@ mainContainer.BackgroundTransparency = 1
 mainContainer.AnchorPoint = Vector2.new(0.5, 1)
 mainContainer.Position = UDim2.new(0.5, 0, 1, -10)
 mainContainer.AutomaticSize = Enum.AutomaticSize.XY
-mainContainer.Visible = false -- Sembunyikan jika belum ada tool
+mainContainer.Visible = false
 mainContainer.Parent = screenGui
 
 local hotbarFrame = Instance.new("Frame")
@@ -219,7 +217,6 @@ end)
 if not isMobile then
 	UserInputService.InputBegan:Connect(function(input, processed)
 		if processed then return end
-		-- Tekan 'B' untuk menyembunyikan/menampilkan hotbar (sama seperti tombol mata)
 		if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.B then
 			if getTotalTools() > 0 then
 				playSound()
@@ -291,7 +288,6 @@ local function toggleTool(tool, btn)
 
 	local now = os.clock()
 	if (now - lastToolActionTime) < CONFIG.ClickCooldown then
-		-- Cooldown 0.5s aktif: abaikan spam klik
 		return false
 	end
 	lastToolActionTime = now
@@ -303,7 +299,6 @@ local function toggleTool(tool, btn)
 
 	playSound()
 
-	-- Micro-animation feedback saat tombol berhasil ditekan
 	if btn and btn:IsA("GuiButton") then
 		task.spawn(function()
 			local origSize = UDim2.new(0, CONFIG.SlotSize, 0, CONFIG.SlotSize)
@@ -407,7 +402,6 @@ local function updateVisuals()
 	cleanSlots()
 
 	local totalTools = getTotalTools()
-	-- 🛡️ Jika player belum punya tools/barang, sembunyikan seluruh GUI
 	if totalTools == 0 then
 		mainContainer.Visible = false
 		return

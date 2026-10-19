@@ -1,3 +1,6 @@
+--!optimize 2
+--!native
+
 -- ============================================================
 -- CinematicCamClient (ClubKit Cinematic Camera System)
 -- ============================================================
@@ -15,14 +18,13 @@ local playerGui = player:WaitForChild("PlayerGui")
 -- STATE
 -- ============================================================
 local currentMode = nil
-local currentSpeedMultiplier = 0.5 -- default 0.5x matching design
-local currentDirection = 1 -- 1 = RIGHT, -1 = LEFT
+local currentSpeedMultiplier = 0.5
+local currentDirection = 1
 local isRunning = false
 local startTime = 0
 local initialFOV = 70
 local isFirstFrame = true
 
--- Preset button references for active state highlighting
 local presetButtons = {}
 local speedButtons = {}
 local dirButtons = {}
@@ -221,16 +223,10 @@ local function stopCinematicSystem()
 		local char = player.Character
 		local hrp = char and char:FindFirstChild("HumanoidRootPart")
 		local hum = char and char:FindFirstChildOfClass("Humanoid")
-
-		-- 1. Reset FOV to standard 70
 		cam.FieldOfView = 70
-
-		-- 2. Restore CameraSubject to Humanoid
 		if hum then
 			cam.CameraSubject = hum
 		end
-
-		-- 3. Reset Camera CFrame to standard third-person behind character
 		if hrp then
 			local headPos = hrp.Position + Vector3.new(0, 1.5, 0)
 			local look = hrp.CFrame.LookVector
@@ -238,8 +234,6 @@ local function stopCinematicSystem()
 			cam.CFrame = CFrame.new(defaultCamPos, headPos)
 			cam.Focus = CFrame.new(headPos)
 		end
-
-		-- 4. Switch back to Custom camera type
 		cam.CameraType = Enum.CameraType.Custom
 	end
 
@@ -270,7 +264,6 @@ local function computeCameraCFrame(mode, t, data)
 	local center = data.center
 
 	local speed = currentSpeedMultiplier
-	-- Invert direction so RIGHT rotates camera to the right and LEFT rotates camera to the left from viewer perspective
 	local dir = -currentDirection
 
 	if mode == "ORBIT MASTER" then
@@ -357,8 +350,6 @@ local function startCinematicMode(presetName)
 
 		local t = os.clock() - startTime
 		local targetCFrame, targetFOV = computeCameraCFrame(currentMode, t, data)
-
-		-- Smooth Anti-Clip Raycast
 		local rayParams = RaycastParams.new()
 		rayParams.FilterType = Enum.RaycastFilterType.Exclude
 		rayParams.FilterDescendantsInstances = { data.char }
@@ -382,8 +373,6 @@ local function startCinematicMode(presetName)
 		end
 	end)
 end
-
--- Bind Preset Buttons
 for _, presetName in ipairs(PRESETS) do
 	local btn = content:WaitForChild("Preset_" .. presetName)
 	local stroke = btn:FindFirstChild("UIStroke")
@@ -403,8 +392,6 @@ for _, presetName in ipairs(PRESETS) do
 		startCinematicMode(presetName)
 	end)
 end
-
--- Clean up on death
 player.CharacterRemoving:Connect(function()
 	stopCinematicSystem()
 end)

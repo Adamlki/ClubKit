@@ -239,18 +239,17 @@ function GlobalEffectManager:_onCharacterAdded(character)
 	end)
 	
 	character:GetAttributeChangedSignal("RefreshTrigger"):Connect(function()
-		-- 🔥 FIX: Hancurkan state lama, dan pastikan kita membuat instance State baru!
-		state:Destroy()
-		self.PlayerStates[player] = nil
+		-- 🔥 FIX: Hancurkan state lama, buat ulang, dan patuhi status FollowGlobalEffect (Unfollow) pemain!
+		if self.PlayerStates[player] then
+			self.PlayerStates[player]:Destroy()
+			self.PlayerStates[player] = nil
+		end
 		
 		task.wait(0.5)
+		if not player or not player.Parent or player.Character ~= character then return end
 		
-		-- Buat state baru untuk karakter yang sudah di-refresh
 		state = self:GetPlayerState(player)
-		
-		if self.ActiveEffects.Floating then state:ApplyFloating() end
-		if self.ActiveEffects.Fly then state:ApplyFly() end
-		if self.ActiveEffects.Wing then state:ApplyWing() end
+		self:UpdatePlayerEffects(player)
 	end)
 	
 	local humanoid = character:WaitForChild("Humanoid", 10)

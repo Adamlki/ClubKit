@@ -4,6 +4,7 @@
 -- ========================================
 
 local HttpService = game:GetService("HttpService")
+local MemoryStoreService = game:GetService("MemoryStoreService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -30,10 +31,30 @@ end
 local CHECK_INTERVAL = IS_STUDIO and 15 or 30 
 local MAX_DONATIONS = 50
 
+-- DEDUPE LINTAS-SERVER (MemoryStore)
+-- Donasi yang sama tidak boleh diumumkan dua kali oleh server berbeda
+local DEDUP_MAP_NAME = "SaweriaDedup_v1"
+local DEDUP_TTL = 7 * 24 * 60 * 60 -- 7 hari (maksimum MemoryStore: 45 hari)
+local MAX_PROCESSED_IDS = 500
+
+local JOB_ID = game.JobId
+if JOB_ID == "" then
+	JOB_ID = "studio-" .. tostring(math.random(100000, 999999))
+end
+
 -- STATE
 local processedIds = {}
+local processedOrder = {}
 local isFirstLoad = true
 local allDonations = {}
+
+local seenMap = nil
+pcall(function()
+	seenMap = MemoryStoreService:GetHashMap(DEDUP_MAP_NAME)
+end)
+if not seenMap then
+	warn(DEBUG_PREFIX, "MemoryStore tidak tersedia — dedupe lintas-server nonaktif (fallback: dedupe lokal).")
+end
 
 local remoteEvent = ReplicatedStorage:FindFirstChild("DonationNotification")
 if not remoteEvent then
@@ -68,6 +89,46 @@ local function getDonationUniqueId(donation, index)
 		return string.format("%s_%s_%s_%s", dDate, dName, dAmt, dMsg)
 	end
 	return string.format("%s_%s_%s_%s", dName, dAmt, dMsg, tostring(index or 1))
+end
+
+-- ========================================
+-- DEDUPE HELPERS
+-- ========================================
+-- Return true HANYA untuk satu server di seluruh universe per uniqueId.
+-- Fail-open saat MemoryStore error: lebih baik notif dobel daripada donasi hilang.
+local function claimDonationCrossServer(uniqueId)
+	if not seenMap then
+		return true
+	end
+
+	local success, result = pcall(function()
+		-- UpdateAsync mengembalikan nilai terakhir dari transform function:
+		-- JOB_ID = kita yang klaim; nil = sudah diklaim server lain (update dibatalkan)
+		return seenMap:UpdateAsync(uniqueId, function(current)
+			if current ~= nil then
+				return nil
+			end
+			return JOB_ID
+		end, DEDUP_TTL)
+	end)
+
+	if not success then
+		debugWarn("MemoryStore claim gagal (fail-open, mungkin duplikat):", uniqueId, result)
+		return true
+	end
+
+	return result == JOB_ID
+end
+
+-- Bounded FIFO supaya processedIds tidak tumbuh tanpa batas
+local function markProcessed(uniqueId)
+	if processedIds[uniqueId] then return end
+	processedIds[uniqueId] = true
+	table.insert(processedOrder, uniqueId)
+	while #processedOrder > MAX_PROCESSED_IDS do
+		local oldest = table.remove(processedOrder, 1)
+		processedIds[oldest] = nil
+	end
 end
 
 -- ========================================
@@ -146,7 +207,7 @@ local function fetchDonationData()
 		-- Tandai SEMUA donasi yang sudah ada di spreadsheet sebagai sudah diproses
 		for i, donation in ipairs(donationArray) do
 			local currentId = getDonationUniqueId(donation, i)
-			processedIds[currentId] = true
+			markProcessed(currentId)
 			table.insert(allDonations, donation)
 		end
 
@@ -170,10 +231,10 @@ local function fetchDonationData()
 		local currentId = getDonationUniqueId(currentDonation, i)
 
 		if not processedIds[currentId] then
-			processedIds[currentId] = true
+			markProcessed(currentId)
 			hasNewData = true
 			table.insert(allDonations, currentDonation)
-			table.insert(broadcastQueue, currentDonation)
+			table.insert(broadcastQueue, { donation = currentDonation, id = currentId })
 		end
 	end
 
@@ -182,21 +243,18 @@ local function fetchDonationData()
 			table.remove(allDonations, 1) 
 		end
 
-		-- Memory Guard: Bersihkan processedIds jika sudah terlalu banyak (> 300)
-		local count = 0
-		for _ in pairs(processedIds) do count += 1 end
-		if count > 300 then
-			local newProcessed = {}
-			for idx, d in ipairs(allDonations) do
-				newProcessed[getDonationUniqueId(d, idx)] = true
-			end
-			processedIds = newProcessed
-		end
-
 		pcall(updateBoard)
 
 		-- Broadcast secara sekuensial dengan jeda
-		for _, currentDonation in ipairs(broadcastQueue) do
+		for _, entry in ipairs(broadcastQueue) do
+			local currentDonation = entry.donation
+
+			-- Klaim lintas-server tepat sebelum broadcast: cegah dua server mengumumkan donasi yang sama
+			if not claimDonationCrossServer(entry.id) then
+				debugPrint("⏭️ Skip donasi yang sudah diumumkan server lain: " .. tostring(entry.id))
+				continue
+			end
+
 			local rawDonator = tostring(currentDonation.donator or currentDonation.nama or currentDonation.Nama or "Unknown")
 			local rawAmount = tostring(currentDonation.amount or currentDonation.jumlah or currentDonation.Jumlah or "0")
 			local rawMessage = tostring(currentDonation.message or currentDonation.pesan or currentDonation.Pesan or "")

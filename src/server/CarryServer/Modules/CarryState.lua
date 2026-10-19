@@ -1,8 +1,4 @@
---!strict
--- ============================================================
--- CarryState (Server Module)
--- Manages in-memory state, sessions, and pending requests for Carry System
--- ============================================================
+--!optimize 2
 
 local Players = game:GetService("Players")
 

@@ -21,6 +21,27 @@ globalEvent.OnServerEvent:Connect(function(player, toolName, isShooting)
 	local tool = player.Character and player.Character:FindFirstChild(toolName)
 	if not tool or not tool:IsA("Tool") then return end
 
-	-- ROUTING: Native multicast broadcast (klien lokal sudah memfilter dirinya sendiri via shooterPlayer == localPlayer)
-	globalEvent:FireAllClients(player, toolName, isShooting)
+	-- ROUTING: Proximity-based multicast broadcast (Optimasi 100+ Player: cegah spam paket ke seluruh server)
+	local char = player.Character
+	local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+	if not rootPart then return end
+
+	local shooterPos = rootPart.Position
+	-- Radius pandang ~100 studs saat menembak, kelonggaran 120 studs saat stop agar efek tidak nyangkut
+	local maxRadius = isShooting and 100 or 120
+	local maxRadiusSq = maxRadius * maxRadius
+
+	for _, targetPlayer in ipairs(Players:GetPlayers()) do
+		if targetPlayer ~= player then
+			local targetChar = targetPlayer.Character
+			local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+			if targetRoot then
+				local diff = targetRoot.Position - shooterPos
+				local distSq = diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z
+				if distSq <= maxRadiusSq then
+					globalEvent:FireClient(targetPlayer, player, toolName, isShooting)
+				end
+			end
+		end
+	end
 end)

@@ -206,13 +206,11 @@ function ClientUI.showNotification(notificationFrame, displayName, amount, messa
 	end
 
 	task.spawn(function()
-		-- Tunggu giliran jika ada notifikasi lain (misal Saweria) yang sedang tampil
 		while _G.__ActiveDonationNotification do
 			task.wait(0.3)
 		end
 		_G.__ActiveDonationNotification = true
 
-		-- 1. Isi data ke GUI
 		local nameLabel = notificationFrame:FindFirstChild("NameLabel") or notificationFrame:FindFirstChild("PlayerName")
 		local messageBox = notificationFrame:FindFirstChild("MessageBox")
 		local messageLabel = (messageBox and messageBox:FindFirstChild("MessageLabel")) or notificationFrame:FindFirstChild("NotificationText")
@@ -251,11 +249,9 @@ function ClientUI.showNotification(notificationFrame, displayName, amount, messa
 				messageLabel.Text = "Terima kasih banyak atas donasinya!"
 			end
 		end
-
-		-- 2. Putar SFX
+		
 		playRobuxDonationSound()
 
-		-- 3. Animasi Muncul (Slide In dari atas dengan Back easing)
 		if activeNotificationTween then
 			activeNotificationTween:Cancel()
 			activeNotificationTween = nil
@@ -272,7 +268,6 @@ function ClientUI.showNotification(notificationFrame, displayName, amount, messa
 		activeNotificationTween = slideIn
 		slideIn:Play()
 
-		-- 4. Dismiss Handler (Otomatis 5 detik atau saat tombol Close diklik)
 		local isClosed = false
 		local closeConn = nil
 

@@ -1,3 +1,5 @@
+--!optimize 2
+
 -- ============================================
 -- SINGLETON PROTECTION & GLOBAL FLAGS
 -- ============================================
@@ -806,8 +808,14 @@ function PlayerHideSystem:OnCharacterAdded(character, otherPlayer)
 			end
 		end)
 
+		-- FIX MEMORY LEAK: Simpan dan putus koneksi Backpack.ChildAdded lama agar tidak bertumpuk setiap respawn
+		self.backpackConns = self.backpackConns or {}
+		if self.backpackConns[otherPlayer] then
+			self.backpackConns[otherPlayer]:Disconnect()
+			self.backpackConns[otherPlayer] = nil
+		end
 		if otherPlayer.Backpack then
-			otherPlayer.Backpack.ChildAdded:Connect(function(child)
+			self.backpackConns[otherPlayer] = otherPlayer.Backpack.ChildAdded:Connect(function(child)
 				task.wait(CONFIG.WAIT_FOR_TOOLS)
 				if child:IsA("Tool") and FeatureManager:GetFeatureState("players") then
 					self:HideObject(child, true)
@@ -975,14 +983,40 @@ for _, featureConfig in ipairs(FEATURES) do
 	FeatureManager:RegisterFeature(featureConfig)
 end
 
-for _, otherPlayer in pairs(player:GetPlayers()) do
-	if otherPlayer.Character then FeatureManager:OnCharacterAdded(otherPlayer.Character, otherPlayer) end
-end
+-- FIX CRITICAL BUG & MEMORY LEAK:
+-- 1. Hubungkan CharacterAdded untuk SEMUA pemain (termasuk 99 pemain yang sudah ada di server saat kita join)
+-- 2. Bersihkan semua koneksi saat pemain keluar dari server (PlayerRemoving) untuk server 24/7
+local otherPlayerCharConns = {}
 
-player.PlayerAdded:Connect(function(otherPlayer)
-	otherPlayer.CharacterAdded:Connect(function(character)
+local function monitorOtherPlayer(otherPlayer)
+	if otherPlayerCharConns[otherPlayer] then
+		otherPlayerCharConns[otherPlayer]:Disconnect()
+	end
+	otherPlayerCharConns[otherPlayer] = otherPlayer.CharacterAdded:Connect(function(character)
 		FeatureManager:OnCharacterAdded(character, otherPlayer)
 	end)
+	if otherPlayer.Character then
+		task.spawn(function()
+			FeatureManager:OnCharacterAdded(otherPlayer.Character, otherPlayer)
+		end)
+	end
+end
+
+for _, otherPlayer in ipairs(player:GetPlayers()) do
+	monitorOtherPlayer(otherPlayer)
+end
+
+player.PlayerAdded:Connect(monitorOtherPlayer)
+
+player.PlayerRemoving:Connect(function(leavingPlayer)
+	if otherPlayerCharConns[leavingPlayer] then
+		otherPlayerCharConns[leavingPlayer]:Disconnect()
+		otherPlayerCharConns[leavingPlayer] = nil
+	end
+	if PlayerHideSystem.backpackConns and PlayerHideSystem.backpackConns[leavingPlayer] then
+		PlayerHideSystem.backpackConns[leavingPlayer]:Disconnect()
+		PlayerHideSystem.backpackConns[leavingPlayer] = nil
+	end
 end)
 
 

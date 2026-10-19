@@ -1,5 +1,5 @@
 -- ====================================
--- UI ANIMATOR (INSTANT / NO ANIMATION)
+-- UI ANIMATOR
 -- ====================================
 local UIAnimator = {}
 

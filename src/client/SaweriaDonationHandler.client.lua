@@ -1,9 +1,5 @@
 --!native
 --!optimize 2
--- ==============================================================================
--- SAWERIA DONATION CLIENT HANDLER
--- Menggunakan StarterGui.SaweriaDonationGui fisik yang ada di Roblox Studio
--- ==============================================================================
 
 if _G.__SaweriaDonationHandlerLoaded then return end
 _G.__SaweriaDonationHandlerLoaded = true

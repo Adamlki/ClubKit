@@ -1,20 +1,33 @@
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local ServerStorage = game:GetService("ServerStorage")
 local Workspace = game:GetService("Workspace")
 
 local RoleSystem = require(ServerStorage:WaitForChild("Modules"):WaitForChild("RoleSystem"))
 
--- Container for bots
-local stressTestFolder = Workspace:FindFirstChild("StressTestBots")
-if not stressTestFolder then
-	stressTestFolder = Instance.new("Folder")
-	stressTestFolder.Name = "StressTestBots"
-	stressTestFolder.Parent = Workspace
-end
+-- SAFETY GATE: bot stress test hanya boleh jalan di Roblox Studio. Bot yang lupa
+-- dimatikan di live server akan membebani map 24/7. Set true hanya jika terpaksa.
+local ALLOW_IN_LIVE_SERVER = false
+local CAN_RUN_BOTS = RunService:IsStudio() or ALLOW_IN_LIVE_SERVER
+
+local AUTO_STOP_SECONDS = 300 -- Auto-despawn 5 menit setelah spawn terakhir
+local MAX_TOTAL_BOTS = 100 -- Batas keras agar server tidak mati
+
+local stressGeneration = 0 -- Invalidasi timer auto-stop yang usang
 
 local activeBots = {}
 local isTesting = false
 local isSyncing = false
+
+local function getStressTestFolder()
+	local folder = Workspace:FindFirstChild("StressTestBots")
+	if not folder then
+		folder = Instance.new("Folder")
+		folder.Name = "StressTestBots"
+		folder.Parent = Workspace
+	end
+	return folder
+end
 
 local dummyTemplate = nil
 
@@ -35,15 +48,43 @@ local function getDummyTemplate()
 	return dummyTemplate
 end
 
+local function stopBots()
+	isTesting = false
+	isSyncing = false
+	stressGeneration += 1
+	for _, bot in ipairs(activeBots) do
+		if bot and bot.Parent then
+			bot:Destroy()
+		end
+	end
+	table.clear(activeBots)
+	print("[StressTest] Seluruh bot telah dimusnahkan. Memori dibersihkan.")
+end
+
 local function spawnBots(amount, originPosition)
+	if not CAN_RUN_BOTS then
+		warn("[StressTest] Dinonaktifkan di live server. Stress test hanya bisa dijalankan di Roblox Studio.")
+		return
+	end
+
 	local template = getDummyTemplate()
 	if not template then
 		warn("[StressTest] Dummy Template belum selesai loading, coba lagi dalam beberapa detik.")
 		return
 	end
 	
+	local remaining = MAX_TOTAL_BOTS - #activeBots
+	if remaining <= 0 then
+		warn("[StressTest] Batas maksimum", MAX_TOTAL_BOTS, "bot sudah tercapai. Jalankan /stopstress dulu.")
+		return
+	end
+	if amount > remaining then
+		amount = remaining
+	end
+
 	isTesting = true
 	local radius = 40
+	local folder = getStressTestFolder()
 	
 	for i = 1, amount do
 		local bot = template:Clone()
@@ -56,7 +97,7 @@ local function spawnBots(amount, originPosition)
 			math.random(-radius, radius)
 		)
 		bot:PivotTo(CFrame.new(originPosition + randomOffset))
-		bot.Parent = stressTestFolder
+		bot.Parent = folder
 		
 		table.insert(activeBots, bot)
 		
@@ -91,19 +132,16 @@ local function spawnBots(amount, originPosition)
 		end
 	end
 	
-	print("[StressTest] Berhasil memanggil", amount, "bot tempur ke medan perang!")
-end
-
-local function stopBots()
-	isTesting = false
-	isSyncing = false
-	for _, bot in ipairs(activeBots) do
-		if bot and bot.Parent then
-			bot:Destroy()
+	stressGeneration += 1
+	local generation = stressGeneration
+	task.delay(AUTO_STOP_SECONDS, function()
+		if generation == stressGeneration and isTesting then
+			warn("[StressTest] Auto-stop:", AUTO_STOP_SECONDS, "detik tanpa spawn baru. Memusnahkan seluruh bot.")
+			stopBots()
 		end
-	end
-	table.clear(activeBots)
-	print("[StressTest] Seluruh bot telah dimusnahkan. Memori dibersihkan.")
+	end)
+
+	print("[StressTest] Berhasil memanggil", amount, "bot tempur ke medan perang!")
 end
 
 local function syncBotsToPlayer(player)

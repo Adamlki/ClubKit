@@ -1,9 +1,3 @@
---!strict
--- ============================================================
--- RemoteNames (ClubKit Shared Config)
--- Centralized registry of folder and RemoteEvent/RemoteFunction names
--- ============================================================
-
 local RemoteNames = {
 	Folders = {
 		Remotes = "Remotes",

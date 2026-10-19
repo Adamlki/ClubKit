@@ -1,4 +1,3 @@
---!strict
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage: ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService: RunService = game:GetService("RunService")

@@ -157,7 +157,20 @@ function module.adjustAnimationSpeed(player, speed, loadedAnimations)
 		return "syncing" 
 	end
 
-	speed = math.clamp(tonumber(speed) or 1, 0.1, 3)
+	local numSpeed = tonumber(speed)
+	if not numSpeed or numSpeed ~= numSpeed then
+		numSpeed = 1
+	end
+	speed = math.clamp(numSpeed, 0.1, 3)
+
+	-- FIX TIME-WARP SERVER: Sesuaikan DanceStartTime saat DanceSpeed berubah agar pemain yang baru join tetap presisi
+	local oldSpeed = character:GetAttribute("DanceSpeed") or 1
+	local oldStartTime = character:GetAttribute("DanceStartTime")
+	if oldStartTime and oldSpeed > 0 and speed > 0 and oldSpeed ~= speed then
+		local now = workspace:GetServerTimeNow()
+		local elapsedPos = (now - oldStartTime) * oldSpeed
+		character:SetAttribute("DanceStartTime", now - (elapsedPos / speed))
+	end
 
 	safeSetAttr(character, "DanceSpeed", speed)
 
@@ -171,3 +184,4 @@ Players.PlayerRemoving:Connect(function(player)
 end)
 
 return module
+

@@ -125,24 +125,35 @@ function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 	-- Cari harga produk dari config donasi board
 	local amount = DonationConfig.PRODUCT_PRICES[productId]
 	if not amount then
+		-- Produk non-donasi: satu-satunya jalur resmi adalah GiftSystem
 		local giftCallback = registeredCallbacks["GiftSystem"]
 		if giftCallback then
 			local ok, success = pcall(function()
 				return giftCallback(player, productId, 0, receiptInfo)
 			end)
-			if ok and success == true then
+			if not ok then
+				warn("[RECEIPT] ❌ GiftSystem callback error:", tostring(success))
+				activeProcessing[purchaseId] = nil
+				return Enum.ProductPurchaseDecision.NotProcessedYet
+			elseif success == true then
 				markReceiptProcessed(purchaseId)
 				activeProcessing[purchaseId] = nil
 				return Enum.ProductPurchaseDecision.PurchaseGranted
-			elseif ok and success == false then
+			elseif success == false then
 				activeProcessing[purchaseId] = nil
 				return Enum.ProductPurchaseDecision.NotProcessedYet
 			end
+			-- success == nil: bukan produk gift, lanjut ke penanganan unknown di bawah
 		end
 
-		warn("[RECEIPT] Unknown productId:", productId, "- clearing invalid receipt to prevent deadlock!")
+		-- JANGAN pernah grant tanpa reward. Tahan receipt (Roblox akan retry)
+		-- dan beri warning keras supaya config produk bisa segera diperbaiki.
+		warn("[RECEIPT] ⚠️ UNKNOWN productId:", productId,
+			"| userId:", userId,
+			"| purchaseId:", tostring(purchaseId),
+			"| Reward TIDAK diberikan, receipt DITAHAN (NotProcessedYet). Cek config produk!")
 		activeProcessing[purchaseId] = nil
-		return Enum.ProductPurchaseDecision.PurchaseGranted
+		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
 	debugLog("RECEIPT", "Player:", player.Name, "| Amount:", amount, "Robux")

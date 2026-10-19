@@ -69,6 +69,7 @@ local giveGamePassStore = DataStoreService:GetDataStore(RoleSystem.Config.DATAST
 local playerOwnershipCache = {}
 local ownershipLoadingLocks = {}
 local groupCheckCooldown = {}
+local preservedVIPStatus = {}
 
 -- ====================================
 -- EVENTS
@@ -219,22 +220,23 @@ end
 -- OWNERSHIP CACHE SYSTEM
 -- ====================================
 local gamepassQueue = {}
-local isCheckingQueue = false
+local activeWorkers = 0
+local MAX_GAMEPASS_WORKERS = 6 -- FIX 100+ PLAYERS: Worker pool paralel agar 100 pemain selesai dicek dalam <5 detik (bukan 3 menit)
 
 local function processGamepassQueue()
-	if isCheckingQueue then return end
-	isCheckingQueue = true
-	task.spawn(function()
-		while #gamepassQueue > 0 do
-			local nextCheck = table.remove(gamepassQueue, 1)
-			if nextCheck and nextCheck.player and nextCheck.player.Parent then
-				nextCheck.callback()
+	while activeWorkers < MAX_GAMEPASS_WORKERS and #gamepassQueue > 0 do
+		activeWorkers += 1
+		task.spawn(function()
+			while #gamepassQueue > 0 do
+				local nextCheck = table.remove(gamepassQueue, 1)
+				if nextCheck and nextCheck.player and nextCheck.player.Parent then
+					pcall(nextCheck.callback)
+				end
+				task.wait(0.25)
 			end
-			-- ✨ Anti-Throttling API Global Jitter
-			task.wait(1.5)
-		end
-		isCheckingQueue = false
-	end)
+			activeWorkers -= 1
+		end)
+	end
 end
 
 -- CachePlayerOwnership:
@@ -264,10 +266,11 @@ function RoleSystem:CachePlayerOwnership(player)
 	ownershipLoadingLocks[userId] = true
 
 	local ownership = {
-		VIP = false,
+		VIP = preservedVIPStatus[userId] or false,
 		GivenPass = "None",
 		CheckedAt = os.clock()
 	}
+	preservedVIPStatus[userId] = nil
 
 	-- 1. Check Given Pass dari DataStore (sync - cepat)
 	local key = "givenpass_" .. tostring(userId)
@@ -353,11 +356,15 @@ function RoleSystem:UpdateOwnershipCache(player, gamepassType, owned)
 end
 
 function RoleSystem:InvalidateOwnershipCache(userId)
+	if playerOwnershipCache[userId] and playerOwnershipCache[userId].VIP then
+		preservedVIPStatus[userId] = true
+	end
 	playerOwnershipCache[userId] = nil
 end
 
 function RoleSystem:HandlePlayerRemoving(userId)
 	groupCheckCooldown[userId] = nil
+	preservedVIPStatus[userId] = nil
 	if playerOwnershipCache[userId] then
 		playerOwnershipCache[userId].DisconnectedAt = os.clock()
 		

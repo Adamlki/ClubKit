@@ -61,6 +61,7 @@ function ServerBridge._start(): nil
 	InvokeReply = SerdesLayer.CreateIdentifier("InvokeReply")
 
 	local replTicks = {}
+	local remainingQueue = {} -- FIX: Pindahkan ke luar Heartbeat agar paket rate-limited tidak hilang setiap frame!
 
 	RunService.Heartbeat:Connect(function()
 		debug.profilebegin("ServerBridge")
@@ -164,7 +165,6 @@ function ServerBridge._start(): nil
 
 		local toSendAll = {}
 		local toSendPlayers = {}
-		local remainingQueue = {}
 		local passingReplRates = {}
 
 		for i = #remainingQueue, 1, -1 do
@@ -262,7 +262,8 @@ function ServerBridge._start(): nil
 					table.insert(tbl, k)
 				end
 
-				table.insert(toSendAll, tbl)
+				-- FIX CRITICAL BUG: Kirim invokeReply hanya ke peminta (toSendPlayers[v.plrs]), BUKAN toSendAll!
+				table.insert(toSendPlayers[v.plrs], tbl)
 			end
 		end
 
@@ -282,8 +283,14 @@ function ServerBridge._start(): nil
 	end)
 
 	RemoteEvent.OnServerEvent:Connect(function(plr, tbl)
+		-- FIX ANTI-EXPLOIT CRASH: Validasi tipe tabel dan batas jumlah paket per frame
+		if type(tbl) ~= "table" then return end
+		local count = 0
 		for _, v in tbl do
-			local args = v
+			count += 1
+			if count > 64 then break end
+			if type(v) ~= "table" or type(v[1]) ~= "string" then continue end
+			local args = table.clone(v)
 			local remote = args[1]
 			table.remove(args, 1)
 			local toInsert = {
@@ -777,9 +784,9 @@ end
 ]=]
 function ServerBridge:Destroy()
 	BridgeObjects[self._name] = nil
-	SerdesLayer.DestroyIdentifier(self.Name)
+	SerdesLayer.DestroyIdentifier(self._name) -- FIX TYPO: self._name bukan self.Name
 	for k, v in self do
-		if v.Destroy ~= nil then
+		if type(v) == "table" and v.Destroy ~= nil then
 			v:Destroy()
 		else
 			self[k] = nil

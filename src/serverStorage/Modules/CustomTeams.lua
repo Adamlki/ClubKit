@@ -19,38 +19,13 @@ CustomTeams.Config = {
 	NOTIF_DURATION  = 5,
 }
 
---[[
-  DataStore key:
-    "teamlist"         → array nama custom team
-    "team:<nama>"      → { ColorName=string, PaletteIndex=int, Index=int }
-    "player:<userId>"  → "<namaTeam>"  (override admin)
-                         nil = tidak ada override, ikut role
-
-  CATATAN ARSITEKTUR:
-  - player.Team ditrack Roblox via TeamColor (BrickColor/palette index), BUKAN nama.
-  - Palette index WAJIB unik per team agar tracking Roblox tidak konflik.
-  - Dua team boleh punya warna display sama — yang penting palette index beda.
-  - Lookup di kode ini selalu by NAME (findTeamByName), tidak pernah by warna.
-  - ExactColorR/G/B attribute hanya untuk display (overhead, admin panel UI).
-
-  FIX UTAMA (v3):
-  - showCustomTeam sekarang return team object, dan doMovePlayer pakai langsung
-    tanpa memanggil findTeamByName ulang → tidak ada jeda antara show & assign.
-  - doMovePlayer tidak lagi bergantung pada findTeamByName setelah showCustomTeam,
-    karena team object sudah ada di tangan.
-  - AssignNewPlayer menunggu role final (gamepass async) sebelum assign ulang.
-  - scheduleRefresh debounce dinaikkan ke 1 detik agar tidak spam saat server penuh.
-  - showCustomTeam null-safe: cek player.Parent sebelum assign.
-]]
-
 local store             = DataStoreService:GetDataStore(CustomTeams.Config.DATASTORE_NAME)
-local customTeamObjects = {}  -- { [name] = { ColorName, PaletteIndex, Index, TeamObj } }
-local playerOverrides   = {}  -- { [userId] = teamName }
-local teamsByName       = {}  -- { [nameLower] = { exactName, teamObj } }
+local customTeamObjects = {}  
+local playerOverrides   = {}  
+local teamsByName       = {}  
 local notifyRemote      = nil
 
--- hiddenTeams: custom team yang object-nya dihapus sementara (tidak ada player)
-local hiddenTeams      = {}   -- { [teamName] = { ColorName, PaletteIndex, Index } }
+local hiddenTeams      = {} 
 local refreshScheduled = false
 
 local function debugPrint(...)
@@ -464,6 +439,8 @@ function CustomTeams.LoadFromDataStore()
 	debugPrint(string.format("LoadFromDataStore: %d/%d loaded", loaded, #teamList))
 end
 
+local handleCommand
+
 function CustomTeams.Init()
 	setupNotifyRemote()
 
@@ -619,7 +596,7 @@ local function cmdMoveTeam(player, args)
 	notify(player, msg, ok and "Sukses" or "Gagal")
 end
 
-function handleCommand(player, message)
+handleCommand = function(player, message)
 	local prefix = CustomTeams.Config.PREFIX
 	if message:sub(1, #prefix) ~= prefix then return end
 	if not isAllowed(player) then
@@ -721,14 +698,16 @@ function CustomTeams.GetTeamList()
 	for _, team in ipairs(Teams:GetTeams()) do
 		if team.Name == "Owner" then continue end
 
-		local r = team:GetAttribute("ExactColorR") or 200
-		local g = team:GetAttribute("ExactColorG") or 200
-		local b = team:GetAttribute("ExactColorB") or 200
+		local c = team.TeamColor.Color
+		local r = team:GetAttribute("ExactColorR") or math.floor(c.R * 255 + 0.5)
+		local g = team:GetAttribute("ExactColorG") or math.floor(c.G * 255 + 0.5)
+		local b = team:GetAttribute("ExactColorB") or math.floor(c.B * 255 + 0.5)
 		table.insert(result, {
-			name     = team.Name,
+			name           = team.Name,
+			brickColorName = team.TeamColor.Name,
 			r = r, g = g, b = b,
-			isCustom = customTeamObjects[team.Name] ~= nil,
-			isHidden = false,
+			isCustom       = customTeamObjects[team.Name] ~= nil,
+			isHidden       = false,
 		})
 	end
 
@@ -736,12 +715,20 @@ function CustomTeams.GetTeamList()
 		if customTeamObjects[teamName] then
 			local template = TeamGroups.templateByName[hInfo.ColorName:lower()]
 			local r, g, b = 200, 200, 200
-			if template then r, g, b = template.r, template.g, template.b end
+			local brickColorName = nil
+			if template and template.brickColorName then
+				brickColorName = template.brickColorName
+				local c = BrickColor.new(brickColorName).Color
+				r = math.floor(c.R * 255 + 0.5)
+				g = math.floor(c.G * 255 + 0.5)
+				b = math.floor(c.B * 255 + 0.5)
+			end
 			table.insert(result, {
-				name     = teamName,
+				name           = teamName,
+				brickColorName = brickColorName,
 				r = r, g = g, b = b,
-				isCustom = true,
-				isHidden = true,
+				isCustom       = true,
+				isHidden       = true,
 			})
 		end
 	end

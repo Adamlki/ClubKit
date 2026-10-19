@@ -1,9 +1,4 @@
---!strict
--- ============================================================
--- LeaderboardRegistry (Server Module)
--- Decoupled registry & dispatcher for round-robin leaderboard updates
--- Syncs with _G to guarantee 100% backward compatibility
--- ============================================================
+--!optimize 2
 
 type UpdateCallback = () -> ()
 

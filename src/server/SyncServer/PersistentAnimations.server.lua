@@ -9,6 +9,7 @@ local updateFavoritedAnimationsEvent = Events:WaitForChild("updateFavoritedAnima
 
 -- ============================================
 -- HELPER: set/get data StringValue
+-- ============================================
 local function getSavedData(player)
 	local stringVal = player:FindFirstChild("SavedFavoritedAnimations")
 	return stringVal and stringVal.Value or nil
@@ -25,60 +26,67 @@ local function setSavedData(player, data)
 end
 
 -- ============================================
--- DIRTY TRACKING (ANTI-SPAM DATASTORE ON LEAVE)
+-- DIRTY TRACKING & ACTIVE SAVES LOCK (ANTI-RACE CONDITION KELUAR-MASUK)
 -- ============================================
 local isDirty = {}
+local activeSaves = {}
 
--- ============================================
--- HELPER: Save data player ke DataStore
--- ============================================
-local function savePlayerData(player)
-	-- Hanya save jika player benar-benar mengubah favorit animasi di sesi ini
-	if not isDirty[player.UserId] then return end
+local function savePlayerData(player, snapshotData)
+	local userId = player.UserId
+	if not isDirty[userId] then return end
+	isDirty[userId] = nil
 
-	local savedData = getSavedData(player)
+	local savedData = snapshotData or getSavedData(player)
 	if savedData then
+		activeSaves[userId] = true
 		local success, errorMessage = pcall(function()
-			favoritedAnimationsStore:SetAsync("Player_" .. player.UserId, savedData)
+			favoritedAnimationsStore:SetAsync("Player_" .. userId, savedData)
 		end)
-		if success then
-			isDirty[player.UserId] = nil
-		else
+		activeSaves[userId] = nil
+		if not success then
 			warn("[PersistentAnimations] Gagal save data untuk", player.Name, ":", errorMessage)
 		end
 	end
 end
 
 -- ============================================
--- PLAYER ADDED: Load data dari DataStore
--- Setelah selesai, set attribute agar client bisa baca
+-- PLAYER ADDED: Staggered Load agar 100 pemain masuk barengan tidak membebani DataStore detik ke-0
 -- ============================================
 Players.PlayerAdded:Connect(function(player)
+	-- Beri jeda acak 2-6 detik agar kuota detik pertama fokus ke Role & Level
+	task.wait(math.random(20, 60) / 10)
+	if not player:IsDescendantOf(Players) then return end
+
+	-- Tunggu jika sesi sebelumnya masih menyimpan (keluar-masuk cepat)
+	local waited = 0
+	while activeSaves[player.UserId] and waited < 10 do
+		waited += task.wait(0.1)
+	end
+	if not player:IsDescendantOf(Players) then return end
+
 	local success, savedData = pcall(function()
 		return favoritedAnimationsStore:GetAsync("Player_" .. player.UserId)
 	end)
 
-	-- Pastikan player belum keluar dari game selama proses loading
 	if not player:IsDescendantOf(Players) then return end
+
+	-- Jangan timpa jika pemain sudah keburu klik favorit baru sebelum GetAsync selesai
+	if isDirty[player.UserId] then return end
 
 	if success and type(savedData) == "string" then
 		local ok, decodedData = pcall(function()
 			return HttpService:JSONDecode(savedData)
 		end)
 		if ok and type(decodedData) == "table" then
-			-- FIX: Set data SETELAH data berhasil di-decode
-			-- Client akan menunggu StringValue ini sebelum membaca favorites
 			setSavedData(player, savedData)
 		else
 			warn("[PersistentAnimations] Data korup untuk", player.Name, "- reset ke kosong")
-			-- Set data kosong agar client tidak menunggu selamanya
 			setSavedData(player, "[]")
 		end
 	else
 		if not success then
 			warn("[PersistentAnimations] GetAsync gagal untuk", player.Name, ":", savedData)
 		end
-		-- FIX: Tetap set data meski tidak ada data, agar client tidak stuck menunggu
 		setSavedData(player, "[]")
 	end
 end)
@@ -90,14 +98,12 @@ local lastUpdate = {}
 
 Players.PlayerRemoving:Connect(function(player)
 	lastUpdate[player] = nil
-	savePlayerData(player)
-	isDirty[player.UserId] = nil
+	local snapshot = getSavedData(player)
+	savePlayerData(player, snapshot)
 end)
 
 -- ============================================
--- FIX BUG #3: BindToClose sebagai backup
--- Memastikan data tersimpan saat server shutdown / map change
--- PlayerRemoving saja tidak reliable di situasi ini
+-- BindToClose sebagai backup saat Server Shutdown
 -- ============================================
 game:BindToClose(function()
 	local playerList = Players:GetPlayers()
@@ -106,17 +112,15 @@ game:BindToClose(function()
 
 	for i, player in ipairs(playerList) do
 		task.spawn(function()
-			savePlayerData(player)
+			savePlayerData(player, getSavedData(player))
 			completed += 1
 		end)
 		
-		-- Beri nafas ke API Roblox setiap 10 pemain
 		if i % 10 == 0 then
 			task.wait(0.2)
 		end
 	end
 
-	-- Tunggu semua task selesai (dinaikkan ke 15 detik agar aman)
 	local elapsed = 0
 	while completed < totalPlayers and elapsed < 15 do
 		task.wait(1)
@@ -128,16 +132,14 @@ end)
 -- UPDATE FAVORITES dari client
 -- ============================================
 updateFavoritedAnimationsEvent.OnServerEvent:Connect(function(player, jsonData)
-	-- ANTI-SPAM (Cooldown 2 Detik)
 	local now = os.clock()
 	if lastUpdate[player] and (now - lastUpdate[player]) < 2 then
-		return -- Abaikan jika spam klik terlalu cepat
+		return
 	end
 	lastUpdate[player] = now
 
-	-- VALIDASI TIPE & UKURAN (Anti JSON Bomb)
 	if type(jsonData) ~= "string" then return end
-	if string.len(jsonData) > 10000 then -- Batasi maksimal 10.000 karakter
+	if string.len(jsonData) > 10000 then
 		warn("[Security] " .. player.Name .. " mencoba mengirim data animasi terlalu besar!")
 		return 
 	end

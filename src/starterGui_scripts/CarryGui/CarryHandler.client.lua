@@ -135,12 +135,18 @@ local function getHumanoid()
 end
 
 local function stopAllAnimations()
+	-- FIX MEMORY LEAK: Hentikan dan Destroy AnimationTrack agar tidak menumpuk di Animator
 	for _, track in pairs(currentAnimTracks) do
-		if track and track.IsPlaying then
-			pcall(function() track:Stop(0.2) end)
+		if track then
+			pcall(function()
+				if track.IsPlaying then
+					track:Stop(0.2)
+				end
+				track:Destroy()
+			end)
 		end
 	end
-	currentAnimTracks = {}
+	table.clear(currentAnimTracks)
 end
 
 local function playAnimation(styleName, role)

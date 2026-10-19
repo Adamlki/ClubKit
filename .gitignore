@@ -6,3 +6,6 @@
 /*.rbxl.lock
 
 sourcemap.json
+
+# Secret/credentials — hanya lokal, jangan pernah di-commit
+/src/serverStorage/Modules/PrivateConfig.lua

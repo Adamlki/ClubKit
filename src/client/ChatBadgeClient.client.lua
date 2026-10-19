@@ -1,7 +1,3 @@
--- ===== CHAT BADGE CLIENT =====
--- ChatBadgeClient.lua
--- LocalScript (StarterPlayer > StarterPlayerScripts)
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TextChatService = game:GetService("TextChatService")
@@ -14,7 +10,7 @@ local Player = Players.LocalPlayer
 local refreshEvent = nil
 
 local function initRefreshEvent()
-	local remotefolder = ReplicatedStorage:WaitForChild("Remotes") -- Gunakan WaitForChild agar aman
+	local remotefolder = ReplicatedStorage:WaitForChild("Remotes")
 	if remotefolder then
 		refreshEvent = remotefolder:FindFirstChild("RefreshCharacterEvent")
 	end

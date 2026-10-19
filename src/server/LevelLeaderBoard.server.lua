@@ -191,4 +191,4 @@ local function updateLevelLeaderboard()
 end
 
 LeaderboardRegistry.register("Levels", updateLevelLeaderboard)
-_G.UpdateLevelLeaderboard = updateLevelLeaderboard
+_G.UpdateLevelLeaderboard = updateLevelLeaderboard

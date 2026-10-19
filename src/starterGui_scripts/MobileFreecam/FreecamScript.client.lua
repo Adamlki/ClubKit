@@ -445,6 +445,8 @@ local PlayerState = {} do
 				gui.Enabled = true
 			end
 		end
+		-- FIX MEMORY LEAK: Kosongkan tabel screenGuis setelah di-restore agar tidak terduplikasi setiap toggle
+		table.clear(screenGuis)
 
 		Camera.FieldOfView = cameraFieldOfView
 		cameraFieldOfView = nil
@@ -546,4 +548,9 @@ closeBtn.MouseButton1Click:Connect(function()
 	TurnOffFreecam()
 end)
 
-
+-- 5. FIX RESPAWN LOCK: Matikan Freecam otomatis jika karakter respawn agar kontrol & kamera tidak nyangkut
+LocalPlayer.CharacterAdded:Connect(function()
+	if enabled then
+		TurnOffFreecam()
+	end
+end)

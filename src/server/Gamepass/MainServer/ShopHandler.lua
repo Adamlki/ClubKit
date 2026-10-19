@@ -160,10 +160,8 @@ function ShopHandler:UpdatePlayerRole(player)
 		return nil 
 	end
 
-	-- Force cache refresh
-	self.roleSystem:InvalidateOwnershipCache(player.UserId)
-
-	-- Get updated role
+	-- FIX: Jangan panggil InvalidateOwnershipCache secara buta karena GivePassToPlayer sudah mengupdate cache di memori,
+	-- dan menghapus cache akan me-reset pemilik VIP via Website menjadi Player biasa sementara antrean async berjalan.
 	local newRole = self.roleSystem:UpdatePlayerRole(player)
 
 	Logger:Info(string.format("Role updated for %s: %s", player.Name, newRole))
@@ -203,3 +201,4 @@ function ShopHandler:NotifyRoleUpdate(player, newRole)
 end
 
 return ShopHandler
+

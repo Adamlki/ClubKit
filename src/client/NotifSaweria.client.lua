@@ -1,9 +1,5 @@
 --!native
 --!optimize 2
--- ==============================================================================
--- SAWERIA NOTIFICATION CLIENT (GOLD THEME - MANUAL GUI)
--- Menggunakan StarterGui.NotifSaweriaGui.NotifFrame manual di Roblox Studio
--- ==============================================================================
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
@@ -26,7 +22,6 @@ end
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Pastikan NotifSaweriaGui aktif di PlayerGui (aman tanpa infinite yield warning)
 local notifGui = playerGui:WaitForChild("NotifSaweriaGui", 10) or playerGui:FindFirstChild("NotifSaweriaGui")
 if not notifGui then
 	repeat
@@ -44,7 +39,6 @@ local NOTIF_DISPLAY_TIME = 10
 notifFrame.Position = NOTIF_HIDDEN_POS
 notifFrame.Visible = false
 
--- Format Rupiah dengan titik ribuan
 local function formatIDR(amount)
 	return FormatUtils.formatNumber(math.abs(amount))
 end
@@ -89,7 +83,6 @@ local function processQueue()
 	local current = table.remove(donationQueue, 1)
 
 	task.spawn(function()
-		-- Tunggu jika notifikasi Robux sedang aktif di layar
 		while _G.__ActiveDonationNotification and not _G.HideDonationNotif do
 			task.wait(0.3)
 		end
@@ -99,7 +92,6 @@ local function processQueue()
 		end
 		_G.__ActiveDonationNotification = true
 
-		-- Isi data ke GUI manual Roblox Studio
 		local nameLabel = notifFrame:FindFirstChild("NameLabel") or notifFrame:FindFirstChild("UsernameLabel") or notifFrame:FindFirstChild("PlayerName")
 		local messageBox = notifFrame:FindFirstChild("MessageBox")
 		local messageLabel = (messageBox and messageBox:FindFirstChild("MessageLabel")) or notifFrame:FindFirstChild("MessageLabel") or notifFrame:FindFirstChild("NotificationText")
@@ -139,10 +131,8 @@ local function processQueue()
 			end
 		end
 
-		-- Putar SFX Saweria
 		playSaweriaSound()
 
-		-- Animasi Slide In
 		if activeTween then
 			activeTween:Cancel()
 			activeTween = nil
@@ -159,7 +149,6 @@ local function processQueue()
 		activeTween = slideIn
 		slideIn:Play()
 
-		-- Dismiss Handler (Otomatis 5 detik atau saat tombol Close diklik)
 		local isClosed = false
 		local closeConn = nil
 

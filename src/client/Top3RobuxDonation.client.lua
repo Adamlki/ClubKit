@@ -1,10 +1,3 @@
---!strict
--- ============================================================
--- Top3RobuxDonation (Client)
--- Renders the Top 3 Robux Donators podium statues
--- Refactored to delegate to StatueRenderer (SOLID & DRY)
--- ============================================================
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))

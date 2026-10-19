@@ -150,4 +150,4 @@ end)
 
 game:GetService("Players").PlayerRemoving:Connect(function(player)
 	clientBoardCooldown[player.UserId] = nil
-end)
+end)

@@ -1,3 +1,6 @@
+--!optimize 2
+--!native
+
 -- ====================================
 -- SINGLETON PROTECTION
 -- ====================================
@@ -40,10 +43,9 @@ local closeBtn     = mainframe:WaitForChild("CloseBtn")
 local messageFrame = gui:WaitForChild("MessageFrame")
 
 local templateNotif = messageFrame:Clone()
+
 templateNotif.Parent  = nil
 templateNotif.Visible = false
-
--- Sembunyikan template asli di GUI
 messageFrame.Visible = false
 
 -- ====================================
@@ -75,7 +77,7 @@ local lastTimerNotifTime = 0
 local isSending = false  
 
 -- ====================================
--- SAFE INVOKE UTILITY (ANTI-FREEZE)
+-- SAFE INVOKE UTILITY
 -- ====================================
 local function SafeInvoke(remote, timeout, ...)
 	local args = {...}
@@ -136,7 +138,7 @@ local function setupNotificationContainer()
 		listLayout.HorizontalAlignment  = Enum.HorizontalAlignment.Center
 		listLayout.VerticalAlignment    = Enum.VerticalAlignment.Top
 		listLayout.SortOrder            = Enum.SortOrder.LayoutOrder
-		listLayout.Padding              = UDim.new(0, 8) -- Jarak 8px rapi antar notifikasi ke bawah
+		listLayout.Padding              = UDim.new(0, 8)
 		listLayout.Parent               = notificationListFrame
 	end
 end
@@ -198,11 +200,9 @@ local function createNotification(messageData)
 	local notif = templateNotif:Clone()
 	notif.Name = "AdminNotif_" .. tostring(os.clock())
 	
-	-- LayoutOrder dinaikkan agar notifikasi baru otomatis tersusun di BAWAH notifikasi lama
 	notifCounter = notifCounter + 1
 	notif.LayoutOrder = notifCounter
 
-	-- Setup Avatar Bust/Headshot Admin
 	local avatarImg = notif:FindFirstChild("Avatar")
 	if avatarImg and avatarImg:IsA("ImageLabel") then
 		local sId = tonumber(messageData.SenderId)
@@ -213,7 +213,6 @@ local function createNotification(messageData)
 		end
 	end
 
-	-- Setup Pesan Text: SenderName 📢 : Message
 	local messageLabel = notif:FindFirstChild("Message")
 	if messageLabel and messageLabel:IsA("TextLabel") then
 		messageLabel.RichText = true
@@ -221,17 +220,12 @@ local function createNotification(messageData)
 		local rawMessage = messageData.Message or ""
 		local isGlobal = rawMessage:find("%[GLOBAL%]") ~= nil
 		local cleanMessage = rawMessage:gsub("%[[Gg][Ll][Oo][Bb][Aa][Ll]%]%s*:?%s*", "")
-
-		-- SenderName di-sanitize di client karena belum di-escape oleh server
 		local safeSender = sanitizeHtml(messageData.SenderName or "Admin")
-		-- cleanMessage SUDAH di-sanitize oleh server, jangan di-sanitize ulang agar tidak double escape (&amp;amp;)
 		local safeMsg = cleanMessage
-
 		local prefixTag = isGlobal and "[GLOBAL] " or ""
 		messageLabel.Text = string.format('<font color="#FFCC00"><b>%s%s</b></font> 📢 : <b>%s</b>', prefixTag, safeSender, safeMsg)
 	end
 
-	-- Setup Dismiss Handler (8 Detik atau Tombol Close)
 	local isDismissed = false
 	local notifData = {
 		Frame = notif,
@@ -250,7 +244,6 @@ local function createNotification(messageData)
 		end
 
 		if notif and notif.Parent then
-			-- Animasi keluar halus: shrink height dan fade out
 			local fadeInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 			local shrinkTween = TS:Create(notif, fadeInfo, {
 				Size = UDim2.new(0, 580, 0, 0),
@@ -281,7 +274,6 @@ local function createNotification(messageData)
 		notifCloseBtn.MouseButton1Click:Once(dismissThisNotif)
 	end
 
-	-- Batasi maksimal notifikasi visible di layar
 	table.insert(activeNotifications, notifData)
 	if #activeNotifications > Config.Notification.MaxVisible then
 		local oldest = activeNotifications[1]
@@ -291,7 +283,6 @@ local function createNotification(messageData)
 		end
 	end
 
-	-- Animasi Masuk: Muncul dari height 0 ke ukuran penuh 46px
 	notif.Size = UDim2.new(0, 580, 0, 0)
 	notif.BackgroundTransparency = 1
 	notif.Visible = true
@@ -303,7 +294,6 @@ local function createNotification(messageData)
 		BackgroundTransparency = 0.05
 	}):Play()
 
-	-- Durasi tampil tepat 8 detik sesuai permintaan
 	task.delay(Config.Notification.Duration, function()
 		if not isDismissed then
 			dismissThisNotif()

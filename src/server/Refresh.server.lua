@@ -15,13 +15,15 @@ end
 -- ================================
 local COOLDOWN_TIME = 8
 local MAX_WAIT_TIME = 6
+local MAX_CONCURRENT_REFRESH = 10 -- FIX 100+ PLAYERS: Worker pool paralel agar 20+ pemain refresh tidak antre 1 menit
 
 -- ================================
 -- 🔥 STATE
 -- ================================
 local playerCooldowns = {}
+local activeRefreshes = {}
 local queue = {}
-local isProcessing = false
+local activeWorkers = 0
 
 -- ================================
 -- 🔥 HELPER: WAIT CLOTHING READY
@@ -51,6 +53,15 @@ local function waitForClothing(character)
 	end
 end
 
+local function cleanupSavedBillboards(savedBillboards)
+	for _, data in ipairs(savedBillboards) do
+		if data.obj and not data.obj.Parent then
+			pcall(function() data.obj:Destroy() end)
+		end
+	end
+	table.clear(savedBillboards)
+end
+
 -- ================================
 -- 🔥 CORE REFRESH FUNCTION
 -- ================================
@@ -63,9 +74,12 @@ local function processPlayer(player)
 	
 	if not humanoid or not rootPart then return end
 	
-	-- ❌ BLOCK kondisi tertentu
+	-- ❌ BLOCK kondisi tertentu (FIX: Cek GlobalEffectAirborne di Player DAN Character)
 	local carryable = character:FindFirstChild("Carryable")
-	if (carryable and carryable.Value == false) or character:GetAttribute("GlobalEffectAirborne") then
+	if (carryable and carryable.Value == false)
+		or player:GetAttribute("GlobalEffectAirborne")
+		or character:GetAttribute("GlobalEffectAirborne")
+		or character:GetAttribute("GlobalEffectActive") then
 		return
 	end
 	
@@ -86,7 +100,7 @@ local function processPlayer(player)
 	if not success or not description then return end
 	
 	-- safety check
-	if humanoid.Health <= 0 then return end
+	if not humanoid or not humanoid.Parent or humanoid.Health <= 0 then return end
 	
 	-- simpan billboard
 	local head = character:FindFirstChild("Head")
@@ -94,7 +108,7 @@ local function processPlayer(player)
 	
 	if head then
 		for _, child in ipairs(head:GetChildren()) do
-			if child:IsA("BillboardGui") and child.Name ~= "OverheadGui" then
+			if child:IsA("BillboardGui") and child.Name ~= "OverheadGui" and child.Name ~= "PlayerOverhead" then
 				table.insert(savedBillboards, {
 					name = child.Name,
 					obj = child:Clone()
@@ -104,7 +118,6 @@ local function processPlayer(player)
 	end
 	
 	-- 🔥 1. FREEZE KARAKTER SEMENTARA
-	-- Simpan kecepatan asli
 	local origSpeed = humanoid.WalkSpeed
 	local origJump = humanoid.UseJumpPower and humanoid.JumpPower or humanoid.JumpHeight
 	
@@ -132,37 +145,43 @@ local function processPlayer(player)
 	
 	task.wait(0.2) -- kasih napas engine
 	
-	-- 🔥 2. OPTIONAL (PALING KUAT) — RE-APPLY 2x
+	-- 🔥 2. RE-APPLY 2x
 	local applySuccess = pcall(function()
 		humanoid:ApplyDescriptionReset(description)
 	end)
 	
 	if not applySuccess then 
-		-- Restore speed if failed
 		humanoid.WalkSpeed = origSpeed
 		if humanoid.UseJumpPower then humanoid.JumpPower = origJump else humanoid.JumpHeight = origJump end
+		cleanupSavedBillboards(savedBillboards)
 		return 
 	end
 	
 	task.wait(0.5)
 	
 	-- Safety check setelah yield
-	if not humanoid or humanoid.Parent == nil or humanoid.Health <= 0 then return end
+	if not humanoid or humanoid.Parent == nil or humanoid.Health <= 0 then
+		cleanupSavedBillboards(savedBillboards)
+		return
+	end
 	
 	pcall(function()
-		humanoid:ApplyDescription(description) -- Double apply fix
+		humanoid:ApplyDescription(description)
 	end)
 	
 	-- 🔥 WAIT SAMPAI BENERAN KE-LOAD
 	waitForClothing(character)
 	
-	-- 🔥 3. TAMBAH DELAY FINAL (PENTING BANGET)
+	-- 🔥 3. TAMBAH DELAY FINAL
 	task.wait(1)
 	
 	-- Safety check setelah yield lama
-	if not humanoid or humanoid.Parent == nil or humanoid.Health <= 0 then return end
+	if not humanoid or humanoid.Parent == nil or humanoid.Health <= 0 then
+		cleanupSavedBillboards(savedBillboards)
+		return
+	end
 	
-	-- 🔥 4. PAKSA REBUILD RIG (Pro Fix)
+	-- 🔥 4. PAKSA REBUILD RIG
 	pcall(function()
 		humanoid:BuildRigFromAttachments()
 	end)
@@ -174,7 +193,9 @@ local function processPlayer(player)
 			if handle then
 				handle.Anchored = true
 				task.wait()
-				handle.Anchored = false
+				if handle and handle.Parent then
+					handle.Anchored = false
+				end
 			end
 		end
 	end
@@ -185,28 +206,33 @@ local function processPlayer(player)
 	end
 	
 	-- 🔥 UNFREEZE KARAKTER
-	humanoid.WalkSpeed = origSpeed
-	if humanoid.UseJumpPower then
-		humanoid.JumpPower = origJump
-	else
-		humanoid.JumpHeight = origJump
+	if humanoid and humanoid.Parent then
+		humanoid.WalkSpeed = origSpeed
+		if humanoid.UseJumpPower then
+			humanoid.JumpPower = origJump
+		else
+			humanoid.JumpHeight = origJump
+		end
 	end
 	
-	-- 🔥 RESTORE BILLBOARD
+	-- 🔥 RESTORE BILLBOARD (FIX MEMORY LEAK: Gunakan langsung data.obj tanpa Clone ke-2)
 	local newHead = character:FindFirstChild("Head")
 	if newHead then
 		for _, data in ipairs(savedBillboards) do
 			local existing = newHead:FindFirstChild(data.name)
 			if existing then existing:Destroy() end
 			
-			local clone = data.obj:Clone()
-			clone.Adornee = newHead
-			clone.Parent = newHead
+			if data.obj then
+				data.obj.Adornee = newHead
+				data.obj.Parent = newHead
+			end
 		end
+	else
+		cleanupSavedBillboards(savedBillboards)
 	end
 	
 	-- 🔥 EQUIP TOOL BALIK
-	if equippedTool and equippedTool.Parent == player.Backpack then
+	if equippedTool and player.Parent and equippedTool.Parent == player.Backpack and humanoid and humanoid.Parent then
 		humanoid:EquipTool(equippedTool)
 	end
 	
@@ -236,30 +262,31 @@ local function processPlayer(player)
 end
 
 -- ================================
--- 🔥 QUEUE SYSTEM
+-- 🔥 PARALLEL WORKER POOL SYSTEM
 -- ================================
 local function processQueue()
-	if isProcessing then return end
-	isProcessing = true
-	
-	while #queue > 0 do
+	while activeWorkers < MAX_CONCURRENT_REFRESH and #queue > 0 do
 		local player = table.remove(queue, 1)
-		
-		if player and player.Parent then
-			processPlayer(player)
-			
-			-- 🔥 DELAY ANTAR PLAYER (ANTI LAG)
-			task.wait(0.5)
+		if player and player.Parent and not activeRefreshes[player.UserId] then
+			activeWorkers += 1
+			activeRefreshes[player.UserId] = true
+			task.spawn(function()
+				pcall(processPlayer, player)
+				activeRefreshes[player.UserId] = nil
+				activeWorkers -= 1
+				if #queue > 0 then
+					processQueue()
+				end
+			end)
 		end
 	end
-	
-	isProcessing = false
 end
 
 -- ================================
 -- 🔥 EVENT HANDLER
 -- ================================
 refreshEvent.OnServerEvent:Connect(function(player)
+	if activeRefreshes[player.UserId] then return end
 	local last = playerCooldowns[player.UserId]
 	
 	if last and (os.clock() - last) < COOLDOWN_TIME then
@@ -268,11 +295,12 @@ refreshEvent.OnServerEvent:Connect(function(player)
 	
 	playerCooldowns[player.UserId] = os.clock()
 	
-	-- masukin ke queue
+	for _, queuedPlr in ipairs(queue) do
+		if queuedPlr == player then return end
+	end
 	table.insert(queue, player)
 	
-	-- jalankan queue
-	task.spawn(processQueue)
+	processQueue()
 end)
 
 -- ================================
@@ -280,7 +308,7 @@ end)
 -- ================================
 Players.PlayerRemoving:Connect(function(player)
 	playerCooldowns[player.UserId] = nil
-	-- Cleanup antrian
+	activeRefreshes[player.UserId] = nil
 	for i = #queue, 1, -1 do
 		if queue[i] == player then
 			table.remove(queue, i)

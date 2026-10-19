@@ -18,23 +18,30 @@ local function deserializeColor(colorData)
 end
 
 function TitleDataManager:LoadTitleData(userId)
-	if playerTitleCache[userId] then
-		return playerTitleCache[userId]
+	-- FIX 100+ PLAYERS: Gunakan negative caching (false) agar pemain tanpa custom title
+	-- tidak memicu GetAsync berulang kali setiap siklus update leaderboard 2 menit.
+	if playerTitleCache[userId] ~= nil then
+		return playerTitleCache[userId] or nil
 	end
 
 	local success, data = pcall(function()
 		return TitleDataStore:GetAsync(CONFIG.TITLE_DATASTORE_PREFIX .. userId)
 	end)
 
-	if success and data then
-		local titleData = {
-			Title = data.Title or "",
-			Color = deserializeColor(data.Color),
-			GradientEnabled = data.GradientEnabled or false,
-			GradientEffect = data.GradientEffect or "wave"
-		}
-		playerTitleCache[userId] = titleData
-		return titleData
+	if success then
+		if data then
+			local titleData = {
+				Title = data.Title or "",
+				Color = deserializeColor(data.Color),
+				GradientEnabled = data.GradientEnabled or false,
+				GradientEffect = data.GradientEffect or "wave"
+			}
+			playerTitleCache[userId] = titleData
+			return titleData
+		else
+			playerTitleCache[userId] = false
+			return nil
+		end
 	end
 
 	return nil
@@ -71,7 +78,7 @@ function TitleDataManager:SaveTitleData(userId, titleData)
 end
 
 function TitleDataManager:GetCache(userId)
-	return playerTitleCache[userId]
+	return playerTitleCache[userId] or nil
 end
 
 function TitleDataManager:UpdateCache(userId, titleData)

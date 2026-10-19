@@ -503,17 +503,25 @@ local function processCinematicQueue()
 	-- Jika masih ada cinematic yang main, atau antrean kosong, batalkan
 	if isPlayingCinematic or #cinematicQueue == 0 then return end
 	isPlayingCinematic = true
+	-- FIX BUG SAWERIA SKIP: Selalu reset skipRequested di awal antrean (bukan hanya di dalam startOrbitCamera)
+	-- dan tampilkan tombol Skip untuk semua donasi Level 4 termasuk Saweria (donorUserId == 0)
+	skipRequested = false
 
 	local donationData = table.remove(cinematicQueue, 1)
+	local duration = donationData.cinematicDuration or 8
 
 	task.spawn(playSound)
 
-	local donorPlayer = Players:GetPlayerByUserId(donationData.donorUserId)
+	showSkip(function()
+		skipRequested = true
+		stopOrbit()
+	end)
+
+	local donorPlayer = donationData.donorUserId and Players:GetPlayerByUserId(donationData.donorUserId)
 	if donorPlayer then
 		local character = donorPlayer.Character
 		if character and character:FindFirstChild("HumanoidRootPart") then
-			showSkip(function() skipRequested = true end)
-			startOrbitCamera(character, donationData.cinematicDuration or 8, function()
+			startOrbitCamera(character, duration, function()
 				task.spawn(hideSkip)
 			end)
 		end
@@ -521,12 +529,10 @@ local function processCinematicQueue()
 
 	task.spawn(function()
 		showCinematic(donationData)
-	end)
-
-	-- Tunggu durasi cinematic selesai sebelum lanjut ke antrean berikutnya
-	task.delay(donationData.cinematicDuration or 8, function()
+		stopOrbit()
+		task.spawn(hideSkip)
 		isPlayingCinematic = false
-		processCinematicQueue() -- Lanjut panggil antrean berikutnya
+		processCinematicQueue() -- Lanjut panggil antrean berikutnya tepat saat selesai/di-skip
 	end)
 end
 

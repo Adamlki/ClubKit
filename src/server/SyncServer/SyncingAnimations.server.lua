@@ -67,11 +67,12 @@ local dynamicAnimCount = 0
 local MAX_DYNAMIC_ANIMS = 100
 
 animationStartRE.OnServerEvent:Connect(function(player, animationId, shouldPlay, speed, clientFadeTime, isSpam, clientStartTime)
-	-- 🔥 SECURITY FIX: Cegah Type Spoofing
+	-- 🔥 SECURITY FIX: Cegah Type Spoofing & NaN / Inf Injection
 	if animationId ~= nil and type(animationId) ~= "string" and type(animationId) ~= "number" then return end
 	if type(shouldPlay) ~= "boolean" then return end
 	if speed ~= nil and (type(speed) ~= "number" or speed ~= speed) then return end
 	if not RemoteEventManager.checkRateLimit(player, "animationStart") then return end
+	speed = math.clamp(speed or 1, 0.1, 3.0)
 
 	-- Validasi clientStartTime agar tidak bisa di-inject NaN / string / angka ekstrem
 	local nowServer = workspace:GetServerTimeNow()
@@ -108,8 +109,9 @@ animationStartRE.OnServerEvent:Connect(function(player, animationId, shouldPlay,
 end)
 
 changeSpeedRE.OnServerEvent:Connect(function(player, speed)
-	-- 🔥 SECURITY FIX: Cegah Type Spoofing
-	if type(speed) ~= "number" then return end
+	-- 🔥 SECURITY FIX: Cegah Type Spoofing & NaN / Inf Injection (speed ~= speed mendeteksi NaN)
+	if type(speed) ~= "number" or speed ~= speed then return end
+	speed = math.clamp(speed, 0.1, 3.0)
 
 	-- 🔥 ARCHITECT FIX: Gunakan RemoteEventManager
 	if not RemoteEventManager.checkRateLimit(player, "changeAnimationSpeed") then return end

@@ -1,12 +1,7 @@
---!strict
--- ============================================================
--- StringUtils (ClubKit Shared Utility)
--- Standard text utilities: sanitization, trimming, and truncation
--- ============================================================
+
 
 local StringUtils = {}
 
---- Escapes special HTML/RichText characters to prevent injection / formatting breakages
 function StringUtils.sanitizeHtml(text: any): string
 	if not text then return "" end
 	local str = tostring(text)
@@ -18,13 +13,11 @@ function StringUtils.sanitizeHtml(text: any): string
 	return str
 end
 
---- Memangkas whitespace di awal dan akhir string
 function StringUtils.trim(text: any): string
 	if not text then return "" end
 	return (tostring(text):gsub("^%s*(.-)%s*$", "%1"))
 end
 
---- Memotong teks jika melebihi panjang maksimum
 function StringUtils.truncate(text: any, maxLength: number, suffix: string?): string
 	if not text then return "" end
 	local str = tostring(text)
@@ -36,7 +29,6 @@ function StringUtils.truncate(text: any, maxLength: number, suffix: string?): st
 	return string.sub(str, 1, limit - #s) .. s
 end
 
---- Membersihkan karakter non-digit
 function StringUtils.cleanNumber(value: any): number
 	if type(value) == "number" then
 		return value

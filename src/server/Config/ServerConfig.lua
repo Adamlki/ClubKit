@@ -1,8 +1,4 @@
---!strict
--- ============================================================
--- ServerConfig (ClubKit Server Central Configuration)
--- Unifies DataStore names, credentials, and owner validation
--- ============================================================
+--!optimize 2
 
 local ServerStorage = game:GetService("ServerStorage")
 local RunService = game:GetService("RunService")

@@ -1,13 +1,4 @@
---!strict
--- ============================================================
--- AntiAFKServer.server.lua
--- Server-side Auto-Rejoin & Position Restoration System
--- ============================================================
--- Handles:
--- 1. Receiving AFK Rejoin requests before Roblox's 20-min idle kick
--- 2. Saving character CFrame and teleporting via TeleportService
--- 3. Restoring character position on rejoin
--- ============================================================
+--!optimize 2
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")

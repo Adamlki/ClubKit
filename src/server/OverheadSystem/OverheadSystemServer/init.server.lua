@@ -42,9 +42,10 @@ NametagDisabler:Init()
 -- CHARACTER EVENTS
 -- ====================================
 local function onCharacterAdded(player, character)
-	-- 🔥 FIX: Tunggu sampai penampilan asli avatar (baju/aksesoris) selesai diload oleh Roblox
-	if not player:HasAppearanceLoaded() then
-		player.CharacterAppearanceLoaded:Wait()
+	-- 🔥 FIX 24/7 SERVER: Tunggu penampilan avatar dengan timeout 5 detik agar coroutine tidak hang selamanya jika CDN Roblox gagal
+	local appearanceWait = 0
+	while not player:HasAppearanceLoaded() and player.Parent and appearanceWait < 5 do
+		appearanceWait += task.wait(0.2)
 	end
 
 	-- 🔥 FIX MAGIC NUMBER: Tunggu komponen krusial dimuat oleh Roblox dengan Timeout 10 detik
@@ -391,22 +392,5 @@ end
 
 Players.PlayerAdded:Connect(onPlayerAdded)
 Players.PlayerRemoving:Connect(function(player)
-	-- Gunakan pcall & pengecekan agar jika modul tidak punya fitur cleanup, server tidak error merah
-	pcall(function()
-		if OverheadManager and OverheadManager.CleanupPlayer then
-			OverheadManager:CleanupPlayer(player)
-		end
-
-		if TitleDataManager and TitleDataManager.ClearCache then
-			TitleDataManager:ClearCache(player.UserId)
-		end
-
-		if DonaturRankSystem and DonaturRankSystem.ClearCache then
-			DonaturRankSystem:ClearCache(player.UserId)
-		end
-
-		if NametagDisabler and NametagDisabler.Cleanup then
-			NametagDisabler:Cleanup(player)
-		end
-	end)
+	pcall(onPlayerRemoving, player)
 end)

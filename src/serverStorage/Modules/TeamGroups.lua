@@ -6,7 +6,7 @@ local ServerStorage = game:GetService("ServerStorage")
 local RoleSystem = require(ServerStorage.Modules.RoleSystem)
 
 -- ====================================
--- COLOR TEMPLATES (MENGGUNAKAN NAMA WARNA ROBLOX)
+-- COLOR TEMPLATES
 -- ====================================
 TeamGroups.COLOR_TEMPLATES = {
 	{ name = "Merah",       brickColorName = "Bright red" },
@@ -114,10 +114,8 @@ end
 local function assignByRole(player)
 	local role = RoleSystem:GetPlayerRole(player)
 
-	-- Petinggi tidak boleh turun kasta
 	local isStaff = (role == "Owner" or role == "Admin" or role == "Moderator")
 
-	-- Jika player Sultan DAN bukan Petinggi, timpa jadi tim Sultan
 	if player:GetAttribute("IsSultan") and not isStaff then
 		local team = teamObjects["Sultan"]
 		if team and team.Parent then
@@ -127,7 +125,6 @@ local function assignByRole(player)
 		end
 	end
 
-	-- Logika normal (Untuk Staff, VIP, atau Player biasa)
 	local team = teamObjects[role] or teamObjects["Player"]
 	if team and team.Parent then
 		player.Team = team

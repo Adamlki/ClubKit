@@ -105,25 +105,36 @@ local function recordPurchase(userId, amount)
 	end
 end
 
-local function verifyPurchase(userId, amount)
+local function verifyPurchase(userId)
 	local startTime = os.clock()
 	repeat
 		local purchases = verifiedPurchases[userId]
 		if purchases then
 			local now = tick()
+			local bestTimestamp = nil
+			local bestData = nil
+
+			-- Ambil transaksi terverifikasi tertua yang belum di-claim dan memenuhi MIN_DONATION
 			for timestamp, data in pairs(purchases) do
 				if now - timestamp > DonationConfig.SECURITY.PURCHASE_TIMEOUT then
 					purchases[timestamp] = nil
-				elseif not data.claimed and (amount == nil or data.amount == amount) then
-					data.claimed = true
-					debugLog("BROADCAST", "Purchase verified & claimed:", userId, data.amount)
-					return true, data.amount
+				elseif not data.claimed and (data.amount >= DonationConfig.BROADCAST.MIN_DONATION) then
+					if not bestTimestamp or timestamp < bestTimestamp then
+						bestTimestamp = timestamp
+						bestData = data
+					end
 				end
+			end
+
+			if bestData then
+				bestData.claimed = true
+				debugLog("BROADCAST", "Purchase verified & claimed directly from verified queue:", userId, bestData.amount)
+				return true, bestData.amount
 			end
 		end
 
 		if not DonationConfig.SECURITY.TRACK_PURCHASES then
-			return true, amount or 0
+			return true, DonationConfig.BROADCAST.MIN_DONATION
 		end
 
 		if os.clock() - startTime < 3 then
@@ -133,7 +144,7 @@ local function verifyPurchase(userId, amount)
 		end
 	until false
 
-	debugLog("ERROR", "FAKE DONATION ATTEMPT:", userId, amount)
+	debugLog("ERROR", "FAKE DONATION ATTEMPT (No verified purchase in queue):", userId)
 	return false, 0
 end
 
@@ -141,6 +152,19 @@ local function cleanupPlayerSecurity(userId)
 	verifiedPurchases[userId] = nil
 	playerCooldowns[userId]   = nil
 	canChatCache[userId]      = nil
+end
+
+-- ============================================
+-- RATE LIMIT (COOLDOWN ANTAR BROADCAST CUSTOM)
+-- ============================================
+local function getCooldownRemaining(userId)
+	local last = playerCooldowns[userId]
+	if not last then return 0 end
+	local remaining = DonationConfig.BROADCAST.COOLDOWN - (tick() - last)
+	if remaining > 0 then
+		return remaining
+	end
+	return 0
 end
 
 -- ============================================
@@ -271,16 +295,20 @@ addToQueue = function(player, message, amount, skipVerification)
 	end
 
 	if not skipVerification then
-		local verified, verifiedAmount = verifyPurchase(userId, amount)
-		if not verified then
+		-- RATE LIMIT: Cek cooldown sebelum claim transaksi agar pembelian tidak hangus saat diblokir
+		local remaining = getCooldownRemaining(userId)
+		if remaining > 0 then
+			return false, string.format("Tunggu %d detik lagi sebelum broadcast berikutnya.", math.ceil(remaining))
+		end
+
+		local verified, verifiedAmount = verifyPurchase(userId)
+		if not verified or not verifiedAmount or verifiedAmount < DonationConfig.BROADCAST.MIN_DONATION then
 			if DonationConfig.SECURITY.KICK_ON_FAKE then
 				player:Kick("Fake donation detected")
 			end
-			return false, "Donasi tidak terverifikasi."
+			return false, "Donasi tidak terverifikasi atau tidak mencukupi."
 		end
-		if verifiedAmount and verifiedAmount > 0 then
-			amount = verifiedAmount
-		end
+		amount = verifiedAmount
 	end
 
 	message = message:match("^%s*(.-)%s*$")
@@ -365,15 +393,18 @@ end
 -- ============================================
 -- REMOTES - Custom Broadcast Message
 -- ============================================
-broadcastRemote.OnServerInvoke = function(player, message, amount)
+broadcastRemote.OnServerInvoke = function(player, message)
 	if not player or not player.Parent then
 		return false, "Player tidak valid."
 	end
 	if type(message) ~= "string" or #message < 1 then
 		return false, "Pesan tidak valid."
 	end
-	if amount ~= nil and (type(amount) ~= "number" or amount < DonationConfig.BROADCAST.MIN_DONATION) then
-		return false, "Donasi tidak mencukupi untuk broadcast."
+
+	-- RATE LIMIT: Tolak lebih awal (sebelum filter konten) agar spam remote tidak membebani server
+	local remaining = getCooldownRemaining(player.UserId)
+	if remaining > 0 then
+		return false, string.format("Tunggu %d detik lagi sebelum broadcast berikutnya.", math.ceil(remaining))
 	end
 
 	local filtered = filterBroadcastMessage(message, player)
@@ -381,7 +412,8 @@ broadcastRemote.OnServerInvoke = function(player, message, amount)
 		return false, "Pesan tidak dapat dikirim karena gagal melewati filter konten."
 	end
 
-	return addToQueue(player, filtered, amount, false)
+	-- Server otomatis membaca nominal donasi dari antrean transaksi database yang sudah diverifikasi
+	return addToQueue(player, filtered, nil, false)
 end
 
 -- ============================================

@@ -1,8 +1,4 @@
---!strict
--- ============================================================
--- Logger (ClubKit Shared Utility)
--- Standardized, level-based logger with tag prefixing
--- ============================================================
+
 
 local RunService = game:GetService("RunService")
 

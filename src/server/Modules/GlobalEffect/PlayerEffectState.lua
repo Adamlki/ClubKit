@@ -368,9 +368,7 @@ function PlayerEffectState:RemoveFly()
 		self.FlyTrack = nil
 	end
 	
-	if not self.Player or typeof(self.Player) ~= "Instance" or not self.Player.Parent then return end
-	
-	-- [UBAH INI]: Gunakan self.Character, JANGAN self.Player.Character
+	-- FIX MEMORY LEAK: Tetap bersihkan state karakter walaupun self.Player sedang proses disconnect
 	local char = self.Character 
 	if char and char.Parent then
 		local humanoid = char:FindFirstChild("Humanoid")
@@ -384,9 +382,9 @@ function PlayerEffectState:RemoveFly()
 			rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
 			rootPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
 			
-			-- Kembalikan hak gerak ke Pemain
-			if rootPart:CanSetNetworkOwnership() then
-				rootPart:SetNetworkOwner(self.Player)
+			-- Kembalikan hak gerak ke Pemain jika masih online
+			if self.Player and self.Player.Parent and rootPart:CanSetNetworkOwnership() then
+				pcall(function() rootPart:SetNetworkOwner(self.Player) end)
 			end
 		end
 	end
@@ -477,11 +475,16 @@ function PlayerEffectState:Destroy()
 		self.ToolBlockConnection = nil
 	end
 
-	if not self.Player or typeof(self.Player) ~= "Instance" or not self.Player.Parent then return end
+	-- FIX MEMORY LEAK: Jangan return saat self.Player.Parent == nil (ketika PlayerRemoving),
+	-- pastikan track animasi, AlignPosition, Wing, dan referensi Player/Character selalu dibersihkan!
 	self:StopCustomAnimations()
 	self:RemoveFly()
 	self:RemoveWing()
-	self:ResumeDance()
+	if self.Player and typeof(self.Player) == "Instance" and self.Player.Parent then
+		self:ResumeDance()
+	end
+	self.SuspendedDanceTracks = nil
+	self.Character = nil
 	self.Player = nil
 end
 

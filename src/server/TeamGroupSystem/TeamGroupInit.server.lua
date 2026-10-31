@@ -29,15 +29,23 @@ TeamGroups.Init(CustomTeams.HasOverride)
 -- Step 5: CustomTeams pasang chat commands + lifecycle events
 CustomTeams.Init()
 
--- Step 6: Assign semua player yang sudah online saat server start
--- AssignNewPlayer: sync load DS override → assign segera → re-assign setelah gamepass async
-for _, player in ipairs(Players:GetPlayers()) do
-	task.spawn(function()
-		CustomTeams.AssignNewPlayer(player)
-	end)
+-- Step 6/7: Satu pintu masuk untuk assignment awal.
+-- Guard ini mencegah player yang join saat init terkena AssignNewPlayer dua kali
+-- dari loop player existing + PlayerAdded.
+local assignedPlayers = {}
+
+local function assignPlayerOnce(player)
+	if not player or not player.Parent then return end
+	if assignedPlayers[player] then return end
+	assignedPlayers[player] = true
+	CustomTeams.AssignNewPlayer(player)
 end
 
--- Step 7: PlayerAdded untuk player yang join setelah start
-Players.PlayerAdded:Connect(function(player)
-	CustomTeams.AssignNewPlayer(player)
+for _, player in ipairs(Players:GetPlayers()) do
+	task.spawn(assignPlayerOnce, player)
+end
+
+Players.PlayerAdded:Connect(assignPlayerOnce)
+Players.PlayerRemoving:Connect(function(player)
+	assignedPlayers[player] = nil
 end)

@@ -22,6 +22,7 @@ CustomTeams.Config = {
 local store             = DataStoreService:GetDataStore(CustomTeams.Config.DATASTORE_NAME)
 local customTeamObjects = {}  
 local playerOverrides   = {}  
+local assignedPlayers   = {}
 local teamsByName       = {}  
 local notifyRemote      = nil
 
@@ -135,9 +136,12 @@ end
 local function assignPlayer(player)
 	local ov = playerOverrides[player.UserId]
 	if ov then
+		if hiddenTeams[ov] then
+			showCustomTeam(ov)
+		end
 		local team, name = findTeamByName(ov)
 		if team then
-			player.Team = team
+			TeamGroups.SetPlayerTeam(player, team)
 			debugPrint("Assigned", player.Name, "-> override", name)
 			return
 		end
@@ -216,15 +220,13 @@ local function showCustomTeam(teamName)
 	info.TeamObj = team
 	TeamGroups.RefreshTeamObjects()
 
-	-- FIX: spawn per player + cek player masih online sebelum assign
+	-- FIX: cek player masih online sebelum assign (synchronous agar tidak race condition)
 	for _, p in ipairs(Players:GetPlayers()) do
 		if playerOverrides[p.UserId] == teamName then
-			task.spawn(function()
-				if p and p.Parent then
-					p.Team = team
-					debugPrint("Reassigned", p.Name, "-> restored team", teamName)
-				end
-			end)
+			if p and p.Parent then
+				TeamGroups.SetPlayerTeam(p, team)
+				debugPrint("Reassigned", p.Name, "-> restored team", teamName)
+			end
 		end
 	end
 
@@ -361,7 +363,7 @@ local function doMovePlayer(invoker, target, teamName)
 		return false, string.format("Team '%s' tidak valid (sudah dihapus?).", exactName)
 	end
 
-	target.Team = foundTeam
+	TeamGroups.SetPlayerTeam(target, foundTeam)
 
 	if exactName == "Tamu" then
 		clearPlayerOverride(target.UserId)
@@ -444,19 +446,24 @@ local handleCommand
 function CustomTeams.Init()
 	setupNotifyRemote()
 
-	for _, p in ipairs(Players:GetPlayers()) do
+	local function hookPlayer(p)
 		p.Chatted:Connect(function(msg) handleCommand(p, msg) end)
-	end
-	Players.PlayerAdded:Connect(function(p)
-		p.Chatted:Connect(function(msg) handleCommand(p, msg) end)
-		task.delay(2, scheduleRefresh)
 		p:GetPropertyChangedSignal("Team"):Connect(function()
 			scheduleRefresh()
 		end)
+	end
+
+	for _, p in ipairs(Players:GetPlayers()) do
+		hookPlayer(p)
+	end
+	Players.PlayerAdded:Connect(function(p)
+		hookPlayer(p)
+		task.delay(2, scheduleRefresh)
 	end)
 
 	Players.PlayerRemoving:Connect(function(p)
 		playerOverrides[p.UserId] = nil
+		assignedPlayers[p] = nil
 		task.delay(0.5, scheduleRefresh)
 	end)
 end
@@ -471,6 +478,10 @@ end
 -- FIX: AssignNewPlayer menunggu gamepass async selesai sebelum re-assign final.
 -- Ini mencegah player dapat team "Tamu" sementara gamepass-nya belum terverifikasi.
 function CustomTeams.AssignNewPlayer(player)
+	if not player or not player.Parent then return end
+	if assignedPlayers[player] then return end
+	assignedPlayers[player] = true
+
 	RoleSystem:CachePlayerOwnership(player)
 
 	-- Load override dari DS jika belum ada di cache
@@ -494,13 +505,21 @@ function CustomTeams.AssignNewPlayer(player)
 		if player and player.Parent then
 			if not playerOverrides[player.UserId] then
 				-- Tidak ada override admin, assign ulang berdasarkan role final
-				TeamGroups.AssignPlayer(player)
+				assignPlayer(player)
 				debugPrint("Re-assigned after gamepass check:", player.Name)
 			end
 		end
 	end)
 
 	task.delay(0.5, scheduleRefresh)
+end
+
+-- Dipakai sistem lain (mis. SultanLeaderstatHandler) agar assignment tetap
+-- menghormati override custom team dan tidak menulis team yang sama dua kali.
+function CustomTeams.RefreshPlayerTeam(player)
+	if not player or not player.Parent then return false end
+	assignPlayer(player)
+	return true
 end
 
 -- ====================================

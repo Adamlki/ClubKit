@@ -109,6 +109,20 @@ function TeamGroups.GetTemplateColorName(colorName)
 end
 
 -- ====================================
+-- SINGLE TEAM WRITE
+-- Semua assignment tim harus lewat sini supaya assign ke team yang sama
+-- tidak memicu system message "You are now on the ... team" lagi.
+-- ====================================
+function TeamGroups.SetPlayerTeam(player, team)
+	if not player or not player.Parent then return false end
+	if team ~= nil and not team.Parent then return false end
+	if player.Team == team then return false end
+
+	player.Team = team
+	return true
+end
+
+-- ====================================
 -- assignByRole (DENGAN LOGIKA SULTAN)
 -- ====================================
 local function assignByRole(player)
@@ -119,16 +133,18 @@ local function assignByRole(player)
 	if player:GetAttribute("IsSultan") and not isStaff then
 		local team = teamObjects["Sultan"]
 		if team and team.Parent then
-			player.Team = team
-			debugPrint(string.format("Assigned %s -> '%s' (Sultan Override)", player.Name, team.Name))
+			if TeamGroups.SetPlayerTeam(player, team) then
+				debugPrint(string.format("Assigned %s -> '%s' (Sultan Override)", player.Name, team.Name))
+			end
 			return
 		end
 	end
 
 	local team = teamObjects[role] or teamObjects["Player"]
 	if team and team.Parent then
-		player.Team = team
-		debugPrint(string.format("Assigned %s -> '%s' (role: %s)", player.Name, team.Name, role))
+		if TeamGroups.SetPlayerTeam(player, team) then
+			debugPrint(string.format("Assigned %s -> '%s' (role: %s)", player.Name, team.Name, role))
+		end
 	else
 		warn(string.format("[TeamGroups] Team tidak ditemukan untuk role: %s", role))
 	end

@@ -11,6 +11,7 @@ local initialized        = false
 local registeredCallbacks = {}
 local processedReceipts  = {} 
 local activeProcessing   = {}
+local warnedPriceMismatch = {}
 
 -- ============================================
 -- HELPER
@@ -123,8 +124,8 @@ function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 	end
 
 	-- Cari harga produk dari config donasi board
-	local amount = DonationConfig.PRODUCT_PRICES[productId]
-	if not amount then
+	local configuredAmount = DonationConfig.PRODUCT_PRICES[productId]
+	if not configuredAmount then
 		-- Produk non-donasi: satu-satunya jalur resmi adalah GiftSystem
 		local giftCallback = registeredCallbacks["GiftSystem"]
 		if giftCallback then
@@ -154,6 +155,18 @@ function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 			"| Reward TIDAK diberikan, receipt DITAHAN (NotProcessedYet). Cek config produk!")
 		activeProcessing[purchaseId] = nil
 		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+
+	-- Nominal aktual yang dibayar player. Fallback ke harga config jika CurrencySpent tidak tersedia.
+	local spent = tonumber(receiptInfo.CurrencySpent)
+	local amount = (spent and spent > 0) and spent or configuredAmount
+
+	if spent and spent > 0 and spent ~= configuredAmount and not warnedPriceMismatch[productId] then
+		warnedPriceMismatch[productId] = true
+		warn(string.format(
+			"[RECEIPT] ⚠️ Harga produk %d beda dengan config: aktual=%s, config=%s. Memakai nominal aktual.",
+			productId, tostring(spent), tostring(configuredAmount)
+		))
 	end
 
 	debugLog("RECEIPT", "Player:", player.Name, "| Amount:", amount, "Robux")

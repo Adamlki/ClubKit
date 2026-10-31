@@ -6,7 +6,7 @@ local DonationServerHandler = ServerScriptService:WaitForChild("DonationSystem")
 
 local DonationDataStore = require(DonationServerHandler:WaitForChild("DonationDataStore"))
 local ProcessReceiptHandler = require(DonationServerHandler:WaitForChild("ProcessReceiptHandler"))
-local TeamGroups = require(ServerStorage.Modules.TeamGroups)
+local CustomTeams = require(ServerStorage.Modules.CustomTeams)
 
 local SULTAN_REQUIREMENT = 10000
 
@@ -45,25 +45,35 @@ local function setupPlayer(player)
 		-- Masukkan data asli ke leaderstats
 		donationStat.Value = totalDonated
 
-		-- Cek apakah dia berhak masuk tim Sultan sejak awal
+		-- Cek apakah dia berhak masuk tim Sultan sejak awal.
+		-- Assignment team tetap milik CustomTeams supaya override custom team
+		-- tidak ditimpa dan tidak ada transisi tim yang berulang.
 		if totalDonated >= SULTAN_REQUIREMENT then
+			local wasSultan = player:GetAttribute("IsSultan") == true
 			player:SetAttribute("IsSultan", true)
+			if not wasSultan then
+				CustomTeams.RefreshPlayerTeam(player)
+			end
 		end
-
-		-- [BUG FIX ROBLOX LEADERBOARD]
-		player.Team = nil
-		task.wait(0.1)
-		
-		-- 🔥 FIX GHOST PLAYER: Pastikan pemain masih ada di game setelah jeda
-		if not player or not player.Parent then return end
-		TeamGroups.AssignPlayer(player)
 	end)
 end
 
-Players.PlayerAdded:Connect(setupPlayer)
-for _, player in ipairs(Players:GetPlayers()) do
-	task.spawn(setupPlayer, player)
+local setupStarted = {}
+
+local function setupPlayerOnce(player)
+	if not player or not player.Parent then return end
+	if setupStarted[player] then return end
+	setupStarted[player] = true
+	setupPlayer(player)
 end
+
+Players.PlayerAdded:Connect(setupPlayerOnce)
+for _, player in ipairs(Players:GetPlayers()) do
+	task.spawn(setupPlayerOnce, player)
+end
+Players.PlayerRemoving:Connect(function(player)
+	setupStarted[player] = nil
+end)
 
 -- ============================================================
 -- 2. SAAT PLAYER DONASI: Update Leaderstat secara Real-time
@@ -82,7 +92,7 @@ ProcessReceiptHandler:RegisterCallback("UpdateSultanLeaderstat", function(player
 			-- Cek apakah donasi totalnya menembus batas Sultan
 			if donationStat.Value >= SULTAN_REQUIREMENT and not player:GetAttribute("IsSultan") then
 				player:SetAttribute("IsSultan", true)
-				TeamGroups.AssignPlayer(player)
+				CustomTeams.RefreshPlayerTeam(player)
 
 				print("[SULTAN SYSTEM]", player.Name, "telah resmi menjadi Sultan!")
 			end

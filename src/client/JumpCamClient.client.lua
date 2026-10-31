@@ -14,8 +14,6 @@ event.OnClientEvent:Connect(function()
 	local t1 = tween:Create(cam, TweenInfo.new(0.35, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {FieldOfView = jumpFov})
 	t1:Play()
 	
-	-- 🔥 FIX: Jangan gunakan Wait() yang membuat script stuck.
-	-- Gunakan delay dan pastikan animasinya tidak diganggu oleh lompatan baru.
 	task.delay(0.35, function()
 		if version == currentAnimVersion then
 			local t2 = tween:Create(cam, TweenInfo.new(0.45, Enum.EasingStyle.Sine, Enum.EasingDirection.In), {FieldOfView = normalFov})

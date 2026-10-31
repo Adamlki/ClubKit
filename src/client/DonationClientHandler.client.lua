@@ -1,9 +1,6 @@
 --!optimize 2
 --!native
 
--- ============================================
--- SINGLETON PROTECTION (Mencegah script & icon berjalan ganda)
--- ============================================
 if _G.__DonationClientHandlerLoaded then
 	return
 end
@@ -17,12 +14,8 @@ local TweenService       = game:GetService("TweenService")
 local ClientConfig = require(script:FindFirstChild("ClientConfig") or script.Parent:WaitForChild("ClientConfig"))
 local ClientUI     = require(script:FindFirstChild("ClientUI") or script.Parent:WaitForChild("ClientUI"))
 
--- TopbarPlus (pastikan tersedia di ReplicatedStorage)
 local Icon = require(ReplicatedStorage:WaitForChild("Icon"))
 
--- ============================================
--- REFERENCES
--- ============================================
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local gui       = playerGui:WaitForChild("DonationBoard", 30)
@@ -43,9 +36,7 @@ local UI = {
 	closeBtn          = gui:WaitForChild("MainFrame"):WaitForChild("CloseBtn"),
 }
 
--- ============================================
--- STATE
--- ============================================
+
 local State = {
 	productsLoaded       = false,
 	isLoading            = false,
@@ -63,9 +54,7 @@ local function debugLog(...)
 	end
 end
 
--- ============================================
--- PROFILE & STATS UPDATER
--- ============================================
+
 local function updatePlayerProfile()
 	local avatarImg = UI.leftPanel:FindFirstChild("Avatar")
 	if avatarImg then
@@ -92,9 +81,7 @@ local function updatePlayerStats()
 	end
 end
 
--- ============================================
--- POP-UP CONTROLLER
--- ============================================
+
 local function closeFrame(frame)
 	frame.Visible = false
 end
@@ -123,9 +110,7 @@ _G.CloseRobuxDonation = function()
 	end
 end
 
--- ============================================
--- PRODUCT UI
--- ============================================
+
 local loadProducts
 local createProductButton
 local clearProducts
@@ -235,9 +220,7 @@ loadProducts = function()
 	end)
 end
 
--- ============================================
--- MESSAGE FRAME LOGIC
--- ============================================
+
 local function showMessageFrame(purchasedAmount)
 	closeFrame(UI.mainFrame)
 	if donationIcon and donationIcon.isSelected then
@@ -308,7 +291,6 @@ local function sendMessage()
 		return
 	end
 
-	-- Matikan canSendMessage segera agar tidak bisa terpicu dobel dari Enter + Klik tombol kirim
 	State.canSendMessage = false
 	State.isSending = true
 	local sendBtn = UI.messageFrame:WaitForChild("SendBtn")
@@ -343,9 +325,7 @@ local function sendMessage()
 	end)
 end
 
--- ============================================
--- TOPBAR PLUS ICON SETUP
--- ============================================
+
 local donationIcon = nil
 
 pcall(function()
@@ -371,9 +351,7 @@ pcall(function()
 	end)
 end)
 
--- ============================================
--- NOTIFICATION QUEUE SYSTEM
--- ============================================
+
 local donationQueue    = {}
 local isDisplayingNotif = false
 
@@ -429,9 +407,7 @@ local function setupBroadcastListener()
 	end)
 end
 
--- ============================================
--- PURCHASE HANDLER
--- ============================================
+
 MarketplaceService.PromptProductPurchaseFinished:Connect(function(userId, productId, isPurchased)
 	if userId ~= player.UserId or not isPurchased then return end
 	debugLog("Purchase selesai:", productId)
@@ -440,7 +416,6 @@ MarketplaceService.PromptProductPurchaseFinished:Connect(function(userId, produc
 	local purchasedAmount = (State.productPrices and State.productPrices[productId]) or State.lastPurchasedAmount
 	State.lastPurchasedAmount = purchasedAmount
 
-	-- Otomatis tutup frame donasi utama dan unselect icon topbar begitu pembelian berhasil
 	closeFrame(UI.mainFrame)
 	if donationIcon and donationIcon.isSelected then
 		pcall(function() donationIcon:deselect() end)
@@ -452,15 +427,12 @@ MarketplaceService.PromptProductPurchaseFinished:Connect(function(userId, produc
 	end
 end)
 
--- ============================================
--- UI SETUP & EVENT BINDINGS
--- ============================================
+
 UI.mainFrame.Visible         = false
 UI.templateBtn.Visible       = false
 UI.messageFrame.Visible      = false
 UI.notificationFrame.Visible = false
 
--- Close Button MainFrame (0.3s debounce)
 local lastCloseDonationClick = 0
 UI.closeBtn.MouseButton1Click:Connect(function()
 	local now = os.clock()
@@ -471,7 +443,6 @@ UI.closeBtn.MouseButton1Click:Connect(function()
 	UI.mainFrame.Visible = false
 end)
 
--- Message Frame bindings
 local messageHeader = UI.messageFrame:FindFirstChild("Header")
 local sendBtn       = UI.messageFrame:FindFirstChild("SendBtn")
 local cancelBtn     = UI.messageFrame:FindFirstChild("CancelBtn")
@@ -508,7 +479,6 @@ if textbox then
 	end)
 end
 
--- Auto-sync canvas size on container
 UI.container.AutomaticCanvasSize = Enum.AutomaticSize.Y
 UI.container.CanvasSize = UDim2.new(0, 0, 0, 0)
 UI.container.CanvasPosition = Vector2.new(0, 0)
@@ -519,7 +489,7 @@ if pad then
 	pad.PaddingTop = UDim.new(0, 6)
 end
 
--- Initialization
+
 ClientUI.initNotification(UI.notificationFrame)
 setupBroadcastListener()
 updatePlayerProfile()

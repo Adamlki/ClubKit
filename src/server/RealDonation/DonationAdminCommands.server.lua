@@ -1,10 +1,3 @@
--- ==========================================
--- DONATION ADMIN COMMANDS
--- Mendukung /coin (Robux Test) dan /saweria (Saweria Fake Test)
--- Kompatibel dengan TextChatService & Legacy Chat
--- HANYA BISA DIAKSES OLEH OWNER!
--- ==========================================
-
 local Players = game:GetService("Players")
 local ServerStorage = game:GetService("ServerStorage")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -14,27 +7,20 @@ local ServerScriptService = game:GetService("ServerScriptService")
 
 local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
 local ServerConfig = require(ServerScriptService:WaitForChild("Config"):WaitForChild("ServerConfig"))
+local RoleSystem = require(ServerStorage:WaitForChild("Modules"):WaitForChild("RoleSystem"))
 
--- ========== CONFIGURATION ==========
 local CONFIG = {
 	COIN_PREFIX = "/coin",
 	SAWERIA_PREFIX = "/saweria",
 	REQUIRED_ROLE = "Owner",
-	DEBUG_MODE = false
+	DEBUG_MODE = false,
 }
 
--- ========== SERVICES ==========
-local RoleSystem = require(ServerStorage:WaitForChild("Modules"):WaitForChild("RoleSystem"))
-
--- ========== REMOTE EVENTS ==========
 local showDonationNotif = ReplicatedStorage:WaitForChild("EffectsRemotes"):WaitForChild("ShowDonationNotif")
 
--- ========== ANTI DOUBLE-TRIGGER (DEBOUNCE) ==========
 local lastSaweriaTime = {}
 local lastCoinTime = {}
 local lastStageTime = {}
-
--- ========== HELPER ==========
 
 local function debugPrint(...)
 	if CONFIG.DEBUG_MODE then
@@ -42,86 +28,52 @@ local function debugPrint(...)
 	end
 end
 
--- Pengecekan Owner yang sangat ketat & lengkap
 local function isOwner(player)
 	if not player or typeof(player) ~= "Instance" or not player:IsA("Player") then 
 		return false 
 	end
-
-	-- 1. Studio playtest mode
-	if RunService:IsStudio() then 
+	if RunService:IsStudio() or ServerConfig.IsOwner(player.UserId) then 
 		return true 
 	end
 
-	-- 2. Cek Owner terdaftar di ServerConfig
-	if ServerConfig.IsOwner(player.UserId) then 
-		return true 
-	end
-
-	-- 3. Cek RoleSystem
-	local okRole, role = pcall(function()
-		return RoleSystem:GetPlayerRole(player)
-	end)
+	local okRole, role = pcall(function() return RoleSystem:GetPlayerRole(player) end)
 	if okRole and role == CONFIG.REQUIRED_ROLE then 
 		return true 
 	end
 
-	-- 4. Cek Pemilik Game (User / Group Rank 255)
 	if game.CreatorType == Enum.CreatorType.User and player.UserId == game.CreatorId then
 		return true
 	elseif game.CreatorType == Enum.CreatorType.Group and game.CreatorId > 0 then
-		local okRank, rank = pcall(function()
-			return player:GetRankInGroup(game.CreatorId)
-		end)
-		if okRank and rank == 255 then
-			return true
-		end
+		local okRank, rank = pcall(function() return player:GetRankInGroup(game.CreatorId) end)
+		if okRank and rank == 255 then return true end
 	end
 
 	return false
 end
 
--- Pengecekan Staff (Owner, Admin, Moderator)
--- VIP dan Player BIASA TIDAK BISA AKSES!
 local function hasStaffPermission(player)
 	if not player or typeof(player) ~= "Instance" or not player:IsA("Player") then 
 		return false 
 	end
-
-	-- 1. Studio playtest mode
-	if RunService:IsStudio() then 
-		return true 
-	end
-
-	-- 2. Cek Owner & Staff terdaftar di ServerConfig
-	if ServerConfig.IsOwner(player.UserId) then 
+	if RunService:IsStudio() or ServerConfig.IsOwner(player.UserId) then 
 		return true 
 	end
 	for _, adminId in ipairs(ServerConfig.AdminIds) do
 		if player.UserId == adminId then return true end
 	end
 
-	-- 3. Cek Pemilik Game (User / Group Rank >= 250)
 	if game.CreatorType == Enum.CreatorType.User and player.UserId == game.CreatorId then
 		return true
 	elseif game.CreatorType == Enum.CreatorType.Group and game.CreatorId > 0 then
-		local okRank, rank = pcall(function()
-			return player:GetRankInGroup(game.CreatorId)
-		end)
-		if okRank and rank >= 250 then
-			return true
-		end
+		local okRank, rank = pcall(function() return player:GetRankInGroup(game.CreatorId) end)
+		if okRank and rank >= 250 then return true end
 	end
 
-	-- 4. Cek RoleSystem: Owner (5), Admin (4), Moderator (3) DIIZINKAN. VIP (2) & Player (1) DITOLAK!
-	local okRole, role = pcall(function()
-		return RoleSystem:GetPlayerRole(player)
-	end)
+	local okRole, role = pcall(function() return RoleSystem:GetPlayerRole(player) end)
 	if okRole and (role == "Owner" or role == "Admin" or role == "Moderator") then 
 		return true 
 	end
 
-	-- 5. Cek atribut / Value "Role" jika ada di Player
 	local roleVal = player:FindFirstChild("Role")
 	if roleVal and (roleVal.Value == "Owner" or roleVal.Value == "Admin" or roleVal.Value == "Moderator") then
 		return true
@@ -130,22 +82,19 @@ local function hasStaffPermission(player)
 	return false
 end
 
--- Kirim popup notifikasi kecil di layar owner sebagai feedback
 local function sendFeedback(player, title, text)
 	pcall(function()
-		local CustomTeamsRemotes = ReplicatedStorage:FindFirstChild("CustomTeamsRemotes")
-		local notifyRemote = CustomTeamsRemotes and CustomTeamsRemotes:FindFirstChild("Notify")
+		local customTeamsRemotes = ReplicatedStorage:FindFirstChild("CustomTeamsRemotes")
+		local notifyRemote = customTeamsRemotes and customTeamsRemotes:FindFirstChild("Notify")
 		if notifyRemote and player then
 			notifyRemote:FireClient(player, {
 				Title = title or "Saweria Test",
 				Text = text or "",
-				Duration = 6
+				Duration = 6,
 			})
 		end
 	end)
 end
-
--- ========== COMMAND HANDLER: /coin (Robux Test) ==========
 
 local function handleCoinCommand(player, args)
 	if not isOwner(player) then
@@ -153,16 +102,12 @@ local function handleCoinCommand(player, args)
 		return
 	end
 
-	-- ANTI DOUBLE-TRIGGER
 	local now = os.clock()
-	if lastCoinTime[player.UserId] and (now - lastCoinTime[player.UserId]) < 1.5 then
-		return
-	end
+	if lastCoinTime[player.UserId] and (now - lastCoinTime[player.UserId]) < 1.5 then return end
 	lastCoinTime[player.UserId] = now
 
 	if #args < 2 then
-		local help = "Penggunaan: /coin <amount> <nama> [pesan]\nContoh: /coin 500 " .. player.Name .. " Semangat!\nTier Efek Robux:\n• 500 - 999: Nuke (Roket Nuklir)\n• 1000 - 2499: Palu Raksasa & Clone Avatar (Smite)\n• 2500 - 4999: Black Hole Kosmik\n• >= 5000: Starfall (Winged Giant)"
-		print(help)
+		print("Penggunaan: /coin <amount> <nama> [pesan]\nContoh: /coin 500 " .. player.Name .. " Semangat!\nTier Efek Robux:\n• 500 - 999: Nuke (Roket Nuklir)\n• 1000 - 2499: Palu Raksasa & Clone Avatar (Smite)\n• 2500 - 4999: Black Hole Kosmik\n• >= 5000: Starfall (Winged Giant)")
 		sendFeedback(player, "Coin Test", "Gunakan: /coin <amount> <nama> (500: Nuke, 1k: Palu, 2.5k: BlackHole, 5k: Starfall)")
 		return
 	end
@@ -174,15 +119,7 @@ local function handleCoinCommand(player, args)
 	end
 
 	local donatorName = args[2]
-
-	local message = ""
-	if #args > 2 then
-		local parts = {}
-		for i = 3, #args do
-			table.insert(parts, args[i])
-		end
-		message = table.concat(parts, " ")
-	end
+	local message = #args > 2 and table.concat(args, " ", 3) or ""
 
 	debugPrint("Test coin donation:", donatorName, amount, message)
 
@@ -205,13 +142,11 @@ local function handleCoinCommand(player, args)
 			showDonationNotif:FireAllClients({
 				donator = donatorName,
 				amount = amount,
-				message = message
+				message = message,
 			})
 		end)
 	end
 end
-
--- ========== COMMAND HANDLER: /saweria (Saweria Fake Test) ==========
 
 local function handleSaweriaCommand(player, args)
 	if not isOwner(player) then
@@ -219,7 +154,6 @@ local function handleSaweriaCommand(player, args)
 		return
 	end
 
-	-- ANTI DOUBLE-TRIGGER (Mencegah terpanggil 2x dari TextChatCommand & Player.Chatted)
 	local now = os.clock()
 	if lastSaweriaTime[player.UserId] and (now - lastSaweriaTime[player.UserId]) < 1.5 then
 		debugPrint("[ADMIN CMD] /saweria diabaikan untuk mencegah eksekusi ganda.")
@@ -228,8 +162,7 @@ local function handleSaweriaCommand(player, args)
 	lastSaweriaTime[player.UserId] = now
 
 	if #args < 1 then
-		local helpText = "Format: /saweria <username> <nominal> [pesan]\nContoh: /saweria " .. player.Name .. " 50000 Semangat terus bang!\n\nTier Efek:\n• < 10k: Banner UI saja\n• 10k - 49k: Nuke\n• 50k - 199k: Giant Hammer (Smite)\n• 200k - 499k: Black Hole\n• >= 500k: Starfall"
-		print(helpText)
+		print("Format: /saweria <username> <nominal> [pesan]\nContoh: /saweria " .. player.Name .. " 50000 Semangat terus bang!\n\nTier Efek:\n• < 10k: Banner UI saja\n• 10k - 49k: Nuke\n• 50k - 199k: Giant Hammer (Smite)\n• 200k - 499k: Black Hole\n• >= 500k: Starfall")
 		sendFeedback(player, "Saweria Test Help", "Gunakan: /saweria <username> <nominal> [pesan]")
 		return
 	end
@@ -238,45 +171,24 @@ local function handleSaweriaCommand(player, args)
 	local amount = 50000
 	local messageStartIndex = 2
 
-	-- Cek apakah argumen 1 atau 2 adalah angka nominal
-	local arg1Clean = tostring(args[1]):gsub("[^%d]", "")
-	local arg2Clean = args[2] and tostring(args[2]):gsub("[^%d]", "") or ""
-
-	local arg1Num = tonumber(arg1Clean)
-	local arg2Num = tonumber(arg2Clean)
+	local arg1Num = tonumber(tostring(args[1]):gsub("[^%d]", ""))
+	local arg2Num = args[2] and tonumber(tostring(args[2]):gsub("[^%d]", ""))
 
 	if arg1Num and not arg2Num then
-		-- Format: /saweria <nominal> [username] [pesan]
 		amount = arg1Num
-		if args[2] then
-			donatorName = args[2]
-			messageStartIndex = 3
-		else
-			messageStartIndex = 2
-		end
+		donatorName = args[2] or donatorName
+		messageStartIndex = args[2] and 3 or 2
 	elseif arg2Num then
-		-- Format: /saweria <username> <nominal> [pesan] (Sesuai request owner!)
 		donatorName = args[1]
 		amount = arg2Num
 		messageStartIndex = 3
 	else
-		-- Format: /saweria <username> [pesan...] (tanpa angka nominal, default 50k)
 		donatorName = args[1]
 		amount = 50000
 		messageStartIndex = 2
 	end
 
-	-- Gabung sisa kata sebagai pesan donasi
-	local message = ""
-	if #args >= messageStartIndex then
-		local parts = {}
-		for i = messageStartIndex, #args do
-			table.insert(parts, args[i])
-		end
-		message = table.concat(parts, " ")
-	else
-		message = "Tes fake donation Saweria!"
-	end
+	local message = #args >= messageStartIndex and table.concat(args, " ", messageStartIndex) or "Tes fake donation Saweria!"
 
 	if _G.TestSaweria then
 		_G.TestSaweria(donatorName, amount, message)
@@ -289,8 +201,6 @@ local function handleSaweriaCommand(player, args)
 	end
 end
 
--- ========== COMMAND HANDLER: /stage (Stage Effects - Owner & Admin Only) ==========
-
 local function handleStageCommand(player, args)
 	if not hasStaffPermission(player) then
 		debugPrint(player.Name, "bukan Owner/Admin, command /stage ditolak!")
@@ -298,11 +208,8 @@ local function handleStageCommand(player, args)
 		return
 	end
 
-	-- ANTI DOUBLE-TRIGGER (1 detik debounce)
 	local now = os.clock()
-	if lastStageTime[player.UserId] and (now - lastStageTime[player.UserId]) < 1.0 then
-		return
-	end
+	if lastStageTime[player.UserId] and (now - lastStageTime[player.UserId]) < 1.0 then return end
 	lastStageTime[player.UserId] = now
 
 	local subCmd = args[1] and string.lower(args[1])
@@ -323,7 +230,6 @@ local function handleStageCommand(player, args)
 		return
 	end
 
-	-- Durasi default: ikuti setingan yang ada (15 detik), atau custom jika admin input angka
 	local defaultDuration = (_G.GetStageFXDuration and _G.GetStageFXDuration()) or 15
 	local customSeconds = tonumber(args[1])
 	local duration = customSeconds and math.clamp(customSeconds, 1, 60) or defaultDuration
@@ -370,7 +276,20 @@ local function handleStageCommand(player, args)
 	print(string.format("[ADMIN CMD] Stage effects dinyalakan oleh %s selama %d detik", player.Name, duration))
 end
 
--- ========== COMMAND HANDLER: /effects (Toggle Mega Effects On/Off) ==========
+local EFFECT_TARGET_MAP = {
+	global = { key = "GLOBAL_ENABLED", label = "Global Mega Effects" },
+	all = { key = "GLOBAL_ENABLED", label = "Global Mega Effects" },
+	robux = { key = "ROBUX_ENABLED", label = "Robux Mega Effects" },
+	saweria = { key = "SAWERIA_ENABLED", label = "Saweria Mega Effects" },
+	nuke = { sub = "Nuke", label = "Nuke Effect" },
+	smite = { sub = "Smite", label = "Smite (Palu & Ava Clone)" },
+	hammer = { sub = "Smite", label = "Smite (Palu & Ava Clone)" },
+	palu = { sub = "Smite", label = "Smite (Palu & Ava Clone)" },
+	blackhole = { sub = "BlackHole", label = "BlackHole Effect" },
+	hole = { sub = "BlackHole", label = "BlackHole Effect" },
+	starfall = { sub = "Starfall", label = "Starfall Effect" },
+	star = { sub = "Starfall", label = "Starfall Effect" },
+}
 
 local function handleEffectsCommand(player, args)
 	if not isOwner(player) then
@@ -381,7 +300,7 @@ local function handleEffectsCommand(player, args)
 	local cfg = _G.MegaEffectsConfig
 	if not cfg then
 		local ok, m = pcall(function()
-			return require(game:GetService("ServerScriptService"):WaitForChild("EffectDonationSaweria"):WaitForChild("MegaEffectsConfig"))
+			return require(ServerScriptService:WaitForChild("EffectDonationSaweria"):WaitForChild("MegaEffectsConfig"))
 		end)
 		if ok and m then
 			cfg = m
@@ -410,61 +329,57 @@ local function handleEffectsCommand(player, args)
 	end
 
 	local target = args[1]:lower()
+	local info = EFFECT_TARGET_MAP[target]
+	if not info then
+		sendFeedback(player, "Effects Config", "Target: global, robux, saweria, nuke, smite, blackhole, starfall")
+		return
+	end
+
 	local stateStr = args[2] and args[2]:lower() or ""
-	local newState = (stateStr == "on" or stateStr == "true" or stateStr == "1" or stateStr == "enable")
+	local currentVal = if info.sub then cfg.EFFECTS_ENABLED[info.sub] else cfg[info.key]
+	local newState = if stateStr == "" then not currentVal else (stateStr == "on" or stateStr == "true" or stateStr == "1" or stateStr == "enable")
 
-	if stateStr == "" then
-		if target == "global" or target == "all" then
-			newState = not cfg.GLOBAL_ENABLED
-		elseif target == "robux" then
-			newState = not cfg.ROBUX_ENABLED
-		elseif target == "saweria" then
-			newState = not cfg.SAWERIA_ENABLED
-		elseif target == "nuke" then
-			newState = not cfg.EFFECTS_ENABLED.Nuke
-		elseif target == "smite" or target == "hammer" or target == "palu" then
-			newState = not cfg.EFFECTS_ENABLED.Smite
-		elseif target == "blackhole" or target == "hole" then
-			newState = not cfg.EFFECTS_ENABLED.BlackHole
-		elseif target == "starfall" or target == "star" then
-			newState = not cfg.EFFECTS_ENABLED.Starfall
-		else
-			sendFeedback(player, "Effects Config", "Target: global, robux, saweria, nuke, smite, blackhole, starfall")
-			return
-		end
-	end
-
-	local textOut = ""
-	if target == "global" or target == "all" then
-		cfg.GLOBAL_ENABLED = newState
-		textOut = "Global Mega Effects: " .. (newState and "ON ✅" or "OFF ❌")
-	elseif target == "robux" then
-		cfg.ROBUX_ENABLED = newState
-		textOut = "Robux Mega Effects: " .. (newState and "ON ✅" or "OFF ❌")
-	elseif target == "saweria" then
-		cfg.SAWERIA_ENABLED = newState
-		textOut = "Saweria Mega Effects: " .. (newState and "ON ✅" or "OFF ❌")
-	elseif target == "nuke" then
-		cfg.EFFECTS_ENABLED.Nuke = newState
-		textOut = "Nuke Effect: " .. (newState and "ON ✅" or "OFF ❌")
-	elseif target == "smite" or target == "hammer" or target == "palu" then
-		cfg.EFFECTS_ENABLED.Smite = newState
-		textOut = "Smite (Palu & Ava Clone): " .. (newState and "ON ✅" or "OFF ❌")
-	elseif target == "blackhole" or target == "hole" then
-		cfg.EFFECTS_ENABLED.BlackHole = newState
-		textOut = "BlackHole Effect: " .. (newState and "ON ✅" or "OFF ❌")
-	elseif target == "starfall" or target == "star" then
-		cfg.EFFECTS_ENABLED.Starfall = newState
-		textOut = "Starfall Effect: " .. (newState and "ON ✅" or "OFF ❌")
+	if info.sub then
+		cfg.EFFECTS_ENABLED[info.sub] = newState
 	else
-		textOut = "Target salah! Gunakan: all, robux, saweria, nuke, smite, blackhole, starfall"
+		cfg[info.key] = newState
 	end
 
+	local textOut = string.format("%s: %s", info.label, newState and "ON ✅" or "OFF ❌")
 	print("[ADMIN CMD]", textOut)
 	sendFeedback(player, "Effects Config", textOut)
 end
 
--- ========== TEXTCHATSERVICE SETUP (ROBLOX MODERN CHAT) ==========
+local COMMAND_REGISTRY = {
+	{
+		name = "SaweriaTestCommand",
+		primary = "/saweria",
+		secondary = "/testsaweria",
+		aliases = { ["/saweria"] = true, ["/testsaweria"] = true },
+		handler = handleSaweriaCommand,
+	},
+	{
+		name = "CoinTestCommand",
+		primary = CONFIG.COIN_PREFIX,
+		aliases = { [CONFIG.COIN_PREFIX:lower()] = true },
+		handler = handleCoinCommand,
+	},
+	{
+		name = "StageTestCommand",
+		primary = "/stage",
+		secondary = "/stagefx",
+		aliases = { ["/stage"] = true, ["/stagefx"] = true },
+		handler = handleStageCommand,
+	},
+	{
+		name = "EffectsToggleCommand",
+		primary = "/effects",
+		secondary = "/fx",
+		aliases = { ["/effects"] = true, ["/fx"] = true },
+		handler = handleEffectsCommand,
+	},
+}
+
 task.spawn(function()
 	local ok, tcCommands = pcall(function()
 		local folder = TextChatService:FindFirstChild("TextChatCommands")
@@ -477,134 +392,52 @@ task.spawn(function()
 	end)
 
 	if ok and tcCommands then
-		-- Daftarkan /saweria dan /testsaweria
-		local saweriaCmd = tcCommands:FindFirstChild("SaweriaTestCommand")
-		if not saweriaCmd then
-			saweriaCmd = Instance.new("TextChatCommand")
-			saweriaCmd.Name = "SaweriaTestCommand"
-			saweriaCmd.PrimaryAlias = "/saweria"
-			saweriaCmd.SecondaryAlias = "/testsaweria"
-			saweriaCmd.Parent = tcCommands
-
-			saweriaCmd.Triggered:Connect(function(textSource, rawText)
-				local player = Players:GetPlayerByUserId(textSource.UserId)
-				if not player then return end
-
-				local args = {}
-				for word in rawText:gmatch("%S+") do
-					table.insert(args, word)
+		for _, cmdDef in ipairs(COMMAND_REGISTRY) do
+			local cmd = tcCommands:FindFirstChild(cmdDef.name)
+			if not cmd then
+				cmd = Instance.new("TextChatCommand")
+				cmd.Name = cmdDef.name
+				cmd.PrimaryAlias = cmdDef.primary
+				if cmdDef.secondary then
+					cmd.SecondaryAlias = cmdDef.secondary
 				end
-				table.remove(args, 1) -- hapus prefix (/saweria / /testsaweria)
-				handleSaweriaCommand(player, args)
-			end)
+				cmd.Parent = tcCommands
+
+				cmd.Triggered:Connect(function(textSource, rawText)
+					local triggeringPlayer = Players:GetPlayerByUserId(textSource.UserId)
+					if not triggeringPlayer then return end
+
+					local args = {}
+					for word in rawText:gmatch("%S+") do
+						table.insert(args, word)
+					end
+					table.remove(args, 1)
+					cmdDef.handler(triggeringPlayer, args)
+				end)
+			end
 		end
-
-		-- Daftarkan /coin
-		local coinCmd = tcCommands:FindFirstChild("CoinTestCommand")
-		if not coinCmd then
-			coinCmd = Instance.new("TextChatCommand")
-			coinCmd.Name = "CoinTestCommand"
-			coinCmd.PrimaryAlias = CONFIG.COIN_PREFIX
-			coinCmd.Parent = tcCommands
-
-			coinCmd.Triggered:Connect(function(textSource, rawText)
-				local player = Players:GetPlayerByUserId(textSource.UserId)
-				if not player then return end
-
-				local args = {}
-				for word in rawText:gmatch("%S+") do
-					table.insert(args, word)
-				end
-				table.remove(args, 1) -- hapus /coin
-				handleCoinCommand(player, args)
-			end)
-		end
-
-		-- Daftarkan /stage dan /stagefx
-		local stageCmd = tcCommands:FindFirstChild("StageTestCommand")
-		if not stageCmd then
-			stageCmd = Instance.new("TextChatCommand")
-			stageCmd.Name = "StageTestCommand"
-			stageCmd.PrimaryAlias = "/stage"
-			stageCmd.SecondaryAlias = "/stagefx"
-			stageCmd.Parent = tcCommands
-
-			stageCmd.Triggered:Connect(function(textSource, rawText)
-				local player = Players:GetPlayerByUserId(textSource.UserId)
-				if not player then return end
-
-				local args = {}
-				for word in rawText:gmatch("%S+") do
-					table.insert(args, word)
-				end
-				table.remove(args, 1) -- hapus /stage
-				handleStageCommand(player, args)
-			end)
-		end
-
-		-- Daftarkan /effects dan /fx
-		local fxCmd = tcCommands:FindFirstChild("EffectsToggleCommand")
-		if not fxCmd then
-			fxCmd = Instance.new("TextChatCommand")
-			fxCmd.Name = "EffectsToggleCommand"
-			fxCmd.PrimaryAlias = "/effects"
-			fxCmd.SecondaryAlias = "/fx"
-			fxCmd.Parent = tcCommands
-
-			fxCmd.Triggered:Connect(function(textSource, rawText)
-				local player = Players:GetPlayerByUserId(textSource.UserId)
-				if not player then return end
-
-				local args = {}
-				for word in rawText:gmatch("%S+") do
-					table.insert(args, word)
-				end
-				table.remove(args, 1)
-				handleEffectsCommand(player, args)
-			end)
-		end
-
-		debugPrint("TextChatCommands berhasil didaftarkan di TextChatService (/saweria, /coin, /stage, /effects)")
+		debugPrint("TextChatCommands berhasil didaftarkan di TextChatService")
 	end
 end)
 
--- ========== LEGACY CHAT FALLBACK ==========
-
 local function onPlayerChatted(player, message)
-	-- PENTING: Jika game menggunakan TextChatService, TextChatCommand sudah menangani slash command!
-	-- Jangan proses lagi lewat Chatted agar tidak jalan 2x.
 	if TextChatService and TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
 		return
 	end
 
-	if message:sub(1, #CONFIG.COIN_PREFIX):lower() == CONFIG.COIN_PREFIX:lower() then
-		local args = {}
-		for word in message:gmatch("%S+") do
-			table.insert(args, word)
+	local words = {}
+	for word in message:gmatch("%S+") do
+		table.insert(words, word)
+	end
+	if #words == 0 then return end
+
+	local firstWord = words[1]:lower()
+	for _, cmdDef in ipairs(COMMAND_REGISTRY) do
+		if cmdDef.aliases[firstWord] then
+			table.remove(words, 1)
+			cmdDef.handler(player, words)
+			return
 		end
-		table.remove(args, 1)
-		handleCoinCommand(player, args)
-	elseif message:sub(1, 8):lower() == "/saweria" or message:sub(1, 12):lower() == "/testsaweria" then
-		local args = {}
-		for word in message:gmatch("%S+") do
-			table.insert(args, word)
-		end
-		table.remove(args, 1)
-		handleSaweriaCommand(player, args)
-	elseif message:sub(1, 6):lower() == "/stage" or message:sub(1, 8):lower() == "/stagefx" then
-		local args = {}
-		for word in message:gmatch("%S+") do
-			table.insert(args, word)
-		end
-		table.remove(args, 1)
-		handleStageCommand(player, args)
-	elseif message:sub(1, 8):lower() == "/effects" or message:sub(1, 3):lower() == "/fx" then
-		local args = {}
-		for word in message:gmatch("%S+") do
-			table.insert(args, word)
-		end
-		table.remove(args, 1)
-		handleEffectsCommand(player, args)
 	end
 end
 
@@ -624,8 +457,6 @@ Players.PlayerRemoving:Connect(function(player)
 	lastCoinTime[player.UserId] = nil
 	lastStageTime[player.UserId] = nil
 end)
-
--- ========== CONSOLE HELPER UNTUK ROBLOX STUDIO ==========
 
 _G.TestCoin = function(amount, donatorName, message)
 	amount = tonumber(amount)

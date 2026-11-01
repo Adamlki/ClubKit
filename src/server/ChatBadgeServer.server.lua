@@ -100,10 +100,10 @@ refreshBadge = function(player)
 end
 
 -- ====================================
--- PLAYER ADDED
+-- PLAYER SETUP & EVENT BINDINGS
 -- ====================================
-Players.PlayerAdded:Connect(function(player)
-	debugLog(string.format("Player joined: %s", player.Name))
+local function setupPlayer(player)
+	debugLog(string.format("Player setup: %s", player.Name))
 
 	-- Beri badge saat masuk
 	refreshBadge(player)
@@ -119,9 +119,13 @@ Players.PlayerAdded:Connect(function(player)
 		task.wait(0.5)
 		refreshBadge(player)
 	end)
+end
 
-	-- LOOP 2 DETIK DIHAPUS KARENA SUDAH TIDAK PERLU!
-end)
+Players.PlayerAdded:Connect(setupPlayer)
+
+for _, player in ipairs(Players:GetPlayers()) do
+	task.spawn(setupPlayer, player)
+end
 
 -- ====================================
 -- PLAYER REMOVING

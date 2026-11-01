@@ -16,6 +16,11 @@ function ShopHandler:GetShopData(player)
 		return {success = false, error = "Invalid player"}
 	end
 
+	local features = self.roleSystem.Config.Features or {}
+	if features.VIPShopEnabled == false then
+		return {success = false, error = "VIP shop is disabled"}
+	end
+
 	local ownership = self.roleSystem:GetPlayerOwnership(player)
 
 	local data = {
@@ -43,6 +48,11 @@ end
 function ShopHandler:PromptPurchase(player, gamepassType)
 	if not self.validationManager:ValidatePlayer(player) then
 		return {success = false, error = "Invalid player"}
+	end
+
+	local features = self.roleSystem.Config.Features or {}
+	if features.VIPShopEnabled == false then
+		return {success = false, error = "VIP shop is disabled"}
 	end
 
 	if gamepassType ~= "VIP" then

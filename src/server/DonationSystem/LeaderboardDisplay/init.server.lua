@@ -77,7 +77,7 @@ local function isDataDifferent(oldPayload, newPayload)
 	local oldAll = oldPayload.AllTime or {}
 	local newAll = newPayload.AllTime or {}
 	if #oldAll ~= #newAll then return true end
-	for i = 1, math.min(10, #newAll) do
+	for i = 1, #newAll do
 		local o, n = oldAll[i], newAll[i]
 		if not o or not n then return true end
 		if (o.userId or o.UserId) ~= (n.userId or n.UserId) or (o.amount or o.Amount) ~= (n.amount or n.Amount) then
@@ -87,7 +87,7 @@ local function isDataDifferent(oldPayload, newPayload)
 	local oldDaily = oldPayload.Daily or {}
 	local newDaily = newPayload.Daily or {}
 	if #oldDaily ~= #newDaily then return true end
-	for i = 1, math.min(10, #newDaily) do
+	for i = 1, #newDaily do
 		local o, n = oldDaily[i], newDaily[i]
 		if not o or not n then return true end
 		if (o.userId or o.UserId) ~= (n.userId or n.UserId) or (o.amount or o.Amount) ~= (n.amount or n.Amount) then

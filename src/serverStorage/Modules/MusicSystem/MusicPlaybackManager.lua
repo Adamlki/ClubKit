@@ -1,37 +1,24 @@
 local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local MarketplaceService = game:GetService("MarketplaceService")
+
 local ServerMusicAudioHandler = require(script.Parent.ServerMusicAudioHandler)
-local BridgeNet = require(game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet"))
-local MusicModule = require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("MusicModule"))
+local BridgeNet = require(ReplicatedStorage:WaitForChild("BridgeNet"))
+local MusicModule = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("MusicModule"))
+
 local musicBroadcastBridge = BridgeNet.CreateBridge("MusicBroadcast")
 
 local MusicPlaybackManager = {}
 MusicPlaybackManager.__index = MusicPlaybackManager
 
--- ====================================
--- CONFIG & DEBUG SETTINGS
--- ====================================
-local DEBUG_ENABLED = false -- Ubah ke 'true' untuk melihat log durasi & error, 'false' saat rilis
-local DEBUG_PREFIX = "[PlaybackManager]"
-
-local function debugPrint(...)
-	if DEBUG_ENABLED then print(DEBUG_PREFIX, ...) end
-end
-
-local function debugWarn(...)
-	if DEBUG_ENABLED then warn(DEBUG_PREFIX, ...) end
-end
-
 local CONFIG = {
-	PROGRESS_BROADCAST_INTERVAL = 2, -- Optimized: 2 seconds instead of 1
+	PROGRESS_BROADCAST_INTERVAL = 2,
 	DEFAULT_COVER = "rbxassetid://88574818940840",
 	DEFAULT_PLAYBACK_SPEED = 1.0,
-	AUTO_DURATION_TIMEOUT = 12, -- Waktu aman 12 detik agar audio buffer tanpa false-positive skip
+	AUTO_DURATION_TIMEOUT = 12,
 }
 
--- 🛑 BANNED CACHE: Menyimpan ID lagu yang diverifikasi benar-benar dibanned/unauthorized oleh Roblox
 local bannedSongCache = {}
--- ⏱️ TEMPORARY CDN COOLDOWN: Mencegah spam request saat CDN Roblox mengalami HTTP 502 Bad Gateway
--- Hanya cooldown sementara (45 detik), TIDAK diblacklist permanen!
 local temporaryCdnCooldown = {}
 
 function MusicPlaybackManager.new(config)
@@ -43,14 +30,14 @@ function MusicPlaybackManager.new(config)
 	self.isPlaying = false
 	self.songStartTime = 0
 	self.songDuration = 0
-	self.adjustedDuration = 0 -- Duration adjusted for playback speed
+	self.adjustedDuration = 0
 	self.isPlaylistMode = false
-	self.consecutiveFailures = 0 -- Circuit breaker counter
+	self.consecutiveFailures = 0
 
 	self.audioHandler = ServerMusicAudioHandler.new()
 
 	self.autoNextCallback = nil
-	self.onSongFailed = nil -- Callback jika lagu error/rusak untuk notifikasi
+	self.onSongFailed = nil
 	self.endedConnection = nil
 	self.watchdogThread = nil
 	self._playbackGeneration = 0
@@ -61,9 +48,6 @@ function MusicPlaybackManager.new(config)
 	return self
 end
 
--- ====================================
--- STATE GETTERS
--- ====================================
 function MusicPlaybackManager:GetState()
 	return {
 		currentSong = self.currentSong,
@@ -71,9 +55,9 @@ function MusicPlaybackManager:GetState()
 		isPlaying = self.isPlaying,
 		isPaused = false,
 		startTime = self.songStartTime,
-		duration = self.adjustedDuration, -- Return adjusted duration
+		duration = self.adjustedDuration,
 		isPlaylistMode = self.isPlaylistMode,
-		elapsedTime = self:GetElapsedTime()
+		elapsedTime = self:GetElapsedTime(),
 	}
 end
 
@@ -86,26 +70,18 @@ function MusicPlaybackManager:GetCurrentSong()
 end
 
 function MusicPlaybackManager:GetElapsedTime()
-	if self.isPlaying then
-		return self.audioHandler:GetTimePosition()
-	end
-	return 0
+	return self.isPlaying and self.audioHandler:GetTimePosition() or 0
 end
 
 function MusicPlaybackManager:GetRemainingTime()
 	if not self.isPlaying then return 0 end
-	local elapsed = self:GetElapsedTime()
-	return math.max(0, self.adjustedDuration - elapsed)
+	return math.max(0, self.adjustedDuration - self:GetElapsedTime())
 end
 
 function MusicPlaybackManager:IsFromPlaylist()
 	return self.isPlaylistMode
 end
 
--- ====================================
--- WATCHDOG SYSTEM (ANTI-STUCK / FALLBACK TIMER)
--- Menjamin server otomatis lanjut ke lagu berikutnya jika sound.Ended gagal terpanggil
--- ====================================
 function MusicPlaybackManager:StartWatchdog(duration)
 	self:CancelWatchdog()
 
@@ -115,7 +91,6 @@ function MusicPlaybackManager:StartWatchdog(duration)
 
 	self.watchdogThread = task.delay(timeout, function()
 		if self._playbackGeneration == songGeneration and self.isPlaying and self.currentSong and self.currentSong.id == currentSongId then
-			debugWarn("⏱️ Watchdog Timer: Durasi habis tanpa event Ended! Auto-skipping lagu:", self.currentSong.judul or "Unknown")
 			self:CancelWatchdog()
 			if self.endedConnection then
 				self.endedConnection:Disconnect()
@@ -135,9 +110,6 @@ function MusicPlaybackManager:CancelWatchdog()
 	end
 end
 
--- ====================================
--- AUTO DURATION DETECTION (FAST & NON-BLOCKING)
--- ====================================
 function MusicPlaybackManager:TryDetectDuration(soundId, playbackSpeed, customTimeout)
 	local timeout = customTimeout or CONFIG.AUTO_DURATION_TIMEOUT
 	local success, detectedDuration = pcall(function()
@@ -145,32 +117,23 @@ function MusicPlaybackManager:TryDetectDuration(soundId, playbackSpeed, customTi
 		if not sound then return nil end
 
 		local startTime = os.clock()
-
-		-- Wait for TimeLength or IsLoaded to be available
 		while sound.TimeLength == 0 and not sound.IsLoaded and (os.clock() - startTime) < timeout do
 			task.wait(0.1)
 		end
 
 		if sound.TimeLength > 0 then
-			-- ✅ FIX: Convert to real-life duration by dividing by PlaybackSpeed
-			local speed = playbackSpeed or 1
-			if speed <= 0 then speed = 1 end
+			local speed = (playbackSpeed and playbackSpeed > 0) and playbackSpeed or 1
 			return sound.TimeLength / speed
 		end
-
 		return nil
 	end)
 
 	if success and detectedDuration and detectedDuration > 0 then
 		return detectedDuration
 	end
-
 	return nil
 end
 
--- ====================================
--- EVENT CONNECTIONS
--- ====================================
 function MusicPlaybackManager:ConnectEndedEvent()
 	if self.endedConnection then
 		self.endedConnection:Disconnect()
@@ -178,13 +141,9 @@ function MusicPlaybackManager:ConnectEndedEvent()
 	end
 
 	local sound = self.audioHandler:GetSound()
-	if not sound then 
-		debugWarn("No sound object to connect Ended event")
-		return 
-	end
+	if not sound then return end
 
 	local songGeneration = self._playbackGeneration
-
 	self.endedConnection = sound.Ended:Connect(function()
 		if self._playbackGeneration == songGeneration and self.autoNextCallback and self.isPlaying then
 			self:CancelWatchdog()
@@ -198,13 +157,6 @@ function MusicPlaybackManager:ConnectEndedEvent()
 	end)
 end
 
--- ====================================
--- PROGRESS BROADCAST DELETED
--- ====================================
-
--- ====================================
--- FADE EFFECTS
--- ====================================
 function MusicPlaybackManager:CancelFade()
 	if self.volumeTween then
 		self.volumeTween:Cancel()
@@ -212,63 +164,38 @@ function MusicPlaybackManager:CancelFade()
 	end
 end
 
-function MusicPlaybackManager:FadeOut(duration)
+local function tweenVolume(self, targetVolume, duration, easingDir)
 	self:CancelFade()
-
 	local sound = self.audioHandler:GetSound()
-	if not sound or not sound.IsPlaying then
-		return
+	if not sound or not sound.IsPlaying then return end
+
+	if targetVolume > 0 then
+		sound.Volume = 0
 	end
 
-	local tweenInfo = TweenInfo.new(
-		duration,
-		Enum.EasingStyle.Linear,
-		Enum.EasingDirection.Out
+	local tween = TweenService:Create(
+		sound,
+		TweenInfo.new(duration, Enum.EasingStyle.Linear, easingDir),
+		{ Volume = targetVolume }
 	)
-
-	self.volumeTween = TweenService:Create(sound, tweenInfo, {
-		Volume = 0
-	})
-
-	self.volumeTween:Play()
-
-	self.volumeTween.Completed:Connect(function()
-		self.volumeTween = nil
+	self.volumeTween = tween
+	tween:Play()
+	tween.Completed:Connect(function()
+		if self.volumeTween == tween then
+			self.volumeTween = nil
+		end
 	end)
+end
+
+function MusicPlaybackManager:FadeOut(duration)
+	tweenVolume(self, 0, duration, Enum.EasingDirection.Out)
 end
 
 function MusicPlaybackManager:FadeIn(duration)
-	self:CancelFade()
-
-	local sound = self.audioHandler:GetSound()
-	if not sound or not sound.IsPlaying then
-		return
-	end
-
-	sound.Volume = 0
-
-	local tweenInfo = TweenInfo.new(
-		duration,
-		Enum.EasingStyle.Linear,
-		Enum.EasingDirection.In
-	)
-
-	self.volumeTween = TweenService:Create(sound, tweenInfo, {
-		Volume = self.originalVolume
-	})
-
-	self.volumeTween:Play()
-
-	self.volumeTween.Completed:Connect(function()
-		self.volumeTween = nil
-	end)
+	tweenVolume(self, self.originalVolume, duration, Enum.EasingDirection.In)
 end
 
--- ====================================
--- PLAY METHOD (FAST VALIDATION + WATCHDOG)
--- ====================================
 function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlaylist)
-	-- Cleanup previous playback
 	if self.endedConnection then
 		self.endedConnection:Disconnect()
 		self.endedConnection = nil
@@ -279,33 +206,25 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 	local musicData = songData.musicData or songData
 	local songIdStr = tostring(musicData.id or "")
 
-	-- 🛑 CEK STATUS BANNED & COOLDOWN SEMENTARA
 	if songIdStr ~= "" then
 		if bannedSongCache[songIdStr] then
-			debugWarn("🚫 [PlaybackManager] Melewati lagu yang dibanned Roblox:", musicData.judul or songIdStr)
-			if self.autoNextCallback then
-				task.defer(self.autoNextCallback)
-			end
+			if self.autoNextCallback then task.defer(self.autoNextCallback) end
 			return false, "Song is banned on Roblox"
 		end
 
-		if temporaryCdnCooldown[songIdStr] and os.clock() < temporaryCdnCooldown[songIdStr] then
-			debugWarn("⏱️ [PlaybackManager] Melewati lagu (cooldown CDN sementara):", musicData.judul or songIdStr)
-			if self.autoNextCallback then
-				task.defer(self.autoNextCallback)
-			end
+		local cooldownUntil = temporaryCdnCooldown[songIdStr]
+		if cooldownUntil and os.clock() < cooldownUntil then
+			if self.autoNextCallback then task.defer(self.autoNextCallback) end
 			return false, "Song is in temporary CDN cooldown"
 		end
 	end
 
 	local baseDuration = songData.Duration or musicData.Duration or self.config.DEFAULT_SONG_DURATION
-	local playbackSpeed = musicData.PlaybackSpeed or CONFIG.DEFAULT_PLAYBACK_SPEED
+	local playbackSpeed = math.clamp(musicData.PlaybackSpeed or CONFIG.DEFAULT_PLAYBACK_SPEED, 0.1, 2.0)
 
 	if baseDuration <= 0 then
 		return false, "Invalid song duration"
 	end
-
-	playbackSpeed = math.clamp(playbackSpeed, 0.1, 2.0)
 
 	local albumName = musicData.album
 	if (not albumName or albumName == "") and musicData.id then
@@ -324,16 +243,13 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 		sampul = coverImage,
 		album = albumName,
 		Duration = baseDuration,
-		PlaybackSpeed = playbackSpeed
+		PlaybackSpeed = playbackSpeed,
 	}
 
-	-- Increment playback generation to discard stale callbacks
 	self._playbackGeneration = (self._playbackGeneration or 0) + 1
 	local currentGeneration = self._playbackGeneration
 
-	-- PitchOctave parameter
 	local pitchOctave = musicData.PitchOctave or 1.0
-
 	local success = self.audioHandler:Play(musicData.id, 0, playbackSpeed, pitchOctave)
 
 	if not success then
@@ -347,21 +263,15 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 	self.songDuration = baseDuration
 	self.adjustedDuration = baseDuration
 	self.isPlaylistMode = isFromPlaylist or false
-
 	self.isPlaying = true
 
-	-- Connect ended event & start watchdog timer
 	self:ConnectEndedEvent()
 	self:StartWatchdog(self.adjustedDuration)
-
-	-- Broadcast initial song update to clients
 	self:BroadcastSongUpdate(remotes, displayMusicData, uploaderName, self.adjustedDuration, playbackSpeed, false)
 
-	-- ⏳ DETEKSI DURASI & VALIDASI LAGU DI BACKGROUND (DENGAN RETRY & ANTI FALSE-POSITIVE)
 	task.spawn(function()
 		local detectedDuration = self:TryDetectDuration(musicData.id, playbackSpeed, CONFIG.AUTO_DURATION_TIMEOUT)
-		
-		-- 🚨 BATALKAN JIKA LAGU SUDAH BERGANTI
+
 		if self._playbackGeneration ~= currentGeneration or not self.currentSong or self.currentSong.id ~= displayMusicData.id then
 			return
 		end
@@ -372,10 +282,8 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 		local hasRealDuration = detectedDuration and detectedDuration > 0
 		local hasPositionProgress = sound and sound.TimePosition > 0.2
 
-		-- 🔄 AUTO-RETRY RE-FETCH: Jika terkena HTTP 502 / Network Blip dari CDN Roblox,
-		-- jangan langsung anggap banned! Coba re-trigger koneksi audio sekali lagi.
 		if not (hasTimeLength or isLoaded or hasRealDuration or hasPositionProgress) then
-			for retry = 1, 2 do
+			for _ = 1, 2 do
 				if self._playbackGeneration ~= currentGeneration then return end
 				task.wait(1.0)
 				if self._playbackGeneration ~= currentGeneration then return end
@@ -401,36 +309,25 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 						detectedDuration = sound.TimeLength / (playbackSpeed > 0 and playbackSpeed or 1)
 						hasRealDuration = true
 					end
-					debugPrint(string.format("✅ Auto-retry #%d berhasil memulihkan koneksi audio '%s'", retry, displayMusicData.judul))
 					break
 				end
 			end
 		end
 
-		-- Lagu valid HANYA jika benar-benar memiliki data audio yang termuat.
-		-- JANGAN gunakan 'sound.IsPlaying' saja, karena Roblox server otomatis mengeset IsPlaying = true walaupun asetnya unauthorized/banned/rusak!
 		if hasTimeLength or isLoaded or hasRealDuration or hasPositionProgress then
-			self.consecutiveFailures = 0 -- Reset counter kegagalan karena lagu valid
+			self.consecutiveFailures = 0
 
 			if detectedDuration and detectedDuration > 0 then
 				self.adjustedDuration = detectedDuration
-				-- Perbarui Watchdog timer dengan durasi yang akurat
 				self:StartWatchdog(self.adjustedDuration)
-				debugPrint(string.format("Duration corrected for '%s': %.1fs", displayMusicData.judul, self.adjustedDuration))
-				
-				-- Broadcast durasi yang benar ke UI
 				self:BroadcastSongUpdate(remotes, displayMusicData, uploaderName, self.adjustedDuration, playbackSpeed, true)
 			end
 		else
-			-- 🔍 VERIFIKASI AKURAT: Cek apakah aset memang dibanned atau hanya CDN 502 glitch
-			local MarketplaceService = game:GetService("MarketplaceService")
 			local numericId = tonumber(tostring(musicData.id):match("%d+"))
 			local isTrulyBanned = false
 
 			if numericId then
-				local ok, assetInfo = pcall(function()
-					return MarketplaceService:GetProductInfo(numericId, Enum.InfoType.Asset)
-				end)
+				local ok, assetInfo = pcall(MarketplaceService.GetProductInfo, MarketplaceService, numericId, Enum.InfoType.Asset)
 				if not ok then
 					local errStr = string.lower(tostring(assetInfo))
 					if errStr:find("not approved") or errStr:find("forbidden") or errStr:find("403") or errStr:find("404") then
@@ -441,26 +338,19 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 
 			local failedIdStr = tostring(musicData.id or "")
 			if isTrulyBanned then
-				if failedIdStr ~= "" then
-					bannedSongCache[failedIdStr] = true -- Banned permanen di sesi ini
-				end
-				warn(string.format("[PlaybackManager] 🚫 Lagu '%s' (ID: %s) diblokir moderasi/hak cipta Roblox (Banned). Melewati ke lagu berikutnya...", 
-					displayMusicData.judul or "Unknown", tostring(musicData.id)))
+				if failedIdStr ~= "" then bannedSongCache[failedIdStr] = true end
+				warn(string.format("[PlaybackManager] 🚫 Lagu '%s' (ID: %s) diblokir moderasi/hak cipta Roblox.", displayMusicData.judul or "Unknown", tostring(musicData.id)))
 			else
-				if failedIdStr ~= "" then
-					temporaryCdnCooldown[failedIdStr] = os.clock() + 45 -- Cooldown sementara 45 detik saja (TIDAK DIBANNED!)
-				end
-				warn(string.format("[PlaybackManager] ⚠️ Lagu '%s' (ID: %s) gagal dimuat dari CDN Roblox (HTTP 502 Bad Gateway / Network Glitch). Lagu TIDAK dibanned, melewati sementara...", 
-					displayMusicData.judul or "Unknown", tostring(musicData.id)))
+				if failedIdStr ~= "" then temporaryCdnCooldown[failedIdStr] = os.clock() + 45 end
+				warn(string.format("[PlaybackManager] ⚠️ Lagu '%s' (ID: %s) gagal dimuat dari CDN Roblox.", displayMusicData.judul or "Unknown", tostring(musicData.id)))
 			end
 
 			self.consecutiveFailures = (self.consecutiveFailures or 0) + 1
-			
+
 			if self.onSongFailed then
 				pcall(self.onSongFailed, displayMusicData.judul or "Unknown", isTrulyBanned and "Song is banned/unauthorized" or "Roblox CDN 502 Bad Gateway")
 			end
 
-			-- Hentikan audio yang rusak dan bersihkan status
 			self:CancelWatchdog()
 			if self.endedConnection then
 				self.endedConnection:Disconnect()
@@ -469,14 +359,11 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 			self.isPlaying = false
 			self.audioHandler:Stop()
 
-			-- 🛑 CIRCUIT BREAKER & COOLDOWN ADAPTIF:
-			-- Mencegah banjir request ke CDN Roblox yang menyebabkan HTTP 502 Bad Gateway
 			local backoffDelay = 2.0
 			if self.consecutiveFailures == 2 then
 				backoffDelay = 3.0
 			elseif self.consecutiveFailures >= 3 then
 				backoffDelay = 6.0
-				warn("[PlaybackManager] 🛑 Circuit Breaker aktif: Cooldown 6 detik untuk CDN Roblox...")
 			end
 
 			if self.autoNextCallback then
@@ -491,9 +378,6 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 	return true, nil
 end
 
--- ====================================
--- STOP METHOD
--- ====================================
 function MusicPlaybackManager:Stop(remotes)
 	if self.endedConnection then
 		self.endedConnection:Disconnect()
@@ -522,15 +406,11 @@ function MusicPlaybackManager:Cleanup()
 	self.audioHandler:Cleanup()
 end
 
--- ====================================
--- BROADCAST METHODS (UI ONLY - NO AUDIO SYNC)
--- ====================================
-
 function MusicPlaybackManager:BroadcastStopMusic(remotes)
 	pcall(function()
 		musicBroadcastBridge:FireAll({
 			eventType = "StopMusic",
-			data = { IsPlaying = false }
+			data = { IsPlaying = false },
 		})
 	end)
 end
@@ -547,28 +427,20 @@ function MusicPlaybackManager:BroadcastSongUpdate(remotes, musicData, uploaderNa
 				Duration = duration,
 				PlaybackSpeed = playbackSpeed or 1.0,
 				IsPlaying = true,
-
-				-- 🔥 FIX: Gunakan Waktu Absolut Server, BUKAN tick() lokal!
-				ServerTime = workspace:GetServerTimeNow(), 
-
-				MetadataDuration = musicData.Duration, 
-				DetectedDuration = duration, 
+				ServerTime = workspace:GetServerTimeNow(),
+				MetadataDuration = musicData.Duration,
+				DetectedDuration = duration,
 				WasDetected = (musicData.Duration ~= duration),
-				IsCorrection = isCorrection or false
-			}
+				IsCorrection = isCorrection or false,
+			},
 		})
 	end)
 end
 
-
-
 function MusicPlaybackManager:SyncToPlayer(remotes, player)
-	if not self.isPlaying or not self.currentSong then
-		return
-	end
+	if not self.isPlaying or not self.currentSong then return end
 
 	local elapsed = self.audioHandler:GetTimePosition()
-
 	pcall(function()
 		remotes.MusicUpdate:FireClient(player, "SyncMusic", {
 			SoundId = self.currentSong.id,
@@ -580,14 +452,11 @@ function MusicPlaybackManager:SyncToPlayer(remotes, player)
 			PlaybackSpeed = self.currentSong.PlaybackSpeed or 1.0,
 			IsPlaying = self.isPlaying,
 			IsPaused = false,
-			ServerTime = self.songStartTime or workspace:GetServerTimeNow()
+			ServerTime = self.songStartTime or workspace:GetServerTimeNow(),
 		})
 	end)
 end
 
--- ====================================
--- VOLUME & SPEED CONTROL
--- ====================================
 function MusicPlaybackManager:SetVolume(volume)
 	self.originalVolume = math.clamp(volume, 0, 1)
 	self.audioHandler:SetVolume(self.originalVolume)
@@ -597,9 +466,6 @@ function MusicPlaybackManager:SetPlaybackSpeed(speed)
 	self.audioHandler:SetPlaybackSpeed(speed)
 end
 
--- ====================================
--- CLEANUP
--- ====================================
 function MusicPlaybackManager:Reset(remotes)
 	self:Stop(remotes)
 end

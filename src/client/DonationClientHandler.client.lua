@@ -1,52 +1,54 @@
 --!optimize 2
 --!native
 
-if _G.__DonationClientHandlerLoaded then
-	return
-end
+if _G.__DonationClientHandlerLoaded then return end
 _G.__DonationClientHandlerLoaded = true
 
-local Players            = game:GetService("Players")
+local Players = game:GetService("Players")
 local MarketplaceService = game:GetService("MarketplaceService")
-local ReplicatedStorage  = game:GetService("ReplicatedStorage")
-local TweenService       = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ClientConfig = require(script:FindFirstChild("ClientConfig") or script.Parent:WaitForChild("ClientConfig"))
-local ClientUI     = require(script:FindFirstChild("ClientUI") or script.Parent:WaitForChild("ClientUI"))
-
+local ClientUI = require(script:FindFirstChild("ClientUI") or script.Parent:WaitForChild("ClientUI"))
 local Icon = require(ReplicatedStorage:WaitForChild("Icon"))
 
-local player    = Players.LocalPlayer
+local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
-local gui       = playerGui:WaitForChild("DonationBoard", 30)
+local gui = playerGui:WaitForChild("DonationBoard", 30)
 if not gui then
 	warn("[DonationClientHandler] DonationBoard tidak ditemukan di PlayerGui dalam 30 detik!")
 	return
 end
 
-local UI = {
-	mainFrame         = gui:WaitForChild("MainFrame"),
-	leftPanel         = gui:WaitForChild("MainFrame"):WaitForChild("LeftPanel"),
-	rightPanel        = gui:WaitForChild("MainFrame"):WaitForChild("RightPanel"),
-	messageFrame      = gui:WaitForChild("MessageFrame"),
-	notificationFrame = gui:WaitForChild("NotificationFrame"),
-	container         = gui:WaitForChild("MainFrame"):WaitForChild("RightPanel"):WaitForChild("Container"),
-	templateBtn       = gui:WaitForChild("MainFrame"):WaitForChild("RightPanel"):WaitForChild("Container"):WaitForChild("RobuxBtn"),
-	statsFrame        = gui:WaitForChild("MainFrame"):WaitForChild("LeftPanel"):WaitForChild("StatsFrame"),
-	closeBtn          = gui:WaitForChild("MainFrame"):WaitForChild("CloseBtn"),
-}
+local mainFrame = gui:WaitForChild("MainFrame")
+local leftPanel = mainFrame:WaitForChild("LeftPanel")
+local rightPanel = mainFrame:WaitForChild("RightPanel")
+local container = rightPanel:WaitForChild("Container")
 
+local UI = {
+	mainFrame = mainFrame,
+	leftPanel = leftPanel,
+	rightPanel = rightPanel,
+	messageFrame = gui:WaitForChild("MessageFrame"),
+	notificationFrame = gui:WaitForChild("NotificationFrame"),
+	container = container,
+	templateBtn = container:WaitForChild("RobuxBtn"),
+	statsFrame = leftPanel:WaitForChild("StatsFrame"),
+	closeBtn = mainFrame:WaitForChild("CloseBtn"),
+}
 
 local State = {
-	productsLoaded       = false,
-	isLoading            = false,
-	isSending            = false,  
-	currentButtons       = {},
-	productPrices        = {},
-	lastPurchasedAmount  = 0,
-	canSendMessage       = false,
-	lastMessageTime      = 0,
+	productsLoaded = false,
+	isLoading = false,
+	isSending = false,
+	currentButtons = {},
+	productPrices = {},
+	lastPurchasedAmount = 0,
+	canSendMessage = false,
+	lastMessageTime = 0,
 }
+
+local donationIcon
 
 local function debugLog(...)
 	if ClientConfig.DEBUG.ENABLED and ClientConfig.DEBUG.SHOW_EVENTS then
@@ -54,6 +56,11 @@ local function debugLog(...)
 	end
 end
 
+local function deselectDonationIcon()
+	if donationIcon and donationIcon.isSelected then
+		pcall(donationIcon.deselect, donationIcon)
+	end
+end
 
 local function updatePlayerProfile()
 	local avatarImg = UI.leftPanel:FindFirstChild("Avatar")
@@ -70,7 +77,7 @@ local function updatePlayerStats()
 	local getStatsRemote = ReplicatedStorage:FindFirstChild("GetPlayerDonationStats")
 	if getStatsRemote and getStatsRemote:IsA("RemoteFunction") then
 		task.spawn(function()
-			local ok, stats = pcall(function() return getStatsRemote:InvokeServer() end)
+			local ok, stats = pcall(getStatsRemote.InvokeServer, getStatsRemote)
 			if ok and type(stats) == "table" then
 				local robuxLbl = UI.statsFrame:FindFirstChild("TotalRobuxLabel")
 				if robuxLbl then
@@ -81,47 +88,33 @@ local function updatePlayerStats()
 	end
 end
 
-
-local function closeFrame(frame)
-	frame.Visible = false
-end
-
 local function openFrame(frame)
 	frame.Visible = true
 	if frame == UI.mainFrame then
-		if _G.CloseSaweria then
-			pcall(_G.CloseSaweria)
-		end
-		UI.container.CanvasPosition = Vector2.new(0, 0)
+		if _G.CloseSaweria then pcall(_G.CloseSaweria) end
+		UI.container.CanvasPosition = Vector2.zero
 		updatePlayerProfile()
 		updatePlayerStats()
 	elseif frame == UI.messageFrame then
-		closeFrame(UI.mainFrame)
-		if donationIcon and donationIcon.isSelected then
-			pcall(function() donationIcon:deselect() end)
-		end
+		UI.mainFrame.Visible = false
+		deselectDonationIcon()
 	end
 end
 
 _G.CloseRobuxDonation = function()
-	closeFrame(UI.mainFrame)
-	if donationIcon and donationIcon.isSelected then
-		pcall(function() donationIcon:deselect() end)
-	end
+	UI.mainFrame.Visible = false
+	deselectDonationIcon()
 end
 
-
 local loadProducts
-local createProductButton
-local clearProducts
 
-createProductButton = function(productData, index)
+local function createProductButton(productData, index)
 	State.productPrices[productData.Id] = productData.Price
 	local card = UI.templateBtn:Clone()
-	card.Name        = string.format("Product_%02d_%d", index or 0, productData.Id)
+	card.Name = string.format("Product_%02d_%d", index or 0, productData.Id)
 	card.LayoutOrder = index or 0
-	card.Visible     = true
-	card.Parent      = UI.container
+	card.Visible = true
+	card.Parent = UI.container
 
 	local title = card:FindFirstChild("CardTitle")
 	if title then
@@ -142,7 +135,6 @@ createProductButton = function(productData, index)
 
 			local originalText = buyBtn.Text
 			buyBtn.Text = "..."
-
 			State.lastPurchasedAmount = productData.Price
 
 			local ok, err = pcall(function()
@@ -164,11 +156,11 @@ createProductButton = function(productData, index)
 	return card
 end
 
-clearProducts = function()
+local function clearProducts()
 	for _, btn in ipairs(State.currentButtons) do
 		if btn and btn.Parent then btn:Destroy() end
 	end
-	State.currentButtons = {}
+	table.clear(State.currentButtons)
 
 	for _, child in ipairs(UI.container:GetChildren()) do
 		if child:IsA("GuiObject") and child ~= UI.templateBtn and child.Name:match("^Product_") then
@@ -182,7 +174,6 @@ end
 loadProducts = function()
 	if State.isLoading then return end
 	State.isLoading = true
-
 	ClientUI.setLoading(UI.container, true)
 
 	task.spawn(function()
@@ -193,10 +184,7 @@ loadProducts = function()
 			return
 		end
 
-		local ok, products = pcall(function()
-			return getProducts:InvokeServer()
-		end)
-
+		local ok, products = pcall(getProducts.InvokeServer, getProducts)
 		ClientUI.setLoading(UI.container, false)
 		State.isLoading = false
 
@@ -211,21 +199,16 @@ loadProducts = function()
 		end
 
 		clearProducts()
-
 		for i, p in ipairs(products) do
 			createProductButton(p, i)
 		end
-
 		State.productsLoaded = true
 	end)
 end
 
-
 local function showMessageFrame(purchasedAmount)
-	closeFrame(UI.mainFrame)
-	if donationIcon and donationIcon.isSelected then
-		pcall(function() donationIcon:deselect() end)
-	end
+	UI.mainFrame.Visible = false
+	deselectDonationIcon()
 
 	local amountLabel = UI.messageFrame:FindFirstChild("AmountLabel")
 	if amountLabel then
@@ -244,7 +227,7 @@ local function showMessageFrame(purchasedAmount)
 
 	task.defer(function()
 		if textbox and textbox:IsDescendantOf(game) then
-			pcall(function() textbox:CaptureFocus() end)
+			pcall(textbox.CaptureFocus, textbox)
 		end
 	end)
 end
@@ -252,7 +235,6 @@ end
 local function hideMessageFrame(cancelled)
 	State.canSendMessage = false
 	UI.messageFrame.Visible = false
-	closeFrame(UI.messageFrame)
 
 	local textbox = UI.messageFrame:FindFirstChild("TextBox")
 	if textbox then textbox.Text = "" end
@@ -267,9 +249,7 @@ local function hideMessageFrame(cancelled)
 			local broadcastRemote = ReplicatedStorage:WaitForChild("BroadcastDonationMessage", 5)
 			if broadcastRemote then
 				local defaultMsg = ClientConfig.MESSAGE.DEFAULT_MESSAGE or "Welcome to RASA NADA"
-				pcall(function()
-					broadcastRemote:InvokeServer(defaultMsg)
-				end)
+				pcall(broadcastRemote.InvokeServer, broadcastRemote, defaultMsg)
 			end
 		end)
 	end
@@ -306,10 +286,7 @@ local function sendMessage()
 			return
 		end
 
-		local ok, success, err = pcall(function()
-			return broadcastRemote:InvokeServer(message)
-		end)
-
+		local ok, success, err = pcall(broadcastRemote.InvokeServer, broadcastRemote, message)
 		State.isSending = false
 		sendBtn.Text = "KIRIM"
 
@@ -319,19 +296,13 @@ local function sendMessage()
 			hideMessageFrame(false)
 		else
 			State.canSendMessage = true
-			local errMsg = err or "Gagal mengirim pesan."
-			ClientUI.notify("Info", errMsg, 3)
+			ClientUI.notify("Info", err or "Gagal mengirim pesan.", 3)
 		end
 	end)
 end
 
-
-local donationIcon = nil
-
 pcall(function()
-	if Icon.getIcon and Icon.getIcon("DonationBoardIcon") then
-		return
-	end
+	if Icon.getIcon and Icon.getIcon("DonationBoardIcon") then return end
 
 	donationIcon = Icon.new()
 		:setName("DonationBoardIcon")
@@ -341,27 +312,22 @@ pcall(function()
 
 	donationIcon.selected:Connect(function()
 		openFrame(UI.mainFrame)
-		if not State.productsLoaded then
-			loadProducts()
-		end
+		if not State.productsLoaded then loadProducts() end
 	end)
 
 	donationIcon.deselected:Connect(function()
-		closeFrame(UI.mainFrame)
+		UI.mainFrame.Visible = false
 	end)
 end)
 
-
-local donationQueue    = {}
+local donationQueue = {}
 local isDisplayingNotif = false
 
 local function processDonationQueue()
 	if _G.HideDonationNotif then
 		table.clear(donationQueue)
 		isDisplayingNotif = false
-		if UI.notificationFrame then
-			UI.notificationFrame.Visible = false
-		end
+		if UI.notificationFrame then UI.notificationFrame.Visible = false end
 		return
 	end
 	if isDisplayingNotif or #donationQueue == 0 then return end
@@ -400,13 +366,12 @@ local function setupBroadcastListener()
 				amount = amount,
 				message = message,
 				userId = userId,
-				total = totalAmount or amount
+				total = totalAmount or amount,
 			})
 			processDonationQueue()
 		end
 	end)
 end
-
 
 MarketplaceService.PromptProductPurchaseFinished:Connect(function(userId, productId, isPurchased)
 	if userId ~= player.UserId or not isPurchased then return end
@@ -416,10 +381,8 @@ MarketplaceService.PromptProductPurchaseFinished:Connect(function(userId, produc
 	local purchasedAmount = (State.productPrices and State.productPrices[productId]) or State.lastPurchasedAmount
 	State.lastPurchasedAmount = purchasedAmount
 
-	closeFrame(UI.mainFrame)
-	if donationIcon and donationIcon.isSelected then
-		pcall(function() donationIcon:deselect() end)
-	end
+	UI.mainFrame.Visible = false
+	deselectDonationIcon()
 
 	if purchasedAmount >= ClientConfig.MESSAGE.MIN_DONATION then
 		task.wait(0.3)
@@ -427,68 +390,56 @@ MarketplaceService.PromptProductPurchaseFinished:Connect(function(userId, produc
 	end
 end)
 
-
-UI.mainFrame.Visible         = false
-UI.templateBtn.Visible       = false
-UI.messageFrame.Visible      = false
+UI.mainFrame.Visible = false
+UI.templateBtn.Visible = false
+UI.messageFrame.Visible = false
 UI.notificationFrame.Visible = false
 
-local lastCloseDonationClick = 0
-UI.closeBtn.MouseButton1Click:Connect(function()
-	local now = os.clock()
-	if now - lastCloseDonationClick < 0.3 then return end
-	lastCloseDonationClick = now
+local function bindDebouncedClick(btn, delay, callback)
+	if not btn then return end
+	local lastClick = 0
+	btn.MouseButton1Click:Connect(function()
+		local now = os.clock()
+		if now - lastClick < delay then return end
+		lastClick = now
+		callback()
+	end)
+end
 
-	if donationIcon then donationIcon:deselect() end
+bindDebouncedClick(UI.closeBtn, 0.3, function()
+	deselectDonationIcon()
 	UI.mainFrame.Visible = false
 end)
 
 local messageHeader = UI.messageFrame:FindFirstChild("Header")
-local sendBtn       = UI.messageFrame:FindFirstChild("SendBtn")
-local cancelBtn     = UI.messageFrame:FindFirstChild("CancelBtn")
-local textbox       = UI.messageFrame:FindFirstChild("TextBox")
-
 if messageHeader and messageHeader:FindFirstChild("CloseBtn") then
-	local lastCloseMsgClick = 0
-	messageHeader.CloseBtn.MouseButton1Click:Connect(function()
-		local now = os.clock()
-		if now - lastCloseMsgClick < 0.3 then return end
-		lastCloseMsgClick = now
-
-		hideMessageFrame(true)
-	end)
+	bindDebouncedClick(messageHeader.CloseBtn, 0.3, function() hideMessageFrame(true) end)
 end
-if cancelBtn then
-	local lastCancelClick = 0
-	cancelBtn.MouseButton1Click:Connect(function()
-		local now = os.clock()
-		if now - lastCancelClick < 0.3 then return end
-		lastCancelClick = now
 
-		hideMessageFrame(true)
-	end)
-end
+local cancelBtn = UI.messageFrame:FindFirstChild("CancelBtn")
+bindDebouncedClick(cancelBtn, 0.3, function() hideMessageFrame(true) end)
+
+local sendBtn = UI.messageFrame:FindFirstChild("SendBtn")
 if sendBtn then
 	sendBtn.MouseButton1Click:Connect(sendMessage)
 end
+
+local textbox = UI.messageFrame:FindFirstChild("TextBox")
 if textbox then
 	textbox.FocusLost:Connect(function(enterPressed)
-		if enterPressed and State.canSendMessage then
-			sendMessage()
-		end
+		if enterPressed and State.canSendMessage then sendMessage() end
 	end)
 end
 
 UI.container.AutomaticCanvasSize = Enum.AutomaticSize.Y
 UI.container.CanvasSize = UDim2.new(0, 0, 0, 0)
-UI.container.CanvasPosition = Vector2.new(0, 0)
+UI.container.CanvasPosition = Vector2.zero
 
 local pad = UI.container:FindFirstChildOfClass("UIPadding")
 if pad then
 	pad.PaddingBottom = UDim.new(0, 15)
 	pad.PaddingTop = UDim.new(0, 6)
 end
-
 
 ClientUI.initNotification(UI.notificationFrame)
 setupBroadcastListener()
@@ -497,8 +448,8 @@ updatePlayerStats()
 task.spawn(loadProducts)
 
 Players.PlayerRemoving:Connect(function(leavingPlayer)
-	if leavingPlayer == player then
-		if donationIcon then donationIcon:Destroy() end
+	if leavingPlayer == player and donationIcon then
+		donationIcon:Destroy()
 	end
 end)
 

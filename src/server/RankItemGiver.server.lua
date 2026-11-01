@@ -13,43 +13,48 @@ local RoleSystem = require(ServerStorage.Modules.RoleSystem)
 -- ====================================
 -- CONFIGURATION
 -- ====================================
+local itemsFolder = ServerStorage:WaitForChild("Items", 10)
+
+local function getItemTemplate(itemName)
+	if not itemsFolder then
+		itemsFolder = ServerStorage:FindFirstChild("Items") or ServerStorage:WaitForChild("Items", 5)
+	end
+	if itemsFolder then
+		return itemsFolder:FindFirstChild(itemName) or itemsFolder:WaitForChild(itemName, 5)
+	end
+	return nil
+end
+
 local Config = {
 	DebugMode = false,
 
 	RankItems = {
 		{
 			Name = "AFK",
-			Path = ServerStorage.Items.AFK,
 			MinimumHierarchy = 2 -- VIP ke atas
 		},
 		{
 			Name = "Glowstick",
-			Path = ServerStorage.Items.Glowstick,
 			MinimumHierarchy = 2 -- VIP ke atas
 		},
 		{
 			Name = "Umbrella",
-			Path = ServerStorage.Items.Umbrella,
 			MinimumHierarchy = 2 -- VIP ke atas
 		},
 		{
 			Name = "Sharky",
-			Path = ServerStorage.Items.Sharky,
 			MinimumHierarchy = 2 -- VIP ke atas
 		},
 		{
 			Name = "WaterGun",
-			Path = ServerStorage.Items.WaterGun,
 			MinimumHierarchy = 2 -- VIP ke atas
 		},
 		{
 			Name = "Heart",
-			Path = ServerStorage.Items.Heart,
 			MinimumHierarchy = 2 -- VIP ke atas
 		},
 		{
 			Name = "Mawar",
-			Path = ServerStorage.Items.Mawar,
 			MinimumHierarchy = 2 -- VIP ke atas
 		},
 	}
@@ -63,12 +68,6 @@ local function debugPrint(...)
 	if Config.DebugMode then
 		print("[ItemGiver]", ...)
 	end
-end
-
-local function hasMinimumRank(player, minimumHierarchy)
-	local playerRole = RoleSystem:GetPlayerRole(player)
-	local playerHierarchy = RoleSystem.Config.RoleHierarchy[playerRole] or 0
-	return playerHierarchy >= minimumHierarchy
 end
 
 local function cleanAllDuplicates(player, itemName)
@@ -109,25 +108,34 @@ local function optimizeToolPhysics(tool)
 end
 
 
-local function giveItemToPlayer(player, itemConfig)
+local function giveItemToPlayer(player, itemConfig, playerRole)
 	if not player or not player.Backpack then return end
-	if not itemConfig.Path or not itemConfig.Path.Parent then return end
+	local template = getItemTemplate(itemConfig.Name)
+	if not template then
+		warn(string.format("[ItemGiver] ⚠️ Item template '%s' tidak ditemukan di ServerStorage.Items!", itemConfig.Name))
+		return
+	end
 
 	cleanAllDuplicates(player, itemConfig.Name)
 
-	local itemClone = itemConfig.Path:Clone()
+	local itemClone = template:Clone()
 	optimizeToolPhysics(itemClone)
 	itemClone.Parent = player.Backpack
 
-	debugPrint(string.format("Gave %s to %s (Rank: %s)", itemConfig.Name, player.Name, RoleSystem:GetPlayerRole(player)))
+	debugPrint(string.format("Gave %s to %s (Rank: %s)", itemConfig.Name, player.Name, playerRole or "?"))
 end
 
 local function checkAndGiveItems(player)
 	if not player or not player.Parent then return end
 
+	-- Hitung role sekali per pemain. Sebelumnya GetPlayerRole dipanggil 7x
+	-- (satu kali untuk setiap item) sehingga berpotensi memicu 7x IsInGroup.
+	local playerRole = RoleSystem:GetPlayerRole(player)
+	local playerHierarchy = RoleSystem.Config.RoleHierarchy[playerRole] or 0
+
 	for _, itemConfig in ipairs(Config.RankItems) do
-		if hasMinimumRank(player, itemConfig.MinimumHierarchy) then
-			giveItemToPlayer(player, itemConfig)
+		if playerHierarchy >= itemConfig.MinimumHierarchy then
+			giveItemToPlayer(player, itemConfig, playerRole)
 		else
 			cleanAllDuplicates(player, itemConfig.Name)
 		end

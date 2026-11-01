@@ -5,16 +5,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
+local StarterGui = game:GetService("StarterGui")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- ==========================================
--- ⚙️ KONFIGURASI KAMERA 360
--- ==========================================
 local Config = {
-	CameraDistance = 20,   -- Jarak kamera dari kepala
-	CameraSpeed = 0.5,     -- Kecepatan putaran
+	CameraDistance = 20,
+	CameraSpeed = 0.5,
 }
 
 local GlobalEffectRemotes = ReplicatedStorage:WaitForChild("GlobalEffectRemotes", 15)
@@ -32,35 +30,30 @@ if not (ToggleEffectEvent and CameraEffectEvent and CheckOwnerFunction and Notif
 	return
 end
 
-local StarterGui = game:GetService("StarterGui")
-
 NotificationEvent.OnClientEvent:Connect(function(title, text, duration)
 	StarterGui:SetCore("SendNotification", {
-		Title = title;
-		Text = text;
-		Duration = duration or 5;
+		Title = title,
+		Text = text,
+		Duration = duration or 5,
 	})
 end)
 
 local GlobalEffectGui = PlayerGui:WaitForChild("GlobalEffectGui", 10)
 
--- Cek Kepemilikan
-local isOwner = false
 if GlobalEffectGui then
-	isOwner = CheckOwnerFunction:InvokeServer()
-	
+	local isOwner = CheckOwnerFunction:InvokeServer()
 	local MainFrame = GlobalEffectGui:WaitForChild("MainFrame")
 	local NotifikasiFrame = GlobalEffectGui:WaitForChild("NotifikasiFrame")
-	
+
 	local ToggleNotificationEvent = GlobalEffectRemotes:WaitForChild("ToggleNotification")
 	local ToggleFollowEvent = GlobalEffectRemotes:WaitForChild("ToggleFollow")
-	
+
 	local isFollowing = true
 	local FollowBtn = NotifikasiFrame:WaitForChild("FollowBtn")
 	local FollowBtnText = FollowBtn:WaitForChild("TextLabel")
-	
+
 	NotifikasiFrame.Visible = false
-	
+
 	local lastFollowClick = 0
 	FollowBtn.MouseButton1Click:Connect(function()
 		local now = os.clock()
@@ -68,14 +61,10 @@ if GlobalEffectGui then
 		lastFollowClick = now
 
 		isFollowing = not isFollowing
-		if isFollowing then
-			FollowBtnText.Text = "Unfollow"
-		else
-			FollowBtnText.Text = "Follow"
-		end
+		FollowBtnText.Text = isFollowing and "Unfollow" or "Follow"
 		ToggleFollowEvent:FireServer(isFollowing)
 	end)
-	
+
 	ToggleNotificationEvent.OnClientEvent:Connect(function(show)
 		if show then
 			isFollowing = true
@@ -90,33 +79,33 @@ if GlobalEffectGui then
 		MainFrame:Destroy()
 	else
 		local BtnFrame = MainFrame:WaitForChild("BtnFrame")
-		
 		local Btn360 = BtnFrame:WaitForChild("360Btn")
 		local BtnFloating = BtnFrame:WaitForChild("FloatingBtn")
 		local BtnFly = BtnFrame:WaitForChild("FlyBtn")
 		local BtnWing = BtnFrame:WaitForChild("WingBtn")
 		local BtnClear = MainFrame:WaitForChild("ClearBtn")
-		
+
 		local COLOR_ACTIVE = Color3.fromRGB(0, 255, 0)
 		local COLOR_DEFAULT = Color3.fromRGB(255, 255, 255)
-		
+
+		local btnMap = {
+			Camera360 = Btn360,
+			Floating = BtnFloating,
+			Fly = BtnFly,
+			Wing = BtnWing,
+		}
+
 		local ButtonStates = {
 			Camera360 = false,
 			Floating = false,
 			Fly = false,
-			Wing = false
+			Wing = false,
 		}
-		
+
 		MainFrame.Visible = false
-		
+
 		local function updateButtonUI(btnName, isActive)
-			local btnObj
-			if btnName == "Camera360" then btnObj = Btn360
-			elseif btnName == "Floating" then btnObj = BtnFloating
-			elseif btnName == "Fly" then btnObj = BtnFly
-			elseif btnName == "Wing" then btnObj = BtnWing
-			end
-			
+			local btnObj = btnMap[btnName]
 			if btnObj then
 				local imageLabel = btnObj:FindFirstChild("ImageLabel")
 				if imageLabel then
@@ -127,36 +116,28 @@ if GlobalEffectGui then
 
 		local lastClickTime = 0
 		local CLICK_DEBOUNCE = 0.5
-		
+
 		local function setupButton(btnObj, stateName)
 			btnObj.MouseButton1Click:Connect(function()
-				-- 🔥 CLIENT FIX: Cegah UI Desync karena Rate Limiter Server
-				if tick() - lastClickTime < CLICK_DEBOUNCE then return end
-				lastClickTime = tick()
-				
+				if os.clock() - lastClickTime < CLICK_DEBOUNCE then return end
+				lastClickTime = os.clock()
+
 				ButtonStates[stateName] = not ButtonStates[stateName]
 				updateButtonUI(stateName, ButtonStates[stateName])
-				
-				if stateName == "Fly" and ButtonStates["Fly"] then
-					if ButtonStates["Floating"] then
-						ButtonStates["Floating"] = false
-						updateButtonUI("Floating", false)
-					end
-				elseif stateName == "Floating" and ButtonStates["Floating"] then
-					if ButtonStates["Fly"] then
-						ButtonStates["Fly"] = false
-						updateButtonUI("Fly", false)
-					end
+
+				local opposite = (stateName == "Fly" and "Floating") or (stateName == "Floating" and "Fly") or nil
+				if opposite and ButtonStates[stateName] and ButtonStates[opposite] then
+					ButtonStates[opposite] = false
+					updateButtonUI(opposite, false)
 				end
-				
+
 				ToggleEffectEvent:FireServer(stateName, ButtonStates[stateName])
 			end)
 		end
 
-		setupButton(Btn360, "Camera360")
-		setupButton(BtnFloating, "Floating")
-		setupButton(BtnFly, "Fly")
-		setupButton(BtnWing, "Wing")
+		for name, btn in pairs(btnMap) do
+			setupButton(btn, name)
+		end
 
 		local lastClearClick = 0
 		BtnClear.MouseButton1Click:Connect(function()
@@ -164,7 +145,7 @@ if GlobalEffectGui then
 			if now - lastClearClick < 0.3 then return end
 			lastClearClick = now
 
-			for stateName, _ in pairs(ButtonStates) do
+			for stateName in pairs(ButtonStates) do
 				ButtonStates[stateName] = false
 				updateButtonUI(stateName, false)
 			end
@@ -173,103 +154,84 @@ if GlobalEffectGui then
 	end
 end
 
--- ==========================================
--- CINEMATIC TRANSITION
--- ==========================================
 local isTransitioning = false
 local pendingCameraCallback = nil
 
 local function playCinematicTransition(callback)
-	-- FIX CAMERA STUCK BUG: Jangan buang callback jika event baru masuk saat transisi masih berjalan!
 	pendingCameraCallback = callback
 	if isTransitioning then return end
 	isTransitioning = true
-	
+
 	local screenGui = Instance.new("ScreenGui")
 	screenGui.Name = "CinematicTransitionGui"
 	screenGui.IgnoreGuiInset = true
 	screenGui.ScreenInsets = Enum.ScreenInsets.None
 	screenGui.DisplayOrder = 9999
 	screenGui.Parent = PlayerGui
-	
-	local topFrame = Instance.new("Frame")
-	topFrame.Size = UDim2.new(1, 0, 0.5, 0)
-	topFrame.Position = UDim2.new(0, 0, -0.5, 0)
-	topFrame.BackgroundColor3 = Color3.new(0, 0, 0)
-	topFrame.BorderSizePixel = 0
-	topFrame.Parent = screenGui
-	
-	local bottomFrame = Instance.new("Frame")
-	bottomFrame.Size = UDim2.new(1, 0, 0.5, 0)
-	bottomFrame.Position = UDim2.new(0, 0, 1, 0)
-	bottomFrame.BackgroundColor3 = Color3.new(0, 0, 0)
-	bottomFrame.BorderSizePixel = 0
-	bottomFrame.Parent = screenGui
-	
+
+	local function makeFrame(startPos)
+		local frame = Instance.new("Frame")
+		frame.Size = UDim2.new(1, 0, 0.5, 0)
+		frame.Position = startPos
+		frame.BackgroundColor3 = Color3.new(0, 0, 0)
+		frame.BorderSizePixel = 0
+		frame.Parent = screenGui
+		return frame
+	end
+
+	local topFrame = makeFrame(UDim2.new(0, 0, -0.5, 0))
+	local bottomFrame = makeFrame(UDim2.new(0, 0, 1, 0))
 	local tweenInfo = TweenInfo.new(0.6, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out)
-	
-	-- Nutup layar (Menuju tengah)
-	local topTweenIn = TweenService:Create(topFrame, tweenInfo, {Position = UDim2.new(0, 0, 0, 0)})
-	local bottomTweenIn = TweenService:Create(bottomFrame, tweenInfo, {Position = UDim2.new(0, 0, 0.5, 0)})
-	
+
+	local topTweenIn = TweenService:Create(topFrame, tweenInfo, { Position = UDim2.new(0, 0, 0, 0) })
+	local bottomTweenIn = TweenService:Create(bottomFrame, tweenInfo, { Position = UDim2.new(0, 0, 0.5, 0) })
+
 	topTweenIn:Play()
 	bottomTweenIn:Play()
-	
 	topTweenIn.Completed:Wait()
-	
-	-- Eksekusi callback terbaru saat layar tertutup hitam pekat
+
 	if pendingCameraCallback then
 		local cb = pendingCameraCallback
 		pendingCameraCallback = nil
 		cb()
 	end
 	task.wait(0.2)
-	
-	-- Buka layar kembali
-	local topTweenOut = TweenService:Create(topFrame, tweenInfo, {Position = UDim2.new(0, 0, -0.5, 0)})
-	local bottomTweenOut = TweenService:Create(bottomFrame, tweenInfo, {Position = UDim2.new(0, 0, 1, 0)})
-	
+
+	local topTweenOut = TweenService:Create(topFrame, tweenInfo, { Position = UDim2.new(0, 0, -0.5, 0) })
+	local bottomTweenOut = TweenService:Create(bottomFrame, tweenInfo, { Position = UDim2.new(0, 0, 1, 0) })
+
 	topTweenOut:Play()
 	bottomTweenOut:Play()
-	
 	topTweenOut.Completed:Wait()
 	screenGui:Destroy()
-	
-	-- Jika ada event perubahan state kamera yang masuk saat layar sedang membuka, jalankan segera
+
 	if pendingCameraCallback then
 		local cb = pendingCameraCallback
 		pendingCameraCallback = nil
 		cb()
 	end
-	
+
 	isTransitioning = false
 end
 
--- ==========================================
--- 360 CAMERA EFFECT
--- ==========================================
 local Camera = Workspace.CurrentCamera
 local CameraConnection = nil
 local CameraAngle = 0
 
 local function start360Camera()
 	if CameraConnection then return end
-	
 	Camera.CameraType = Enum.CameraType.Scriptable
-	
+
 	CameraConnection = RunService.RenderStepped:Connect(function(dt)
 		local character = LocalPlayer.Character
-		if not character then return end
-		local head = character:FindFirstChild("Head")
+		local head = character and character:FindFirstChild("Head")
 		if not head then return end
-		
-		CameraAngle = CameraAngle + (Config.CameraSpeed * dt)
-		
+
+		CameraAngle += (Config.CameraSpeed * dt)
 		local offsetX = math.sin(CameraAngle) * Config.CameraDistance
 		local offsetZ = math.cos(CameraAngle) * Config.CameraDistance
-		
-		local targetPosition = head.Position + Vector3.new(offsetX, 2, offsetZ)
-		Camera.CFrame = CFrame.lookAt(targetPosition, head.Position)
+		local targetPos = head.Position + Vector3.new(offsetX, 2, offsetZ)
+		Camera.CFrame = CFrame.lookAt(targetPos, head.Position)
 	end)
 end
 
@@ -278,20 +240,17 @@ local function stop360Camera()
 		CameraConnection:Disconnect()
 		CameraConnection = nil
 	end
-	
+
 	Camera.CameraType = Enum.CameraType.Custom
 	LocalPlayer.CameraMode = Enum.CameraMode.Classic
-	
-	-- Memaksa kamera kembali ke karakter agar tidak nyangkut di atas
-	if LocalPlayer.Character then
-		local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			Camera.CameraSubject = humanoid
-		end
+
+	local char = LocalPlayer.Character
+	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		Camera.CameraSubject = humanoid
 	end
 end
 
--- Listener dari Server (Bisa didengar oleh semua player termasuk non-owner)
 CameraEffectEvent.OnClientEvent:Connect(function(isActive)
 	playCinematicTransition(function()
 		if isActive then
@@ -302,9 +261,6 @@ CameraEffectEvent.OnClientEvent:Connect(function(isActive)
 	end)
 end)
 
--- ==========================================
--- CLIENT-SIDE ANIMATION LOCK FOR GLOBAL EFFECT
--- ==========================================
 local FLY_ANIM_ID = "81229486815853"
 local FLOAT_ANIM_ID = "112082806790047"
 
@@ -318,11 +274,10 @@ local function getNumericId(id)
 	return string.match(tostring(id), "%d+") or ""
 end
 
--- Membangun cache tarian/pose dari folder Emotes di ReplicatedStorage secara dinamis
 local function buildEmoteCache()
 	local folder = ReplicatedStorage:FindFirstChild("Emotes")
 	if not folder then return end
-	
+
 	EmoteNumericIds = {}
 	for _, anim in ipairs(folder:GetDescendants()) do
 		if anim:IsA("Animation") then
@@ -335,47 +290,35 @@ local function buildEmoteCache()
 end
 
 local function isRegisteredDanceOrPose(animationId)
-	if not EmoteNumericIds then
-		buildEmoteCache()
-	end
+	if not EmoteNumericIds then buildEmoteCache() end
 	if not EmoteNumericIds then return false end
-	
-	local numericId = getNumericId(animationId)
-	return EmoteNumericIds[numericId] == true
+	return EmoteNumericIds[getNumericId(animationId)] == true
 end
 
 local function stopAllExceptGlobalEffects()
 	local char = LocalPlayer.Character
-	if not char then return end
-	local humanoid = char:FindFirstChildOfClass("Humanoid")
+	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
 	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
 	if not animator then return end
 
 	for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
 		if track.Animation then
 			local numId = getNumericId(track.Animation.AnimationId)
-			if numId ~= "" and numId ~= FLY_ANIM_ID and numId ~= FLOAT_ANIM_ID then
-				-- Hanya hentikan jika ini adalah tarian/pose resmi dari database
-				if isRegisteredDanceOrPose(track.Animation.AnimationId) then
-					-- Simpan posisi waktu untuk tarian yang aktif
-					local currentDanceID = char:GetAttribute("CurrentDanceID")
-					
-					-- Cek apakah player adalah follower
-					local syncTarget = char:GetAttribute("Syncing")
-					if syncTarget and syncTarget ~= "" then
-						local leaderPlayer = Players:FindFirstChild(syncTarget)
-						if leaderPlayer and leaderPlayer.Character then
-							currentDanceID = leaderPlayer.Character:GetAttribute("CurrentDanceID")
-						end
+			if numId ~= "" and numId ~= FLY_ANIM_ID and numId ~= FLOAT_ANIM_ID and isRegisteredDanceOrPose(track.Animation.AnimationId) then
+				local currentDanceID = char:GetAttribute("CurrentDanceID")
+				local syncTarget = char:GetAttribute("Syncing")
+				if syncTarget and syncTarget ~= "" then
+					local leader = Players:FindFirstChild(syncTarget)
+					if leader and leader.Character then
+						currentDanceID = leader.Character:GetAttribute("CurrentDanceID")
 					end
-
-					if currentDanceID and getNumericId(currentDanceID) == numId then
-						suspendedTimePosition = track.TimePosition
-						suspendedDanceID = currentDanceID
-					end
-					
-					track:Stop(0.1)
 				end
+
+				if currentDanceID and getNumericId(currentDanceID) == numId then
+					suspendedTimePosition = track.TimePosition
+					suspendedDanceID = currentDanceID
+				end
+				track:Stop(0.1)
 			end
 		end
 	end
@@ -384,15 +327,13 @@ end
 local function findEmoteAnimationInstance(currentDanceID)
 	local folder = ReplicatedStorage:FindFirstChild("Emotes")
 	if not folder then return nil end
-	
+
 	local targetNumeric = getNumericId(currentDanceID)
 	if targetNumeric == "" then return nil end
-	
+
 	for _, anim in ipairs(folder:GetDescendants()) do
-		if anim:IsA("Animation") then
-			if getNumericId(anim.AnimationId) == targetNumeric then
-				return anim
-			end
+		if anim:IsA("Animation") and getNumericId(anim.AnimationId) == targetNumeric then
+			return anim
 		end
 	end
 	return nil
@@ -401,57 +342,50 @@ end
 local function resumeLocalDance()
 	local char = LocalPlayer.Character
 	if not char then return end
+
 	local currentDanceID = char:GetAttribute("CurrentDanceID")
 	local speed = char:GetAttribute("DanceSpeed") or 1
-	
-	-- Cek apakah player adalah follower
+
 	local syncTarget = char:GetAttribute("Syncing")
 	if syncTarget and syncTarget ~= "" then
-		local leaderPlayer = Players:FindFirstChild(syncTarget)
-		if leaderPlayer and leaderPlayer.Character then
-			currentDanceID = leaderPlayer.Character:GetAttribute("CurrentDanceID")
-			speed = leaderPlayer.Character:GetAttribute("DanceSpeed") or speed
+		local leader = Players:FindFirstChild(syncTarget)
+		if leader and leader.Character then
+			currentDanceID = leader.Character:GetAttribute("CurrentDanceID")
+			speed = leader.Character:GetAttribute("DanceSpeed") or speed
 		end
 	end
-	
+
 	if not currentDanceID or currentDanceID == "" then return end
-	
+
 	local humanoid = char:FindFirstChildOfClass("Humanoid")
 	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
 	if not animator then return end
-	
-	-- Cari objek Animation asli dari ReplicatedStorage agar namanya sesuai (misal "Spongebob")
-	-- dan dapat dideteksi serta dihentikan oleh menu tarian client saat "Stop Dance"
+
 	local anim = findEmoteAnimationInstance(currentDanceID)
 	local isTempAnim = false
 	if not anim then
-		-- Fallback jika tidak ditemukan
 		anim = Instance.new("Animation")
 		anim.AnimationId = currentDanceID
 		isTempAnim = true
 	end
-	
+
 	if resumedDanceTrack then
 		resumedDanceTrack:Stop(0.1)
 		resumedDanceTrack:Destroy()
 		resumedDanceTrack = nil
 	end
-	
-	-- Stop any leftover high-priority tracks
+
 	stopAllExceptGlobalEffects()
-	
+
 	local track = animator:LoadAnimation(anim)
-	if isTempAnim then anim:Destroy() end -- FIX: Cegah memori HP/PC pemain bocor
+	if isTempAnim then anim:Destroy() end
 	track.Priority = Enum.AnimationPriority.Action4
 	track.Looped = true
-	
 	track:Play(0.2, 1, speed)
 	resumedDanceTrack = track
-	
+
 	if suspendedTimePosition > 0 and suspendedDanceID == currentDanceID then
-		pcall(function()
-			track.TimePosition = suspendedTimePosition
-		end)
+		pcall(function() track.TimePosition = suspendedTimePosition end)
 	end
 	suspendedTimePosition = 0
 	suspendedDanceID = nil
@@ -460,26 +394,20 @@ end
 local function onGlobalEffectActiveChanged()
 	local char = LocalPlayer.Character
 	if not char then return end
-	local isActive = char:GetAttribute("GlobalEffectActive")
-	if isActive == true then
+	if char:GetAttribute("GlobalEffectActive") == true then
 		stopAllExceptGlobalEffects()
 	else
-		-- Resume tarian lokal yang tertunda (jika ada)
 		resumeLocalDance()
 	end
 end
 
 local function onAnimationPlayed(track)
 	local char = LocalPlayer.Character
-	if not char then return end
-	if char:GetAttribute("GlobalEffectActive") == true then
-		local numId = getNumericId(track.Animation.AnimationId)
-		if numId ~= "" and numId ~= FLY_ANIM_ID and numId ~= FLOAT_ANIM_ID then
-			-- Blokir tarian/pose baru jika terdaftar di database
-			if isRegisteredDanceOrPose(track.Animation.AnimationId) then
-				track:Stop(0)
-			end
-		end
+	if not char or char:GetAttribute("GlobalEffectActive") ~= true then return end
+
+	local numId = getNumericId(track.Animation and track.Animation.AnimationId)
+	if numId ~= "" and numId ~= FLY_ANIM_ID and numId ~= FLOAT_ANIM_ID and isRegisteredDanceOrPose(track.Animation.AnimationId) then
+		track:Stop(0)
 	end
 end
 
@@ -493,16 +421,15 @@ local function setupCharacterListener(char)
 	if animator then
 		animator.AnimationPlayed:Connect(onAnimationPlayed)
 	end
-	
+
 	char:GetAttributeChangedSignal("GlobalEffectActive"):Connect(onGlobalEffectActiveChanged)
-	
 	char:GetAttributeChangedSignal("CurrentDanceID"):Connect(function()
 		if resumedDanceTrack then
 			resumedDanceTrack:Stop(0.1)
 			resumedDanceTrack = nil
 		end
 	end)
-	
+
 	onGlobalEffectActiveChanged()
 end
 

@@ -8,7 +8,10 @@ local MemoryStoreService = game:GetService("MemoryStoreService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local TextService = game:GetService("TextService")
+local ServerScriptService = game:GetService("ServerScriptService")
 local SaweriaAPI = require(game:GetService("ServerStorage"):WaitForChild("Modules"):WaitForChild("SaweriaAPI"))
+local ServerConfig = require(ServerScriptService:WaitForChild("Config"):WaitForChild("ServerConfig"))
 local SaweriaScreenBoardHandler = require(script.Parent:WaitForChild("SaweriaScreenBoardHandler"))
 local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
 
@@ -25,6 +28,51 @@ end
 
 local function debugWarn(...)
 	if DEBUG_ENABLED then warn(DEBUG_PREFIX, ...) end
+end
+
+-- ========================================
+-- TEXT FILTERING HELPERS (ROBLOX COMPLIANCE)
+-- ========================================
+local function getSafeContextUserId(preferredUserId)
+	if preferredUserId and type(preferredUserId) == "number" and preferredUserId > 0 then
+		return preferredUserId
+	end
+	local onlinePlayer = Players:GetPlayers()[1]
+	if onlinePlayer then
+		return onlinePlayer.UserId
+	end
+	local ownerId = ServerConfig.GetPrimaryOwnerId()
+	if ownerId and ownerId > 0 then
+		return ownerId
+	end
+	if game.CreatorType == Enum.CreatorType.User and game.CreatorId > 0 then
+		return game.CreatorId
+	end
+	return 1
+end
+
+local function filterBroadcastText(rawText, contextUserId, defaultFallback)
+	if not rawText or type(rawText) ~= "string" or #rawText == 0 then
+		return defaultFallback
+	end
+	local safeUid = getSafeContextUserId(contextUserId)
+	local filteredText = nil
+	local okFilter = pcall(function()
+		local filterResult = TextService:FilterStringAsync(rawText, safeUid, Enum.TextFilterContext.PublicChat)
+		if filterResult then
+			filteredText = filterResult:GetNonChatStringForBroadcastAsync()
+		end
+	end)
+	if okFilter and filteredText and #filteredText > 0 then
+		return filteredText
+	end
+	if IS_STUDIO then
+		local trimmed = rawText:match("^%s*(.-)%s*$")
+		if trimmed and #trimmed > 0 then
+			return trimmed
+		end
+	end
+	return defaultFallback
 end
 
 -- Di Studio cek setiap 15 detik agar tes cepat, di Live Server 30 detik
@@ -281,19 +329,22 @@ local function fetchDonationData()
 				end)
 			end
 
+			local filteredDonator = filterBroadcastText(rawDonator, donatorUserId, "Donatur")
+			local filteredMessage = filterBroadcastText(rawMessage, donatorUserId, "Terima kasih banyak atas donasinya!")
+
 			local notifData = {
-				donator = rawDonator,
+				donator = filteredDonator,
 				userId = donatorUserId,
 				amount = rpAmount,
 				total = totalAmount,
-				message = rawMessage,
+				message = filteredMessage,
 				timestamp = os.time()
 			}
 
 			if remoteEvent then 
 				remoteEvent:FireAllClients(notifData) 
 			end
-			debugPrint(string.format("🚀 Mengirim notifikasi: %s | Rp %d | Pesan: '%s'", rawDonator, rpAmount, rawMessage))
+			debugPrint(string.format("🚀 Mengirim notifikasi: %s | Rp %d | Pesan: '%s'", filteredDonator, rpAmount, filteredMessage))
 
 			-- Cek pengaturan sorot kamera donor
 			local spotlightSettings = ReplicatedStorage:FindFirstChild("DonationSpotlightSettings")
@@ -305,7 +356,7 @@ local function fetchDonationData()
 			if shouldSpotlight then
 				local DonorSpotlightRemote = ReplicatedStorage:FindFirstChild("DonorSpotlightRemote")
 				if DonorSpotlightRemote then
-					DonorSpotlightRemote:FireAllClients(donatorUserId or 0, rawDonator, 5)
+					DonorSpotlightRemote:FireAllClients(donatorUserId or 0, filteredDonator, 5)
 				end
 			end
 
@@ -316,11 +367,11 @@ local function fetchDonationData()
 				SaweriaEffectEvent.Name = "SaweriaEffectEvent"
 				SaweriaEffectEvent.Parent = ServerStorage
 			end
-			SaweriaEffectEvent:Fire(rawDonator, rpAmount, shouldSpotlight)
+			SaweriaEffectEvent:Fire(filteredDonator, rpAmount, shouldSpotlight)
 
 			-- Update ScreenTextSaweria di Workspace
 			pcall(function()
-				SaweriaScreenBoardHandler:ShowDonationMessage(rawDonator, rpAmount, rawMessage)
+				SaweriaScreenBoardHandler:ShowDonationMessage(filteredDonator, rpAmount, filteredMessage)
 			end)
 
 			task.wait(2.5) 
@@ -352,12 +403,15 @@ _G.TestSaweria = function(donatorName, amount, message)
 		end)
 	end
 
+	local filteredDonator = filterBroadcastText(donatorName, donatorUserId, "Donatur")
+	local filteredMessage = filterBroadcastText(message, donatorUserId, "Terima kasih banyak atas donasinya!")
+
 	local notifData = {
-		donator = donatorName,
+		donator = filteredDonator,
 		userId = donatorUserId,
 		amount = rpAmount,
 		total = rpAmount,
-		message = message,
+		message = filteredMessage,
 		timestamp = os.time()
 	}
 
@@ -374,7 +428,7 @@ _G.TestSaweria = function(donatorName, amount, message)
 	if shouldSpotlight then
 		local DonorSpotlightRemote = ReplicatedStorage:FindFirstChild("DonorSpotlightRemote")
 		if DonorSpotlightRemote then
-			DonorSpotlightRemote:FireAllClients(donatorUserId or 0, donatorName, 5)
+			DonorSpotlightRemote:FireAllClients(donatorUserId or 0, filteredDonator, 5)
 		end
 	end
 
@@ -385,11 +439,11 @@ _G.TestSaweria = function(donatorName, amount, message)
 		SaweriaEffectEvent.Name = "SaweriaEffectEvent"
 		SaweriaEffectEvent.Parent = ServerStorage
 	end
-	SaweriaEffectEvent:Fire(donatorName, rpAmount, shouldSpotlight)
+	SaweriaEffectEvent:Fire(filteredDonator, rpAmount, shouldSpotlight)
 
 	-- Update ScreenTextSaweria di Workspace
 	pcall(function()
-		SaweriaScreenBoardHandler:ShowDonationMessage(donatorName, rpAmount, message)
+		SaweriaScreenBoardHandler:ShowDonationMessage(filteredDonator, rpAmount, filteredMessage)
 	end)
 
 	print(string.format("[DonasiSaweria] 🧪 Test Saweria berhasil dipicu: %s | Rp %d | '%s'", donatorName, rpAmount, message))

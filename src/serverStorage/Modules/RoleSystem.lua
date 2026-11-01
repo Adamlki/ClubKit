@@ -4,10 +4,8 @@ local DataStoreService = game:GetService("DataStoreService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
 
--- ====================================
--- AUTO-CREATE NOTIFICATION REMOTE
--- ====================================
 local CustomTeamsRemotes = ReplicatedStorage:FindFirstChild("CustomTeamsRemotes")
 if not CustomTeamsRemotes then
 	CustomTeamsRemotes = Instance.new("Folder")
@@ -22,21 +20,19 @@ if not notifyRemote then
 	notifyRemote.Parent = CustomTeamsRemotes
 end
 
--- 🔥 ARCHITECT FIX: Master Debug Toggle
-local DEBUG_MODE = false -- Biarkan false agar F9 Console bersih saat game live!
-
--- ====================================
--- CONFIGURATION
--- ====================================
 local PrivateConfig = require(script.Parent:WaitForChild("PrivateConfig"))
 
-RoleSystem.Config = {
-	GamePasses = PrivateConfig.GamePasses,
-	-- Developer Product (Fitur Gift/Beliin orang lain)
-	GiftProducts = PrivateConfig.GiftProducts,
-	
-	ActiveGamepasses = PrivateConfig.ActiveGamepasses,
+local featureConfig = PrivateConfig.Features or {}
 
+RoleSystem.Config = {
+	Features = {
+		VIPShopEnabled = featureConfig.VIPShopEnabled ~= false, -- default ON
+		VIPGiftEnabled = featureConfig.VIPGiftEnabled == true,  -- default OFF
+		CommunityVIPEnabled = featureConfig.CommunityVIPEnabled ~= false, -- default ON
+	},
+	GamePasses = PrivateConfig.GamePasses,
+	GiftProducts = PrivateConfig.GiftProducts,
+	ActiveGamepasses = PrivateConfig.ActiveGamepasses,
 	OwnerIds = PrivateConfig.OwnerIds,
 	AdminIds = PrivateConfig.AdminIds,
 	ModeratorIds = PrivateConfig.ModeratorIds,
@@ -46,182 +42,111 @@ RoleSystem.Config = {
 		Admin = 4,
 		Moderator = 3,
 		VIP = 2,
-		Player = 1
+		Player = 1,
 	},
 
-	GroupId = PrivateConfig.GroupId, -- ID Komunitas / Grup untuk Free VIP
+	GroupId = PrivateConfig.GroupId,
 
-	DATASTORE_NAME = "PlayerGiveGamePasses_v1",
+	DATASTORE_NAME = RunService:IsStudio() and "PlayerGiveGamePasses_Studio_v1" or "PlayerGiveGamePasses_v1",
 	DATASTORE_RETRY_ATTEMPTS = 3,
 	DATASTORE_RETRY_DELAY = 1,
 	GAMEPASS_CHECK_TIMEOUT = 15,
-	GAMEPASS_CHECK_RETRIES = 2
+	GAMEPASS_CHECK_RETRIES = 2,
 }
 
--- ====================================
--- SERVICES
--- ====================================
 local giveGamePassStore = DataStoreService:GetDataStore(RoleSystem.Config.DATASTORE_NAME)
+local VALID_PASS_TYPES = { VIP = true, Moderator = true, Admin = true }
+local GROUP_CHECK_TTL = 60 -- detik; hindari IsInGroup berulang di setiap GetPlayerRole
 
--- ====================================
--- OWNERSHIP CACHE
--- ====================================
 local playerOwnershipCache = {}
 local ownershipLoadingLocks = {}
 local groupCheckCooldown = {}
 local preservedVIPStatus = {}
 
--- ====================================
--- EVENTS
--- ====================================
 local roleChangedEvent = Instance.new("BindableEvent")
 roleChangedEvent.Name = "RoleChanged"
 RoleSystem.RoleChanged = roleChangedEvent.Event
 
--- ====================================
--- UTILITY
--- ====================================
 local function isInList(userId, list)
-	for _, id in ipairs(list) do
-		if id == userId then
-			return true
-		end
-	end
-	return false
+	return list ~= nil and table.find(list, userId) ~= nil
 end
 
--- ====================================
--- DATASTORE OPERATIONS (WITH RETRY)
--- ====================================
 local function datastoreGetAsync(key, player)
 	for attempt = 1, RoleSystem.Config.DATASTORE_RETRY_ATTEMPTS do
-		local success, result = pcall(function()
-			return giveGamePassStore:GetAsync(key)
-		end)
-
-		if success then
-			return result
-		end
-
+		local success, result = pcall(giveGamePassStore.GetAsync, giveGamePassStore, key)
+		if success then return result end
 		if attempt < RoleSystem.Config.DATASTORE_RETRY_ATTEMPTS then
-			task.wait(2 ^ attempt) -- Exponential Backoff: 2s, 4s...
+			task.wait(2 ^ attempt)
 		end
 	end
 
-	-- FAILSAFE NOTIFICATION (DataStore Down)
 	if player then
-		pcall(function()
-			notifyRemote:FireClient(player, {
-				Title = "Sistem Padat",
-				Text = "Pemuatan status Donasi/Gamepass kamu sedang dalam antrean.",
-				Duration = 8,
-			})
-		end)
+		pcall(notifyRemote.FireClient, notifyRemote, player, {
+			Title = "Sistem Padat",
+			Text = "Pemuatan status Donasi/Gamepass kamu sedang dalam antrean.",
+			Duration = 8,
+		})
 	end
-
 	return nil
 end
 
 local function datastoreSetAsync(key, value)
 	for attempt = 1, RoleSystem.Config.DATASTORE_RETRY_ATTEMPTS do
-		local success = pcall(function()
-			giveGamePassStore:SetAsync(key, value)
-		end)
-
-		if success then
-			return true
-		end
-
+		if pcall(giveGamePassStore.SetAsync, giveGamePassStore, key, value) then return true end
 		if attempt < RoleSystem.Config.DATASTORE_RETRY_ATTEMPTS then
 			task.wait(RoleSystem.Config.DATASTORE_RETRY_DELAY)
 		end
 	end
-
 	return false
 end
 
 local function datastoreRemoveAsync(key)
 	for attempt = 1, RoleSystem.Config.DATASTORE_RETRY_ATTEMPTS do
-		local success = pcall(function()
-			giveGamePassStore:RemoveAsync(key)
-		end)
-
-		if success then
-			return true
-		end
-
+		if pcall(giveGamePassStore.RemoveAsync, giveGamePassStore, key) then return true end
 		if attempt < RoleSystem.Config.DATASTORE_RETRY_ATTEMPTS then
 			task.wait(RoleSystem.Config.DATASTORE_RETRY_DELAY)
 		end
 	end
-
 	return false
 end
 
--- ====================================
--- GAMEPASS CHECK (WITH RETRY & TIMEOUT)
--- ====================================
 local function checkSingleGamepass(player, gamepassId, retryCount)
 	retryCount = retryCount or 0
+	if not player or not gamepassId or gamepassId == 0 then return false end
 
-	if gamepassId == 0 or gamepassId == nil then
-		return false
+	local success, hasPass = pcall(MarketplaceService.UserOwnsGamePassAsync, MarketplaceService, player.UserId, gamepassId)
+	if success then return hasPass end
+
+	if retryCount < RoleSystem.Config.GAMEPASS_CHECK_RETRIES then
+		task.wait(2 ^ (retryCount + 1))
+		return checkSingleGamepass(player, gamepassId, retryCount + 1)
 	end
 
-	local safeUserId = player.UserId
-
-	-- 🔥 ARCHITECT FIX: Dihapus total sistem while task.wait() polling yang merusak performa.
-	-- Karena fungsi ini dipanggil dari dalam antrean background (processGamepassQueue), 
-	-- kita bisa langsung menggunakan pcall dan membiarkan Roblox API yield secara natural tanpa memblokir server.
-	local success, hasPass = pcall(function()
-		return MarketplaceService:UserOwnsGamePassAsync(safeUserId, gamepassId)
-	end)
-
-	if success then
-		return hasPass
-	else
-		if retryCount < RoleSystem.Config.GAMEPASS_CHECK_RETRIES then
-			task.wait(2 ^ (retryCount + 1)) -- Exponential Backoff: 2s, 4s, 8s...
-			return checkSingleGamepass(player, gamepassId, retryCount + 1)
-		end
-		
-		-- FAILSAFE NOTIFICATION (Gamepass API Down)
-		if player then
-			pcall(function()
-				notifyRemote:FireClient(player, {
-					Title = "Sistem Padat",
-					Text = "Pemuatan status Donasi/Gamepass kamu sedang dalam antrean.",
-					Duration = 8,
-				})
-			end)
-		end
-		
-		return false
+	if player then
+		pcall(notifyRemote.FireClient, notifyRemote, player, {
+			Title = "Sistem Padat",
+			Text = "Pemuatan status Donasi/Gamepass kamu sedang dalam antrean.",
+			Duration = 8,
+		})
 	end
+	return false
 end
 
 local function checkAnyGamepass(player, gamepassIds)
 	if type(gamepassIds) == "number" then
 		return checkSingleGamepass(player, gamepassIds)
 	end
-
 	if type(gamepassIds) == "table" then
 		for _, gamepassId in ipairs(gamepassIds) do
-			if checkSingleGamepass(player, gamepassId) then
-				return true
-			end
+			if checkSingleGamepass(player, gamepassId) then return true end
 		end
 	end
-
 	return false
 end
 
--- ====================================
--- OWNERSHIP CACHE SYSTEM
--- ====================================
 local gamepassQueue = {}
 local activeWorkers = 0
-local MAX_GAMEPASS_WORKERS = 6 -- FIX 100+ PLAYERS: Worker pool paralel agar 100 pemain selesai dicek dalam <5 detik (bukan 3 menit)
+local MAX_GAMEPASS_WORKERS = 6
 
 local function processGamepassQueue()
 	while activeWorkers < MAX_GAMEPASS_WORKERS and #gamepassQueue > 0 do
@@ -239,18 +164,12 @@ local function processGamepassQueue()
 	end
 end
 
--- CachePlayerOwnership:
---   SYNC  → hanya baca DataStore givenpass (cepat, ~100-300ms)
---   ASYNC → gamepass check dijalankan di background, update cache & role setelah selesai
---   Ini mencegah blocking di PlayerAdded/assignPlayer yang menyebabkan loading lama
 function RoleSystem:CachePlayerOwnership(player)
 	local userId = player.UserId
-
-	if playerOwnershipCache[userId] then
-		if playerOwnershipCache[userId].DisconnectedAt then
-			playerOwnershipCache[userId].DisconnectedAt = nil
-		end
-		return playerOwnershipCache[userId]
+	local cached = playerOwnershipCache[userId]
+	if cached then
+		cached.DisconnectedAt = nil
+		return cached
 	end
 
 	if ownershipLoadingLocks[userId] then
@@ -268,57 +187,41 @@ function RoleSystem:CachePlayerOwnership(player)
 	local ownership = {
 		VIP = preservedVIPStatus[userId] or false,
 		GivenPass = "None",
-		CheckedAt = os.clock()
+		CheckedAt = os.clock(),
 	}
 	preservedVIPStatus[userId] = nil
 
-	-- 1. Check Given Pass dari DataStore (sync - cepat)
 	local key = "givenpass_" .. tostring(userId)
 	local givenPassData = datastoreGetAsync(key, player)
 
 	if givenPassData then
-		local passType = nil
-		if type(givenPassData) == "table" then
-			passType = givenPassData.passType or givenPassData.PassType or givenPassData.Role or givenPassData.role
-		elseif type(givenPassData) == "string" then
-			passType = givenPassData
-		end
+		local passType = type(givenPassData) == "table"
+			and (givenPassData.passType or givenPassData.PassType or givenPassData.Role or givenPassData.role)
+			or (type(givenPassData) == "string" and givenPassData or nil)
 
 		if passType then
 			if passType == "VVIP" then passType = "VIP" end
 			ownership.GivenPass = passType
-
-			if passType == "VIP" then
-				ownership.VIP = true
-			end
+			if passType == "VIP" then ownership.VIP = true end
 		end
 	end
 
-	-- Simpan hasil DataStore dulu agar role bisa langsung dipakai
 	playerOwnershipCache[userId] = ownership
 	ownershipLoadingLocks[userId] = nil
 
-	-- 2. GamePass check ASYNC di background (tidak blocking PlayerAdded)
-	-- Hanya untuk player yang belum punya GivenPass dari DataStore
 	if ownership.GivenPass == "None" then
 		table.insert(gamepassQueue, {
 			player = player,
 			callback = function()
-				local hasVIP = checkAnyGamepass(player, self.Config.GamePasses.VIP)
-				if hasVIP then
+				if checkAnyGamepass(player, self.Config.GamePasses.VIP) then
 					ownership.VIP = true
 					ownership.GivenPass = "VIP"
 					playerOwnershipCache[userId] = ownership
-
-					if DEBUG_MODE then
-						print(string.format("[RoleSystem] Auto-saving VIP purchase for user %d", userId))
-					end
-
 					if player and player.Parent then
 						self:UpdatePlayerRole(player)
 					end
 				end
-			end
+			end,
 		})
 		processGamepassQueue()
 	end
@@ -328,29 +231,23 @@ end
 
 function RoleSystem:GetPlayerOwnership(player)
 	local userId = player.UserId
-
-	if playerOwnershipCache[userId] then
-		-- Rejoin Cache: Hapus flag DisconnectedAt jika pemain kembali online
-		if playerOwnershipCache[userId].DisconnectedAt then
-			playerOwnershipCache[userId].DisconnectedAt = nil
-		end
-		return playerOwnershipCache[userId]
+	local cached = playerOwnershipCache[userId]
+	if cached then
+		cached.DisconnectedAt = nil
+		return cached
 	end
-
 	return self:CachePlayerOwnership(player)
 end
 
 function RoleSystem:UpdateOwnershipCache(player, gamepassType, owned)
 	local userId = player.UserId
-
 	if not playerOwnershipCache[userId] then
 		playerOwnershipCache[userId] = {
 			VIP = false,
 			GivenPass = "None",
-			CheckedAt = os.clock()
+			CheckedAt = os.clock(),
 		}
 	end
-
 	playerOwnershipCache[userId][gamepassType] = owned
 	playerOwnershipCache[userId].CheckedAt = os.clock()
 end
@@ -365,74 +262,53 @@ end
 function RoleSystem:HandlePlayerRemoving(userId)
 	groupCheckCooldown[userId] = nil
 	preservedVIPStatus[userId] = nil
-	if playerOwnershipCache[userId] then
-		playerOwnershipCache[userId].DisconnectedAt = os.clock()
-		
+	local cached = playerOwnershipCache[userId]
+	if cached then
+		cached.DisconnectedAt = os.clock()
 		task.delay(65, function()
-			if playerOwnershipCache[userId] and playerOwnershipCache[userId].DisconnectedAt then
-				if os.clock() - playerOwnershipCache[userId].DisconnectedAt >= 60 then
-					playerOwnershipCache[userId] = nil
-				end
+			local current = playerOwnershipCache[userId]
+			if current and current.DisconnectedAt and (os.clock() - current.DisconnectedAt >= 60) then
+				playerOwnershipCache[userId] = nil
 			end
 		end)
 	end
 end
 
--- ====================================
--- ROLE CALCULATION
--- ====================================
 function RoleSystem:GetPlayerRole(player)
 	local userId = player.UserId
 
-	-- Priority 1: Hardcoded Owner (tidak bisa diturunkan)
-	if isInList(userId, self.Config.OwnerIds) then
-		return "Owner"
-	end
+	if isInList(userId, self.Config.OwnerIds) then return "Owner" end
+	if isInList(userId, self.Config.AdminIds) then return "Admin" end
+	if isInList(userId, self.Config.ModeratorIds) then return "Moderator" end
 
-	-- Priority 2: Hardcoded Admin
-	if isInList(userId, self.Config.AdminIds) then
-		return "Admin"
-	end
-
-	-- Priority 3: Hardcoded Moderator (backward compatibility)
-	if isInList(userId, self.Config.ModeratorIds) then
-		return "Moderator"
-	end
-
-	-- Priority 4: Cek DataStore (Admin/Moderator/VVIP/VIP yang di-give via panel)
 	local ownership = self:GetPlayerOwnership(player)
-
-	-- FIX: Admin dari DataStore sekarang terbaca dengan benar
-	if ownership.GivenPass == "Admin" then
-		return "Admin"
-	end
-
-	if ownership.GivenPass == "Moderator" then
-		return "Moderator"
-	end
-
-	if ownership.GivenPass == "VIP" or ownership.GivenPass == "VVIP" or ownership.VIP then
+	if ownership.GivenPass == "Admin" then return "Admin" end
+	if ownership.GivenPass == "Moderator" then return "Moderator" end
+	if ownership.GivenPass == "VIP" or ownership.GivenPass == "VVIP" or ownership.VIP or ownership.GroupVIP then
 		return "VIP"
 	end
 
-	-- Priority 5: Anggota Komunitas / Grup (Free VIP)
+	local now = os.clock()
+	if ownership.GroupCheckedAt and (now - ownership.GroupCheckedAt) < GROUP_CHECK_TTL then
+		if ownership.GroupVIP then return "VIP" end
+		return "Player"
+	end
+
 	local targetGroupId = self.Config.GroupId or 192828493
-	local ok, res = pcall(function()
-		return player:IsInGroup(targetGroupId)
-	end)
-	if ok and res then
+	local ok, inGroup = pcall(player.IsInGroup, player, targetGroupId)
+	ownership.GroupCheckedAt = now
+	if ok and inGroup then
+		ownership.VIP = true
+		ownership.GroupVIP = true
 		return "VIP"
 	end
 
+	ownership.GroupVIP = false
 	return "Player"
 end
 
--- ====================================
--- PLAYER INITIALIZATION
--- ====================================
 function RoleSystem:InitializePlayer(player)
 	self:GetPlayerOwnership(player)
-
 	local role = self:GetPlayerRole(player)
 
 	local roleValue = player:FindFirstChild("Role")
@@ -456,111 +332,68 @@ function RoleSystem:UpdatePlayerRole(player)
 	return self:InitializePlayer(player)
 end
 
--- ====================================
--- GIVE PASS MANAGEMENT (EXTENDED: VIP, Moderator, Admin)
--- ====================================
 function RoleSystem:GivePassToPlayer(targetUserId, passType, giverUserId, callback)
-	if passType == "VVIP" then
-		passType = "VIP" -- Konversi VVIP ke VIP
-	end
+	if passType == "VVIP" then passType = "VIP" end
 
-	if passType ~= "VIP" and passType ~= "Moderator" and passType ~= "Admin" then
+	if not VALID_PASS_TYPES[passType] then
 		warn(string.format("[RoleSystem] GivePassToPlayer: invalid passType '%s'", tostring(passType)))
-		if type(callback) == "function" then
-			task.spawn(callback, false, "Invalid pass type")
-		end
+		if type(callback) == "function" then task.spawn(callback, false, "Invalid pass type") end
 		return false, "Invalid pass type"
 	end
 
-	-- Proteksi Downgrade: Jangan timpa role Admin/Moderator jika player membeli/menerima VIP
 	local existing = playerOwnershipCache[targetUserId]
 	if passType == "VIP" and existing and (existing.GivenPass == "Admin" or existing.GivenPass == "Moderator") then
 		existing.VIP = true
 		existing.CheckedAt = os.clock()
-		local player = game.Players:GetPlayerByUserId(targetUserId)
-		if player then
-			self:UpdatePlayerRole(player)
-		end
-		if type(callback) == "function" then
-			task.spawn(callback, true, "Pass given successfully")
-		end
+		local player = Players:GetPlayerByUserId(targetUserId)
+		if player then self:UpdatePlayerRole(player) end
+		if type(callback) == "function" then task.spawn(callback, true, "Pass given successfully") end
 		return true, "Pass given successfully"
 	end
 
-	-- Key format TIDAK DIUBAH agar data production tetap kompatibel
 	local key = "givenpass_" .. tostring(targetUserId)
 	local data = {
-		passType  = passType,
-		givenBy   = giverUserId,
-		givenAt   = os.time(),
-		timestamp = os.time()
+		passType = passType,
+		givenBy = giverUserId,
+		givenAt = os.time(),
+		timestamp = os.time(),
 	}
 
-	local success = datastoreSetAsync(key, data)
-
-	if success then
-		-- Update cache langsung di memori server agar instan tanpa lag atau delay
+	if datastoreSetAsync(key, data) then
 		playerOwnershipCache[targetUserId] = {
 			VIP = (passType == "VIP") or (existing and existing.VIP == true) or false,
 			GivenPass = passType,
-			CheckedAt = os.clock()
+			CheckedAt = os.clock(),
 		}
 
-		local player = game.Players:GetPlayerByUserId(targetUserId)
-		if player then
-			self:UpdatePlayerRole(player)
-		end
-
-		if DEBUG_MODE then -- 🔥 DEBUG WRAPPER
-			print(string.format("[RoleSystem] GivePassToPlayer OK | userId: %d | passType: %s | givenBy: %s",
-				targetUserId, passType, tostring(giverUserId)))
-		end
-
-		if type(callback) == "function" then
-			task.spawn(callback, true, "Pass given successfully")
-		end
+		local player = Players:GetPlayerByUserId(targetUserId)
+		if player then self:UpdatePlayerRole(player) end
+		if type(callback) == "function" then task.spawn(callback, true, "Pass given successfully") end
 		return true, "Pass given successfully"
 	else
 		warn(string.format("[RoleSystem] GivePassToPlayer FAILED | userId: %d | passType: %s", targetUserId, passType))
-		if type(callback) == "function" then
-			task.spawn(callback, false, "DataStore error")
-		end
+		if type(callback) == "function" then task.spawn(callback, false, "DataStore error") end
 		return false, "DataStore error"
 	end
 end
 
 function RoleSystem:RemovePassFromPlayer(targetUserId)
 	local key = "givenpass_" .. tostring(targetUserId)
-
-	local success = datastoreRemoveAsync(key)
-
-	if success then
-		-- Reset cache langsung di memori server
+	if datastoreRemoveAsync(key) then
 		playerOwnershipCache[targetUserId] = {
 			VIP = false,
 			GivenPass = "None",
-			CheckedAt = os.clock()
+			CheckedAt = os.clock(),
 		}
-
-		local player = game.Players:GetPlayerByUserId(targetUserId)
-		if player then
-			self:UpdatePlayerRole(player)
-		end
-
-		if DEBUG_MODE then -- 🔥 DEBUG WRAPPER
-			print(string.format("[RoleSystem] RemovePassFromPlayer OK | userId: %d", targetUserId))
-		end
-
+		local player = Players:GetPlayerByUserId(targetUserId)
+		if player then self:UpdatePlayerRole(player) end
 		return true, "Pass removed successfully"
-	else
-		warn(string.format("[RoleSystem] RemovePassFromPlayer FAILED | userId: %d", targetUserId))
-		return false, "DataStore error"
 	end
+
+	warn(string.format("[RoleSystem] RemovePassFromPlayer FAILED | userId: %d", targetUserId))
+	return false, "DataStore error"
 end
 
--- ====================================
--- MODERATOR MANAGEMENT (backward compatibility)
--- ====================================
 function RoleSystem:AddModerator(userId, givenByUserId)
 	return self:GivePassToPlayer(userId, "Moderator", givenByUserId)
 end
@@ -572,37 +405,30 @@ function RoleSystem:RemoveModerator(userId)
 	if givenPassData and (givenPassData.passType == "Moderator" or givenPassData.passType == "Admin") then
 		return self:RemovePassFromPlayer(userId)
 	end
-
 	if isInList(userId, self.Config.ModeratorIds) then
 		return false, "Cannot remove hardcoded moderator (edit config instead)"
 	end
-
 	return false, "User is not a moderator or admin"
 end
 
--- ====================================
--- STATS & DIAGNOSTICS
--- ====================================
 function RoleSystem:GetOwnershipStats()
 	local stats = {
-		totalCached   = 0,
-		vipCount      = 0,
+		totalCached = 0,
+		vipCount = 0,
 		givenPassCount = 0,
 		moderatorCount = 0,
-		adminCount    = 0
+		adminCount = 0,
 	}
 
-	for userId, ownership in pairs(playerOwnershipCache) do
-		stats.totalCached = stats.totalCached + 1
-
-		if ownership.VIP then stats.vipCount = stats.vipCount + 1 end
-
+	for _, ownership in pairs(playerOwnershipCache) do
+		stats.totalCached += 1
+		if ownership.VIP then stats.vipCount += 1 end
 		if ownership.GivenPass ~= "None" then
-			stats.givenPassCount = stats.givenPassCount + 1
+			stats.givenPassCount += 1
 			if ownership.GivenPass == "Moderator" then
-				stats.moderatorCount = stats.moderatorCount + 1
+				stats.moderatorCount += 1
 			elseif ownership.GivenPass == "Admin" then
-				stats.adminCount = stats.adminCount + 1
+				stats.adminCount += 1
 			end
 		end
 	end
@@ -610,9 +436,6 @@ function RoleSystem:GetOwnershipStats()
 	return stats
 end
 
--- ====================================
--- UTILITY FUNCTIONS
--- ====================================
 function RoleSystem:CompareRoles(role1, role2)
 	local h1 = self.Config.RoleHierarchy[role1] or 0
 	local h2 = self.Config.RoleHierarchy[role2] or 0
@@ -620,17 +443,13 @@ function RoleSystem:CompareRoles(role1, role2)
 end
 
 function RoleSystem:HasHigherRole(player1, player2)
-	local role1 = self:GetPlayerRole(player1)
-	local role2 = self:GetPlayerRole(player2)
-	return self:CompareRoles(role1, role2) > 0
+	return self:CompareRoles(self:GetPlayerRole(player1), self:GetPlayerRole(player2)) > 0
 end
 
 function RoleSystem:GetPlayerPriority(player)
-	local role = self:GetPlayerRole(player)
-	return self.Config.RoleHierarchy[role] or 1
+	return self.Config.RoleHierarchy[self:GetPlayerRole(player)] or 1
 end
 
--- Compatibility stubs
 function RoleSystem:GetRolePermissions(role) return {} end
 function RoleSystem:GetPlayerPermissions(player) return {} end
 function RoleSystem:HasZoneAccess(player, zoneName) return false end
@@ -642,15 +461,10 @@ function RoleSystem:GetAllSpecialItems(player) return {} end
 function RoleSystem:ApplyRoleToPlayer(player) return self:GetPlayerRole(player) end
 function RoleSystem:GiveSpecialItems(player) end
 
--- ANTI MEMORY LEAK UNTUK CACHE ROLE
-game:GetService("Players").PlayerRemoving:Connect(function(player)
-	-- Variabel playerOwnershipCache ada di scope file ini
+Players.PlayerRemoving:Connect(function(player)
 	RoleSystem:HandlePlayerRemoving(player.UserId)
 end)
 
--- ====================================
--- REMOTE CHECK GROUP VIP (INVOKED MID-GAME)
--- ====================================
 local RemotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
 if not RemotesFolder then
 	RemotesFolder = Instance.new("Folder")
@@ -665,10 +479,14 @@ if not checkGroupVIPRemote then
 	checkGroupVIPRemote.Parent = RemotesFolder
 end
 
-
 if RunService:IsServer() then
 	checkGroupVIPRemote.OnServerInvoke = function(player)
 		if not player then return false, "Invalid player" end
+
+		local features = RoleSystem.Config.Features or {}
+		if features.CommunityVIPEnabled == false then
+			return false, "Reward VIP komunitas sedang dinonaktifkan."
+		end
 
 		local now = os.clock()
 		local lastCheck = groupCheckCooldown[player.UserId] or 0
@@ -679,18 +497,12 @@ if RunService:IsServer() then
 		groupCheckCooldown[player.UserId] = now
 
 		local targetGroupId = RoleSystem.Config.GroupId or 192828493
-		local isMember = false
+		local ok, inGroup = pcall(player.IsInGroup, player, targetGroupId)
+		local isMember = ok and inGroup
 
-		local ok, res = pcall(function()
-			return player:IsInGroup(targetGroupId)
-		end)
-		if ok and res then
-			isMember = true
-		else
+		if not isMember then
 			local GroupService = game:GetService("GroupService")
-			local ok2, groups = pcall(function()
-				return GroupService:GetGroupsAsync(player.UserId)
-			end)
+			local ok2, groups = pcall(GroupService.GetGroupsAsync, GroupService, player.UserId)
 			if ok2 and groups then
 				for _, g in ipairs(groups) do
 					if g.Id == targetGroupId then
@@ -701,12 +513,20 @@ if RunService:IsServer() then
 			end
 		end
 
+		local ownership = RoleSystem:GetPlayerOwnership(player)
 		if isMember then
+			ownership.VIP = true
+			ownership.GroupVIP = true
+			ownership.GroupCheckedAt = os.clock()
+			ownership.CheckedAt = os.clock()
+
 			RoleSystem:UpdatePlayerRole(player)
 			return true, "Selamat! Kamu telah bergabung di komunitas dan mendapatkan VIP Gratis!"
-		else
-			return false, "Kamu belum bergabung ke grup komunitas."
 		end
+
+		ownership.GroupVIP = false
+		ownership.GroupCheckedAt = os.clock()
+		return false, "Kamu belum bergabung ke grup komunitas."
 	end
 end
 

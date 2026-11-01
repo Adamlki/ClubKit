@@ -39,7 +39,7 @@ local ICON_CONFIGS = {
 	Broadcast    = { enabled = true, image = "rbxassetid://124033060370841", label = "" },
 	MyHat        = { enabled = true, image = "rbxassetid://120495411505696", label = "" },
 	GlobalEffect = { enabled = true, image = "rbxassetid://84595853614117", label = "" },
-	Gamepass     = { enabled = false, image = "rbxassetid://140276937557646", label = "" },
+	Gamepass     = { enabled = true, image = "rbxassetid://140276937557646", label = "", alignment = "right", order = 3 },
 }
 
 local function getCfg(name)
@@ -201,10 +201,13 @@ local serverListIcon = createRawIcon("ServerList")
 local broadcastIcon  = createRawIcon("Broadcast")
 local hatIcon        = createRawIcon("MyHat")
 local effectIcon     = createRawIcon("GlobalEffect")
+local gamepassIcon   = createRawIcon("Gamepass")
 
 -- Initially disable network-dependent icons until verified
 if broadcastIcon then broadcastIcon:setEnabled(false) end
 if effectIcon then effectIcon:setEnabled(false) end
+-- Shop hanya muncul jika FeatureFlags.VIPShopEnabled bernilai true.
+if gamepassIcon then gamepassIcon:setEnabled(false) end
 
 if menuIcon then
 	local activeMenu = {}
@@ -219,6 +222,7 @@ if menuIcon then
 	if broadcastIcon then table.insert(activeMenu, broadcastIcon) end
 	if hatIcon then table.insert(activeMenu, hatIcon) end
 	if effectIcon then table.insert(activeMenu, effectIcon) end
+	-- Gamepass sengaja TIDAK dimasukkan ke menu; tampil langsung di topbar kanan.
 	
 	-- Gunakan setMenu agar bergeser ke samping
 	menuIcon:setMenu(activeMenu)
@@ -361,12 +365,25 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-	local gui = playerGui:WaitForChild("GamepassShop", 5)
+	local gui = playerGui:WaitForChild("GamepassShop", 10)
 	if gui then
+		-- Selalu tutup dulu; buka hanya jika feature flag mengizinkan.
 		gui.Enabled = false
 		local frame = gui:FindFirstChild("MainFrame")
 		if frame then frame.Visible = false end
 	end
+
+	local featureFolder = ReplicatedStorage:WaitForChild("FeatureFlags", 10)
+	local shopFlag = featureFolder and featureFolder:WaitForChild("VIPShopEnabled", 5)
+	if not (shopFlag and shopFlag.Value) then return end
+	if not gui or not gamepassIcon then return end
+
+	local frame = gui:FindFirstChild("MainFrame")
+	if not frame then return end
+
+	gui.Enabled = true
+	bindIconLogic("Gamepass", gamepassIcon, gui, frame, {"Header","CloseBtn"})
+	gamepassIcon:setEnabled(true)
 end)
 
 task.spawn(function()

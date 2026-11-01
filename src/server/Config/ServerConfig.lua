@@ -5,7 +5,16 @@ local RunService = game:GetService("RunService")
 
 local PrivateConfig = require(ServerStorage:WaitForChild("Modules"):WaitForChild("PrivateConfig"))
 
+local featureConfig = PrivateConfig.Features or {}
+
 local ServerConfig = {
+	-- Feature toggles
+	Features = {
+		VIPShopEnabled = featureConfig.VIPShopEnabled ~= false, -- default ON
+		VIPGiftEnabled = featureConfig.VIPGiftEnabled == true,  -- default OFF
+		CommunityVIPEnabled = featureConfig.CommunityVIPEnabled ~= false, -- default ON
+	},
+
 	-- Access control dari PrivateConfig
 	OwnerIds = PrivateConfig.OwnerIds or {},
 	AdminIds = PrivateConfig.AdminIds or {},

@@ -64,14 +64,6 @@ local Teams             = game:GetService("Teams")
 
 local LocalPlayer = Players.LocalPlayer
 
--- ====================================
--- MODULE ANIMASI UI
--- ====================================
-local UIAnimator = require(ReplicatedStorage:WaitForChild("UIAnimator"))
-
--- ====================================
--- SAFE INVOKE UTILITY (ANTI-FREEZE)
--- ====================================
 local function SafeInvoke(remote, timeout, ...)
 	local args = {...}
 	local finished = false
@@ -89,15 +81,12 @@ local function SafeInvoke(remote, timeout, ...)
 
 	local elapsed = 0
 	while not finished and elapsed < timeout do
-		elapsed = elapsed + task.wait()
+		elapsed += task.wait()
 	end
 
 	return finished and success, data
 end
 
--- ====================================
--- GUI REFERENCES
--- ====================================
 local gui               = script.Parent
 local mainframe         = gui:WaitForChild("mainframe")
 local notificationframe = gui:WaitForChild("NotificationFrame")
@@ -162,9 +151,6 @@ local saweriaRow         = donateCard and donateCard:WaitForChild("SaweriaRow", 
 local minSaweriaBox      = saweriaRow and saweriaRow:WaitForChild("MinSaweriaBox", 5)
 local donateSaveBtn      = donateCard and donateCard:WaitForChild("SaveBtn", 5)
 
--- ====================================
--- REMOTES
--- ====================================
 local titleRemotes        = ReplicatedStorage:WaitForChild("TitleRemotes")
 local UpdateTitleRemote   = titleRemotes:WaitForChild("UpdateTitle")
 local CheckAccessRemote   = titleRemotes:WaitForChild("CheckAccess")
@@ -178,33 +164,24 @@ local GetColorTemplatesRemote = adminPanelRemotes:WaitForChild("GetColorTemplate
 local TeamActionRemote        = adminPanelRemotes:WaitForChild("TeamAction")
 local TeamActionResultRemote  = adminPanelRemotes:WaitForChild("TeamActionResult")
 
--- ====================================
--- STATE
--- ====================================
 local playerButtons   = {}
-local allPlayers      = {}
 local selectedUserId  = nil
-
 local selectedRole = nil
-local roleButtonsPool = {} -- OPTIMIZATION: Object Pooling
-local effectBtnsPool = {} -- OPTIMIZATION: Object Pooling
-
-local teamBtnsPool       = {} -- OPTIMIZATION: Object Pooling
+local roleButtonsPool = {}
+local effectBtnsPool = {}
+local teamBtnsPool       = {}
 local selectedTeamName   = nil
 local selectedColorName  = nil
-local colorBtnsPool      = {} -- OPTIMIZATION: Object Pooling
+local colorBtnsPool      = {}
 
 local hasAccess  = false
 local playerRole = "Player"
-
 local isRefreshing = false
 local currentTab   = "Role"
 local isSpotlightEnabled = false
 local loadSpotlightSettings = nil
+local loadTitleData
 
--- ====================================
--- INITIAL VISIBILITY
--- ====================================
 mainframe.Visible             = false
 notificationframe.Visible     = false
 playertemplateBtn.Visible     = false
@@ -214,9 +191,6 @@ titleeffecttemplateBtn.Visible= false
 colortemplateBtn.Visible      = false
 if donateframe then donateframe.Visible = false end 
 
--- ====================================
--- TOPBAR PLUS ADMIN ICON
--- ====================================
 local Icon = require(ReplicatedStorage:WaitForChild("Icon"))
 
 local gradientRotation    = 0
@@ -273,25 +247,23 @@ local adminIcon = Icon.new()
 adminIcon:setLabel(CONFIG.ADMIN_ICON_LABEL)
 adminIcon:setOrder(CONFIG.ADMIN_ICON_SETORDER)
 if CONFIG.ADMIN_ICON_IMAGE then adminIcon:setImage(CONFIG.ADMIN_ICON_IMAGE) end
-if     CONFIG.ADMIN_ICON_ALIGNMENT == "mid"   then adminIcon:setMid()
-elseif CONFIG.ADMIN_ICON_ALIGNMENT == "right" then adminIcon:setRight()
-else                                               adminIcon:setLeft()
+if CONFIG.ADMIN_ICON_ALIGNMENT == "mid" then
+	adminIcon:setMid()
+elseif CONFIG.ADMIN_ICON_ALIGNMENT == "right" then
+	adminIcon:setRight()
+else
+	adminIcon:setLeft()
 end
 applyStroke(adminIcon)
 adminIcon:setEnabled(false)
 
--- ====================================
--- NOTIFICATION
--- ====================================
 local function showNotification(message, isSuccess)
 	if not message or type(message) ~= "string" or message == "" then
 		message = isSuccess and "Operasi berhasil" or "Operasi gagal"
 	end
 	notificationtext.Text       = message
 	notificationtext.TextColor3 = isSuccess and Color3.fromRGB(85,255,127) or Color3.fromRGB(255,85,85)
-
-	-- Membuka Notification Frame dengan Animasi
-	notificationframe.Visible = true
+	notificationframe.Visible   = true
 
 	task.delay(3, function()
 		if notificationframe.Visible then
@@ -300,57 +272,42 @@ local function showNotification(message, isSuccess)
 	end)
 end
 
--- ====================================
--- TAB SWITCHING
--- ====================================
+local TAB_FRAMES = {
+	Role   = roleframe,
+	Title  = titleframe,
+	Team   = teamframe,
+	Donate = donateframe,
+}
+
+local TAB_BUTTONS = {
+	Role  = roleBtn,
+	Title = titleBtn,
+	Team  = teamBtn,
+}
+if donateBtn then TAB_BUTTONS.Donate = donateBtn end
+
 local function switchTab(tab)
 	currentTab = tab
 
-	-- Tutup semua frame tab secara instan agar tidak tumpang tindih
-	roleframe.Visible  = false
-	titleframe.Visible = false
-	teamframe.Visible  = false
-	if donateframe then donateframe.Visible = false end
-
-	-- Buka frame tab yang dipilih dengan animasi pop-up
-	if tab == "Role" then
-		roleframe.Visible = true
-	elseif tab == "Title" then
-		titleframe.Visible = true
-	elseif tab == "Team" then
-		teamframe.Visible = true
-	elseif tab == "Donate" then
-		if donateframe then donateframe.Visible = true end
-		if loadSpotlightSettings then loadSpotlightSettings() end
+	for name, frame in pairs(TAB_FRAMES) do
+		if frame then frame.Visible = (name == tab) end
 	end
 
-	local tabButtons = {
-		Role = roleBtn,
-		Title = titleBtn,
-		Team = teamBtn,
-	}
-	if donateBtn then tabButtons.Donate = donateBtn end
+	if tab == "Donate" and loadSpotlightSettings then
+		loadSpotlightSettings()
+	end
 
-	for name, btn in pairs(tabButtons) do
+	for name, btn in pairs(TAB_BUTTONS) do
 		local stroke = btn:FindFirstChild("TabStroke") or btn:FindFirstChildOfClass("UIStroke")
-		if name == tab then
-			btn.BackgroundColor3 = Color3.fromRGB(27, 67, 46)
-			btn.BackgroundTransparency = 0
-			btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-			btn.Font = Enum.Font.GothamBold
-			if stroke then
-				stroke.Color = Color3.fromRGB(46, 210, 115)
-				stroke.Transparency = 0
-				stroke.Thickness = 1.2
-			end
-		else
-			btn.BackgroundColor3 = Color3.fromRGB(16, 16, 16)
-			btn.BackgroundTransparency = 1
-			btn.TextColor3 = Color3.fromRGB(160, 160, 160)
-			btn.Font = Enum.Font.GothamMedium
-			if stroke then
-				stroke.Transparency = 1
-			end
+		local isActive = (name == tab)
+		btn.BackgroundColor3 = isActive and Color3.fromRGB(27, 67, 46) or Color3.fromRGB(16, 16, 16)
+		btn.BackgroundTransparency = isActive and 0 or 1
+		btn.TextColor3 = isActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(160, 160, 160)
+		btn.Font = isActive and Enum.Font.GothamBold or Enum.Font.GothamMedium
+		if stroke then
+			stroke.Color = Color3.fromRGB(46, 210, 115)
+			stroke.Transparency = isActive and 0 or 1
+			stroke.Thickness = 1.2
 		end
 	end
 end
@@ -362,45 +319,26 @@ local function updatePlayerInfoDisplay(userId)
 
 	local roleVal = target:FindFirstChild("Role")
 	local roleName = roleVal and roleVal.Value or "Player"
+	playername.TextColor3 = (roleName ~= "Player" and target.Team) and target.Team.TeamColor.Color or Color3.fromRGB(255, 255, 255)
 
-	if roleName ~= "Player" and target.Team then
-		playername.TextColor3 = target.Team.TeamColor.Color
-	else
-		playername.TextColor3 = Color3.fromRGB(255, 255, 255) 
-	end
-
-	-- 🔥 FIX UI FREEZE: Download gambar secara Asynchronous (Latar Belakang)
 	task.spawn(function()
 		local ok, thumbUrl = pcall(function()
 			return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
 		end)
-
-		-- Pastikan admin tidak keburu klik player lain saat gambar sedang loading
 		if selectedUserId == userId and ok and thumbUrl then 
 			playerimage.Image = thumbUrl 
 		end
 	end)
 
 	rolelabel.Text = "Role: " .. roleName
-	teamlabel.Text = "Team: "..(target.Team and target.Team.Name or "-")
+	teamlabel.Text = "Team: " .. (target.Team and target.Team.Name or "-")
 	titlelabel.Text = "Title: Loading..."
 
 	task.spawn(function()
 		local ok2, data = SafeInvoke(GetPlayerDataRemote, 3, target)
 		if selectedUserId ~= userId then return end
-		titlelabel.Text = (ok2 and data) and "Title: "..(data.Title ~= "" and data.Title or "-") or "Title: -"
+		titlelabel.Text = (ok2 and data) and "Title: " .. (data.Title ~= "" and data.Title or "-") or "Title: -"
 	end)
-end
-
-
--- ====================================
--- PLAYER LIST
--- ====================================
-local function clearPlayerList()
-	for _, btn in pairs(playerButtons) do 
-		if btn and btn.Parent then btn:Destroy() end 
-	end
-	playerButtons = {}
 end
 
 local function refreshPlayerList()
@@ -409,7 +347,6 @@ local function refreshPlayerList()
 
 	local filterText = searchbox.Text:lower()
 	local yOffset    = 0
-
 	local currentPlayersInServer = {}
 
 	for _, plr in ipairs(Players:GetPlayers()) do
@@ -418,43 +355,38 @@ local function refreshPlayerList()
 		local existingBtn = playerButtons[plr.UserId]
 		local isVisible = (filterText == "" or plr.DisplayName:lower():find(filterText, 1, true))
 
-		local nameColor = Color3.fromRGB(255, 255, 255) 
 		local roleVal = plr:FindFirstChild("Role")
 		local roleName = roleVal and roleVal.Value or "Player"
-
-		if roleName ~= "Player" and plr.Team then
-			nameColor = plr.Team.TeamColor.Color
-		end
+		local nameColor = (roleName ~= "Player" and plr.Team) and plr.Team.TeamColor.Color or Color3.fromRGB(255, 255, 255)
+		local displayText = (plr == LocalPlayer) and (plr.DisplayName .. " (Saya)") or plr.DisplayName
 
 		if existingBtn then
 			if isVisible then
 				existingBtn.Position = UDim2.new(0, 0, 0, yOffset)
 				existingBtn.Visible  = true
-				existingBtn.Text = (plr == LocalPlayer) and (plr.DisplayName.." (Saya)") or plr.DisplayName
+				existingBtn.Text     = displayText
 				existingBtn.TextColor3 = nameColor 
-				yOffset = yOffset + existingBtn.Size.Y.Offset + 5
+				yOffset += existingBtn.Size.Y.Offset + 5
 			else
 				existingBtn.Visible = false
 			end
-		else
-			if isVisible then
-				local newBtn    = playertemplateBtn:Clone()
-				newBtn.Name     = "Player_"..plr.UserId
-				newBtn.Text     = (plr == LocalPlayer) and (plr.DisplayName.." (Saya)") or plr.DisplayName
-				newBtn.Position = UDim2.new(0, 0, 0, yOffset)
-				newBtn.Visible  = true
-				newBtn.TextColor3 = nameColor 
-				newBtn.Parent   = playerlist
+		elseif isVisible then
+			local newBtn    = playertemplateBtn:Clone()
+			newBtn.Name     = "Player_" .. plr.UserId
+			newBtn.Text     = displayText
+			newBtn.Position = UDim2.new(0, 0, 0, yOffset)
+			newBtn.Visible  = true
+			newBtn.TextColor3 = nameColor 
+			newBtn.Parent   = playerlist
 
-				newBtn.MouseButton1Click:Connect(function()
-					selectedUserId = plr.UserId
-					updatePlayerInfoDisplay(plr.UserId)
-					loadTitleData(plr.UserId)
-				end)
+			newBtn.MouseButton1Click:Connect(function()
+				selectedUserId = plr.UserId
+				updatePlayerInfoDisplay(plr.UserId)
+				loadTitleData(plr.UserId)
+			end)
 
-				playerButtons[plr.UserId] = newBtn
-				yOffset = yOffset + newBtn.Size.Y.Offset + 5
-			end
+			playerButtons[plr.UserId] = newBtn
+			yOffset += newBtn.Size.Y.Offset + 5
 		end
 	end
 
@@ -469,11 +401,12 @@ local function refreshPlayerList()
 	isRefreshing = false
 end
 
-
--- ====================================
--- ROLE SYSTEM
--- ====================================
 local ROLE_TYPES = { "VIP", "Moderator", "Admin", "Player" }
+local ROLE_PERMS = {
+	Owner     = { VIP = true, Moderator = true, Admin = true, Player = true },
+	Admin     = { VIP = true, Moderator = true, Player = true },
+	Moderator = { VIP = true, Player = true },
+}
 
 local function getOrCreateRoleButton(roleName)
 	if not roleButtonsPool[roleName] then
@@ -493,20 +426,14 @@ local function getOrCreateRoleButton(roleName)
 end
 
 local function buildRoleButtons()
-	-- OPTIMASI: Sembunyikan semua tombol yang ada alih-alih menghapusnya
 	for _, btn in pairs(roleButtonsPool) do btn.Visible = false end
 
 	local myRole = (LocalPlayer:FindFirstChild("Role") and LocalPlayer.Role.Value) or "Player"
+	local perms = ROLE_PERMS[myRole]
 	local yOffset = 0
 
 	for _, roleName in ipairs(ROLE_TYPES) do
-		local canShow = false
-		if myRole == "Owner" then canShow = true
-		elseif myRole == "Admin" then canShow = (roleName=="VIP" or roleName=="Moderator" or roleName=="Player")
-		elseif myRole == "Moderator" then canShow = (roleName=="VIP" or roleName=="Player")
-		end
-
-		if canShow then
+		if perms and perms[roleName] then
 			local btn = getOrCreateRoleButton(roleName)
 			btn.Text = roleName
 			btn.Position = UDim2.new(0, 0, 0, yOffset)
@@ -530,8 +457,8 @@ roleconfirmBtn.MouseButton1Click:Connect(function()
 	if not targetPlayer then showNotification("Player tidak ditemukan!", false); return end
 	showNotification("Memproses...", true)
 	giveRoleRemote:FireServer({
-		source="AdminPanel", action="GiveRole",
-		targetUserId=targetPlayer.UserId, roleType=selectedRole,
+		source = "AdminPanel", action = "GiveRole",
+		targetUserId = targetPlayer.UserId, roleType = selectedRole,
 	})
 	resetRoleForm()
 end)
@@ -541,9 +468,6 @@ rolecancelBtn.MouseButton1Click:Connect(function()
 	showNotification("Dibatalkan", false)
 end)
 
--- ====================================
--- TITLE SYSTEM
--- ====================================
 local function validateRGB(value)
 	local num = tonumber(value)
 	return (num and num >= 0 and num <= 255) and math.floor(num) or 0
@@ -554,11 +478,7 @@ local function updateColorPreview()
 		validateRGB(redbox.Text), validateRGB(greenbox.Text), validateRGB(bluebox.Text))
 end
 
--- ====================================
--- COLOR PRESET SYSTEM
--- ====================================
 local function buildEffectButtons()
-	-- OPTIMASI: Sembunyikan semua tombol yang sudah ada
 	for _, btn in pairs(effectBtnsPool) do btn.Visible = false end
 
 	for i, preset in ipairs(CONFIG.COLOR_PRESETS) do
@@ -583,11 +503,10 @@ local function buildEffectButtons()
 		btn.BackgroundColor3 = preset.color
 		local brightness = (preset.color.R + preset.color.G + preset.color.B)
 		btn.TextColor3 = brightness < 1.5 and Color3.new(1, 1, 1) or Color3.new(0, 0, 0)
-
 	end
 end
 
-function loadTitleData(userId)
+loadTitleData = function(userId)
 	local targetPlayer = Players:GetPlayerByUserId(userId)
 	if not targetPlayer then return end
 
@@ -604,17 +523,15 @@ function loadTitleData(userId)
 		redbox.Text   = tostring(color.R)
 		greenbox.Text = tostring(color.G)
 		bluebox.Text  = tostring(color.B)
-
 		updateColorPreview()
 	end)
 end
 
 local function resetTitleForm()
-	entrytitlebox.Text    = ""
-	redbox.Text           = "255"
-	greenbox.Text         = "255"
-	bluebox.Text          = "255"
-
+	entrytitlebox.Text = ""
+	redbox.Text        = "255"
+	greenbox.Text      = "255"
+	bluebox.Text       = "255"
 	updateColorPreview()
 end
 
@@ -642,8 +559,8 @@ titleconfirmBtn.MouseButton1Click:Connect(function()
 
 	isProcessingTitle = true
 	UpdateTitleRemote:FireServer(targetPlayer, {
-		Title          = titleText,
-		Color          = Color3.fromRGB(validateRGB(redbox.Text), validateRGB(greenbox.Text), validateRGB(bluebox.Text)),
+		Title = titleText,
+		Color = Color3.fromRGB(validateRGB(redbox.Text), validateRGB(greenbox.Text), validateRGB(bluebox.Text)),
 	})
 
 	titleconfirmBtn.Text = "Menyimpan..."
@@ -652,14 +569,11 @@ titleconfirmBtn.MouseButton1Click:Connect(function()
 	isProcessingTitle = false
 
 	showNotification("Title berhasil diupdate!", true)
-	titlelabel.Text = "Title: "..(titleText ~= "" and titleText or "-")
+	titlelabel.Text = "Title: " .. (titleText ~= "" and titleText or "-")
 end)
 
-titlecancelBtn.MouseButton1Click:Connect(function() resetTitleForm() end)
+titlecancelBtn.MouseButton1Click:Connect(resetTitleForm)
 
--- ====================================
--- TEAM SYSTEM
--- ====================================
 local function updateColorTemplateBtnStates()
 	for _, btn in pairs(colorBtnsPool) do
 		if btn.Visible and btn:GetAttribute("ColorName") == selectedColorName then
@@ -672,18 +586,14 @@ local function updateColorTemplateBtnStates()
 end
 
 local function buildColorTemplates(templates)
-	-- OPTIMASI: Jangan di Destroy! Sembunyikan saja.
 	for _, btn in pairs(colorBtnsPool) do btn.Visible = false end
 	selectedColorName = nil
 
 	for i, tmpl in ipairs(templates) do
 		local newBtn = colorBtnsPool[i]
-
-		-- Buat baru HANYA jika kurang (belum ada di pool)
 		if not newBtn then
 			newBtn = colortemplateBtn:Clone()
 			newBtn.Parent = teamcolorpickframe
-
 			newBtn.MouseButton1Click:Connect(function()
 				selectedColorName = newBtn:GetAttribute("ColorName")
 				updateColorTemplateBtnStates()
@@ -691,7 +601,7 @@ local function buildColorTemplates(templates)
 			colorBtnsPool[i] = newBtn
 		end
 
-		newBtn.Name = "ColorBtn_"..tmpl.name
+		newBtn.Name = "ColorBtn_" .. tmpl.name
 		newBtn:SetAttribute("ColorName", tmpl.name)
 
 		local finalColorName = tmpl.brickColorName or COLOR_FALLBACKS[tmpl.name]
@@ -702,7 +612,6 @@ local function buildColorTemplates(templates)
 		else
 			newBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 		end
-
 		newBtn.Visible = true
 	end
 
@@ -732,18 +641,15 @@ local function buildTeamList()
 		local ok, teamList = SafeInvoke(GetTeamListRemote, 3)
 		if not ok or type(teamList) ~= "table" then return end
 
-		-- OPTIMASI: Sembunyikan semua tombol di pool
 		for _, btn in pairs(teamBtnsPool) do btn.Visible = false end
 		selectedTeamName = nil
 
 		local yOffset = 0
 		for i, teamData in ipairs(teamList) do
 			local newBtn = teamBtnsPool[i]
-
 			if not newBtn then
 				newBtn = teamtemplateBtn:Clone()
 				newBtn.Parent = teamlistframe
-
 				newBtn.MouseButton1Click:Connect(function()
 					selectedTeamName = newBtn:GetAttribute("TeamName")
 					for _, tb in pairs(teamBtnsPool) do tb.BorderSizePixel = 0 end
@@ -752,9 +658,9 @@ local function buildTeamList()
 				teamBtnsPool[i] = newBtn
 			end
 
-			newBtn.Name = "TeamBtn_"..teamData.name
+			newBtn.Name = "TeamBtn_" .. teamData.name
 			newBtn:SetAttribute("TeamName", teamData.name)
-			newBtn.Text = teamData.isCustom and ("[Custom] "..teamData.name) or teamData.name
+			newBtn.Text = teamData.isCustom and ("[Custom] " .. teamData.name) or teamData.name
 			newBtn.Position = UDim2.new(0, 0, 0, yOffset)
 			newBtn.BorderSizePixel = 0
 
@@ -763,15 +669,11 @@ local function buildTeamList()
 				newBtn.BackgroundColor3 = realTeamObj.TeamColor.Color
 			else
 				local fallbackStr = teamData.brickColorName or COLOR_FALLBACKS[teamData.name]
-				if fallbackStr then
-					newBtn.BackgroundColor3 = BrickColor.new(fallbackStr).Color
-				else
-					newBtn.BackgroundColor3 = Color3.fromRGB(teamData.r or 200, teamData.g or 200, teamData.b or 200)
-				end
+				newBtn.BackgroundColor3 = fallbackStr and BrickColor.new(fallbackStr).Color or Color3.fromRGB(teamData.r or 200, teamData.g or 200, teamData.b or 200)
 			end
 
 			newBtn.Visible = true
-			yOffset = yOffset + newBtn.Size.Y.Offset + 5
+			yOffset += newBtn.Size.Y.Offset + 5
 		end
 		teamlistframe.CanvasSize = UDim2.new(0, 0, 0, yOffset)
 	end)
@@ -798,9 +700,9 @@ teamcreateBtn.MouseButton1Click:Connect(function()
 	if not selectedColorName then showNotification("Pilih warna team terlebih dahulu!", false); return end
 
 	TeamActionRemote:FireServer({
-		action     = "CreateTeam",
-		teamName   = newTeamName,
-		colorName  = selectedColorName, 
+		action    = "CreateTeam",
+		teamName  = newTeamName,
+		colorName = selectedColorName, 
 	})
 
 	showNotification("Membuat team "..newTeamName.." ("..selectedColorName..")...", true)
@@ -817,19 +719,16 @@ TeamActionResultRemote.OnClientEvent:Connect(function(data)
 			local tp = Players:GetPlayerByUserId(selectedUserId)
 			if tp then
 				task.delay(0.5, function()
-					teamlabel.Text = "Team: "..(tp.Team and tp.Team.Name or "-")
+					teamlabel.Text = "Team: " .. (tp.Team and tp.Team.Name or "-")
 				end)
 			end
 		end
 	end
 end)
 
--- ====================================
--- ACCESS CHECK
--- ====================================
 local function checkAccess()
 	local roleVal = LocalPlayer:FindFirstChild("Role")
-	playerRole    = roleVal and roleVal.Value or "Player"
+	playerRole = roleVal and roleVal.Value or "Player"
 	local adminRoles = { Owner=true, Admin=true, Moderator=true }
 	if adminRoles[playerRole] then
 		hasAccess = true
@@ -840,18 +739,14 @@ local function checkAccess()
 		hasAccess = false
 		adminIcon:setEnabled(false)
 		if mainframe.Visible then
-			-- Panggil deselect otomatis menutup dan memainkan animasi
 			adminIcon:deselect()
 		end
 	end
 end
 
--- ====================================
--- OPEN / CLOSE (MENGGUNAKAN UIANIMATOR)
--- ====================================
 local function openPanel()
 	if not hasAccess then return end
-	mainframe.Visible = true -- Animasi Buka
+	mainframe.Visible = true
 	refreshPlayerList()
 	buildTeamList()
 	loadColorTemplates() 
@@ -870,13 +765,12 @@ adminIcon:bindEvent("selected", function()
 end)
 
 adminIcon:bindEvent("deselected", function()
-	mainframe.Visible = false -- Animasi Tutup
+	mainframe.Visible = false
 	selectedUserId    = nil
 	resetTitleForm()
 	resetRoleForm()
 end)
 
--- Mengklik CloseBtn akan mendeselect Topbar, yang otomatis memicu animasi tutup di atas
 closeBtn.MouseButton1Click:Connect(function() 
 	adminIcon:deselect() 
 end)
@@ -889,36 +783,23 @@ teamBtn.MouseButton1Click:Connect(function()
 	loadColorTemplates()
 end)
 if donateBtn then
-	donateBtn.MouseButton1Click:Connect(function()
-		switchTab("Donate")
-	end)
+	donateBtn.MouseButton1Click:Connect(function() switchTab("Donate") end)
 end
 
--- ====================================
--- DONATE / SPOTLIGHT CONFIG
--- ====================================
 local function updateSpotlightToggleUI(enabled)
 	isSpotlightEnabled = (enabled == true)
 	if donateToggleBtn then
-		if isSpotlightEnabled then
-			donateToggleBtn.Text = "STATUS: AKTIF"
-			donateToggleBtn.BackgroundColor3 = Color3.fromRGB(30, 130, 60)
-		else
-			donateToggleBtn.Text = "STATUS: NONAKTIF"
-			donateToggleBtn.BackgroundColor3 = Color3.fromRGB(130, 30, 30)
-		end
+		donateToggleBtn.Text = isSpotlightEnabled and "STATUS: AKTIF" or "STATUS: NONAKTIF"
+		donateToggleBtn.BackgroundColor3 = isSpotlightEnabled and Color3.fromRGB(30, 130, 60) or Color3.fromRGB(130, 30, 30)
 	end
 end
 
 loadSpotlightSettings = function()
 	local spotFolder = ReplicatedStorage:FindFirstChild("DonationSpotlightSettings")
 	if spotFolder then
-		local enabled = (spotFolder:GetAttribute("Enabled") == true)
-		local minRobux = spotFolder:GetAttribute("MinRobux") or 500
-		local minSaweria = spotFolder:GetAttribute("MinSaweria") or 50000
-		updateSpotlightToggleUI(enabled)
-		if minRobuxBox then minRobuxBox.Text = tostring(minRobux) end
-		if minSaweriaBox then minSaweriaBox.Text = tostring(minSaweria) end
+		updateSpotlightToggleUI(spotFolder:GetAttribute("Enabled") == true)
+		if minRobuxBox then minRobuxBox.Text = tostring(spotFolder:GetAttribute("MinRobux") or 500) end
+		if minSaweriaBox then minSaweriaBox.Text = tostring(spotFolder:GetAttribute("MinSaweria") or 50000) end
 	else
 		updateSpotlightToggleUI(false)
 	end
@@ -927,9 +808,7 @@ loadSpotlightSettings = function()
 		local remotes = ReplicatedStorage:FindFirstChild("AdminPanelRemotes")
 		local getRemote = remotes and remotes:FindFirstChild("GetSpotlightSettings")
 		if getRemote then
-			local ok, res = pcall(function()
-				return getRemote:InvokeServer()
-			end)
+			local ok, res = pcall(function() return getRemote:InvokeServer() end)
 			if ok and res and type(res) == "table" then
 				updateSpotlightToggleUI(res.Enabled == true)
 				if minRobuxBox then minRobuxBox.Text = tostring(res.MinRobux or 500) end
@@ -973,24 +852,14 @@ if donateSaveBtn then
 	end)
 end
 
-
 local searchDebounce = nil
-
 searchbox:GetPropertyChangedSignal("Text"):Connect(function()
-	if searchDebounce then
-		task.cancel(searchDebounce)
-	end
+	if searchDebounce then task.cancel(searchDebounce) end
 	searchDebounce = task.delay(0.3, function()
-		if not isRefreshing then 
-			refreshPlayerList() 
-		end
+		if not isRefreshing then refreshPlayerList() end
 	end)
 end)
 
-
--- ====================================
--- ROLE REMOTE RESPONSE
--- ====================================
 if giveRoleRemote then
 	giveRoleRemote.OnClientEvent:Connect(function(responseData)
 		if not responseData or responseData.source ~= "AdminPanel" then return end
@@ -1000,11 +869,11 @@ if giveRoleRemote then
 				local tp = Players:GetPlayerByUserId(selectedUserId)
 				if tp then
 					local rv = tp:FindFirstChild("Role")
-					rolelabel.Text = rv and ("Role: "..rv.Value) or "Role: -"
+					rolelabel.Text = rv and ("Role: " .. rv.Value) or "Role: -"
 				end
 			end
 			task.wait(1.5)
-			adminIcon:deselect() -- Tutup dengan animasi setelah sukses
+			adminIcon:deselect()
 		else
 			showNotification(responseData.message or "Operasi gagal", false)
 		end
@@ -1013,9 +882,6 @@ else
 	debugWarn("GiveRoleRemote not found!")
 end
 
--- ====================================
--- PLAYER JOIN / LEAVE
--- ====================================
 Players.PlayerAdded:Connect(function()
 	if mainframe.Visible then 
 		task.wait(0.5) 
@@ -1024,39 +890,28 @@ Players.PlayerAdded:Connect(function()
 end)
 
 Players.PlayerRemoving:Connect(function(removingPlayer)
-	if mainframe.Visible then 
-		refreshPlayerList() 
-	end
+	if mainframe.Visible then refreshPlayerList() end
 	if selectedUserId == removingPlayer.UserId then
-		selectedUserId     = nil
-		playerimage.Image  = ""
-		playername.Text    = "Pilih Player"
-		rolelabel.Text     = "Role: -"
-		teamlabel.Text     = "Team: -"
-		titlelabel.Text    = "Title: -"
+		selectedUserId    = nil
+		playerimage.Image = ""
+		playername.Text   = "Pilih Player"
+		rolelabel.Text    = "Role: -"
+		teamlabel.Text    = "Team: -"
+		titlelabel.Text   = "Title: -"
 	end
 end)
 
--- ====================================
--- ROLE VALUE WATCHER
--- ====================================
 local function watchRoleValue()
 	local roleVal = LocalPlayer:WaitForChild("Role", 10)
 	if roleVal then
 		checkAccess()
-		roleVal:GetPropertyChangedSignal("Value"):Connect(function()
-			checkAccess()
-		end)
+		roleVal:GetPropertyChangedSignal("Value"):Connect(checkAccess)
 	end
 end
 
--- ====================================
--- INITIALIZATION
--- ====================================
 updateColorPreview()
 switchTab("Role")
 task.wait(2)
 task.spawn(watchRoleValue)
 
 debug("Admin Panel Client initialized")
-

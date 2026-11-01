@@ -1,6 +1,5 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 
 local OverheadShared = ReplicatedStorage:WaitForChild("OverheadShared")
 local Config = require(OverheadShared:WaitForChild("Config"))
@@ -11,15 +10,11 @@ local overheadTemplate = UI:WaitForChild("OverheadGui")
 
 local localPlayer = Players.LocalPlayer
 
--- ====================================
--- HELPERS
--- ====================================
 local function safeFind(parent, name)
 	if not parent then return nil end
 	local cleanName = string.gsub(string.lower(name), "%s+", "")
 	for _, child in ipairs(parent:GetChildren()) do
-		local childClean = string.gsub(string.lower(child.Name), "%s+", "")
-		if childClean == cleanName then
+		if string.gsub(string.lower(child.Name), "%s+", "") == cleanName then
 			return child
 		end
 	end
@@ -29,10 +24,7 @@ end
 local function getDisplayText(role, player)
 	if player and player.Team then
 		local teamName = player.Team.Name
-		if teamName == "Tamu" then
-			return ""
-		end
-		return teamName
+		return if teamName ~= "Tamu" then teamName else ""
 	end
 	return Config.CUSTOM_DISPLAY_TEXT[role] or role
 end
@@ -62,7 +54,6 @@ local function checkGroupMember(player)
 	if groupCache[player.UserId] ~= nil then
 		return groupCache[player.UserId]
 	end
-
 	local ok, v = pcall(function() return player:IsInGroup(Config.GROUP_ID) end)
 	local isMember = ok and v or false
 	groupCache[player.UserId] = isMember
@@ -135,6 +126,20 @@ local function checkVIP(player, role)
 	return false
 end
 
+local EFFECT_METHOD_MAP = {
+	none      = "CreateNoneEffect",
+	wave      = "CreateWaveEffect",
+	pulse     = "CreatePulseEffect",
+	rainbow   = "CreateRainbowEffect",
+	shimmer   = "CreateShimmerEffect",
+	palette   = "CreatePaletteEffect",
+	sunset    = "CreateSunsetEffect",
+	ocean     = "CreateOceanEffect",
+	galaxy    = "CreateGalaxyEffect",
+	emerald   = "CreateEmeraldEffect",
+	pinkwhite = "CreatePinkWhiteEffect",
+}
+
 local function applyTitleEffect(titleFrame, titleLabel, player, character)
 	local r = player:GetAttribute("Overhead_TitleColorR") or 1
 	local g = player:GetAttribute("Overhead_TitleColorG") or 1
@@ -145,29 +150,17 @@ local function applyTitleEffect(titleFrame, titleLabel, player, character)
 	if titleLabel then
 		titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	end
-	local gradientEnabled = player:GetAttribute("Overhead_TitleGradient") == true
-	if not gradientEnabled then return end
+	if player:GetAttribute("Overhead_TitleGradient") ~= true then return end
 
 	local effectType = player:GetAttribute("Overhead_TitleEffect") or "wave"
 	local effectConfig = Config.EFFECTS[effectType:upper()] or Config.EFFECTS.WAVE
 
-	if effectType == "none"          then TitleEffects:CreateNoneEffect(titleLabel, base, character, effectConfig, Config.TEXT_BRIGHTEN_FACTOR)
-	elseif effectType == "wave"      then TitleEffects:CreateWaveEffect(titleLabel, base, character, effectConfig, Config.TEXT_BRIGHTEN_FACTOR)
-	elseif effectType == "pulse"     then TitleEffects:CreatePulseEffect(titleLabel, base, character, effectConfig, Config.TEXT_BRIGHTEN_FACTOR)
-	elseif effectType == "rainbow"   then TitleEffects:CreateRainbowEffect(titleLabel, base, character, effectConfig, Config.TEXT_BRIGHTEN_FACTOR)
-	elseif effectType == "shimmer"   then TitleEffects:CreateShimmerEffect(titleLabel, base, character, effectConfig, Config.TEXT_BRIGHTEN_FACTOR)
-	elseif effectType == "palette"   then TitleEffects:CreatePaletteEffect(titleLabel, base, character, effectConfig, Config.TEXT_BRIGHTEN_FACTOR)
-	elseif effectType == "sunset"    then TitleEffects:CreateSunsetEffect(titleLabel, base, character, effectConfig, Config.TEXT_BRIGHTEN_FACTOR)
-	elseif effectType == "ocean"     then TitleEffects:CreateOceanEffect(titleLabel, base, character, effectConfig, Config.TEXT_BRIGHTEN_FACTOR)
-	elseif effectType == "galaxy"    then TitleEffects:CreateGalaxyEffect(titleLabel, base, character, effectConfig, Config.TEXT_BRIGHTEN_FACTOR)
-	elseif effectType == "emerald"   then TitleEffects:CreateEmeraldEffect(titleLabel, base, character, effectConfig, Config.TEXT_BRIGHTEN_FACTOR)
-	elseif effectType == "pinkwhite" then TitleEffects:CreatePinkWhiteEffect(titleLabel, base, character, effectConfig, Config.TEXT_BRIGHTEN_FACTOR)
+	local methodName = EFFECT_METHOD_MAP[effectType]
+	if methodName and TitleEffects[methodName] then
+		TitleEffects[methodName](TitleEffects, titleLabel, base, character, effectConfig, Config.TEXT_BRIGHTEN_FACTOR)
 	end
 end
 
--- ====================================
--- MAIN RENDER LOOP
--- ====================================
 local function updateOverhead(player, character, overhead)
 	if not player or not character or not overhead then return end
 
@@ -194,73 +187,46 @@ local function updateOverhead(player, character, overhead)
 	local vipLogo       = badgesContainer and badgesContainer:FindFirstChild("VipLogo")
 	local premiumBadge  = badgesContainer and badgesContainer:FindFirstChild("PremiumBadge")
 
-	-- 1. TITLE DI PALING ATAS SENDIRI (LayoutOrder = 1)
 	if not titleFrame and topTags then
 		titleFrame = safeFind(topTags, "TitleFrame")
 	end
 	local titleText = player:GetAttribute("Overhead_TitleText") or ""
 	if titleFrame then
-		if titleText ~= "" then
-			titleFrame.Visible = true
+		local hasTitle = (titleText ~= "")
+		titleFrame.Visible = hasTitle
+		if hasTitle then
 			local label = titleFrame:FindFirstChild("TitleLabel") or safeFind(titleFrame, "TitleLabel")
 			if label then
 				label.Text = titleText
 				label.TextColor3 = Color3.fromRGB(255, 255, 255)
 				task.spawn(function() applyTitleEffect(titleFrame, label, player, character) end)
 			end
-		else
-			titleFrame.Visible = false
 		end
 	end
 
-	-- 2. TOP DONATUR TAGS MENYAMPING / HORIZONTAL (LayoutOrder = 2)
 	if topTags then
-		local topRupiahFrame = safeFind(topTags, "TopRupiahFrame")
-		local topRobuxFrame  = safeFind(topTags, "TopRobuxFrame")
-		local topLikesFrame  = safeFind(topTags, "TopLikesFrame")
+		local tagsConfig = {
+			{ frame = "TopRupiahFrame", label = "TopRupiahLabel", rank = player:GetAttribute("Overhead_SaweriaRank") or 0, max = Config.SAWERIA_TOP_RANKS or 10, text = "👑 DONATUR #" },
+			{ frame = "TopRobuxFrame",  label = "TopRobuxLabel",  rank = player:GetAttribute("Overhead_RobuxRank") or 0,   max = Config.DONATION_TOP_RANKS or 10, text = "💎 TOP ROBUX #" },
+			{ frame = "TopLikesFrame",  label = "TopLikesLabel",  rank = player:GetAttribute("Overhead_LikesRank") or 0,   max = 10,                             text = "❤️ TOP LIKE #" },
+		}
 
 		local anyTagVisible = false
-
-		local saweriaRank = player:GetAttribute("Overhead_SaweriaRank") or 0
-		if topRupiahFrame then
-			if saweriaRank > 0 and saweriaRank <= (Config.SAWERIA_TOP_RANKS or 10) then
-				topRupiahFrame.Visible = true
-				anyTagVisible = true
-				local label = topRupiahFrame:FindFirstChild("TopRupiahLabel") or safeFind(topRupiahFrame, "TopRupiahLabel")
-				if label then label.Text = "👑 DONATUR #" .. saweriaRank end
-			else
-				topRupiahFrame.Visible = false
+		for _, tag in ipairs(tagsConfig) do
+			local frame = safeFind(topTags, tag.frame)
+			if frame then
+				local isVisible = tag.rank > 0 and tag.rank <= tag.max
+				frame.Visible = isVisible
+				if isVisible then
+					anyTagVisible = true
+					local lbl = frame:FindFirstChild(tag.label) or safeFind(frame, tag.label)
+					if lbl then lbl.Text = tag.text .. tag.rank end
+				end
 			end
 		end
-
-		local robuxRank = player:GetAttribute("Overhead_RobuxRank") or 0
-		if topRobuxFrame then
-			if robuxRank > 0 and robuxRank <= (Config.DONATION_TOP_RANKS or 10) then
-				topRobuxFrame.Visible = true
-				anyTagVisible = true
-				local label = topRobuxFrame:FindFirstChild("TopRobuxLabel") or safeFind(topRobuxFrame, "TopRobuxLabel")
-				if label then label.Text = "💎 TOP ROBUX #" .. robuxRank end
-			else
-				topRobuxFrame.Visible = false
-			end
-		end
-
-		local likesRank = player:GetAttribute("Overhead_LikesRank") or 0
-		if topLikesFrame then
-			if likesRank > 0 and likesRank <= 10 then
-				topLikesFrame.Visible = true
-				anyTagVisible = true
-				local label = topLikesFrame:FindFirstChild("TopLikesLabel") or safeFind(topLikesFrame, "TopLikesLabel")
-				if label then label.Text = "❤️ TOP LIKE #" .. likesRank end
-			else
-				topLikesFrame.Visible = false
-			end
-		end
-
 		topTags.Visible = anyTagVisible
 	end
 
-	-- 3. COUNTRY FLAG & PLAYER NAME (LayoutOrder = 3)
 	if countryLabel then
 		local countryCode = player:GetAttribute("Overhead_CountryCode") or "ID"
 		countryLabel.Text = getFlagEmoji(countryCode)
@@ -272,24 +238,16 @@ local function updateOverhead(player, character, overhead)
 		playerName.Visible = true
 	end
 
-	-- 4. BADGES FILTER
 	local role = player:GetAttribute("Overhead_Role") or "Player"
 	local isStaff = isStaffMember(role, player)
 	local hasVIP = checkVIP(player, role)
 
-	if verifiedBadge then
-		verifiedBadge.Visible = isStaff
-	end
-	if vipLogo then
-		vipLogo.Visible = hasVIP
-	end
-	if premiumBadge then
-		premiumBadge.Visible = checkPremium(player)
-	end
+	if verifiedBadge then verifiedBadge.Visible = isStaff end
+	if vipLogo then vipLogo.Visible = hasVIP end
+	if premiumBadge then premiumBadge.Visible = checkPremium(player) end
 
-	-- 5. COMBINED ROLE & LEVEL (LayoutOrder = 4)
 	local level = player:GetAttribute("Overhead_Level") or 1
-	local roleText = ""
+	local roleText = "PLAYER"
 	local roleColor = Color3.fromRGB(215, 220, 230)
 
 	if isStaff then
@@ -302,9 +260,6 @@ local function updateOverhead(player, character, overhead)
 	elseif hasVIP then
 		roleText = "VIP"
 		roleColor = Color3.fromRGB(255, 215, 0)
-	else
-		roleText = "PLAYER"
-		roleColor = Color3.fromRGB(215, 220, 230)
 	end
 
 	if roleLevelLabel then
@@ -314,18 +269,19 @@ local function updateOverhead(player, character, overhead)
 	end
 end
 
--- ====================================
--- EVENT LISTENERS
--- ====================================
 local playerConnections = {}
 
-local function setupCharacter(player, character)
-	if playerConnections[player.UserId] then
-		for _, conn in ipairs(playerConnections[player.UserId]) do
+local function cleanupPlayerConns(userId)
+	if playerConnections[userId] then
+		for _, conn in ipairs(playerConnections[userId]) do
 			if conn.Connected then conn:Disconnect() end
 		end
-		playerConnections[player.UserId] = nil
+		playerConnections[userId] = nil
 	end
+end
+
+local function setupCharacter(player, character)
+	cleanupPlayerConns(player.UserId)
 
 	local conns = {}
 	local currentOverhead = nil
@@ -341,7 +297,6 @@ local function setupCharacter(player, character)
 		currentOverhead = overheadTemplate:Clone()
 		currentOverhead.Name = "PlayerOverhead"
 		currentOverhead.Adornee = head
-		-- 100-PLAYER MOBILE FPS OPTIMIZATION: Batasi jarak render BillboardGui (default 65 studs)
 		currentOverhead.MaxDistance = Config.MAX_DISTANCE or 65
 		currentOverhead.Parent = character
 
@@ -355,6 +310,12 @@ local function setupCharacter(player, character)
 		attachAndRender()
 	end)
 
+	local function onAttributeOrTeamChange()
+		if currentOverhead and currentOverhead.Parent then
+			updateOverhead(player, character, currentOverhead)
+		end
+	end
+
 	table.insert(conns, character.ChildAdded:Connect(function(child)
 		if child.Name == "Head" then
 			task.wait()
@@ -364,26 +325,15 @@ local function setupCharacter(player, character)
 
 	table.insert(conns, player.AttributeChanged:Connect(function(attr)
 		if string.sub(attr, 1, 9) == "Overhead_" or attr == "TotalLikes" then
-			if currentOverhead and currentOverhead.Parent then
-				updateOverhead(player, character, currentOverhead)
-			end
+			onAttributeOrTeamChange()
 		end
 	end))
 
-	table.insert(conns, player:GetPropertyChangedSignal("Team"):Connect(function()
-		if currentOverhead and currentOverhead.Parent then
-			updateOverhead(player, character, currentOverhead)
-		end
-	end))
+	table.insert(conns, player:GetPropertyChangedSignal("Team"):Connect(onAttributeOrTeamChange))
 
 	table.insert(conns, character.AncestryChanged:Connect(function(_, parent)
 		if not parent then
-			if playerConnections[player.UserId] then
-				for _, conn in ipairs(playerConnections[player.UserId]) do
-					if conn.Connected then conn:Disconnect() end
-				end
-				playerConnections[player.UserId] = nil
-			end
+			cleanupPlayerConns(player.UserId)
 		end
 	end))
 
@@ -405,11 +355,6 @@ for _, p in ipairs(Players:GetPlayers()) do
 end
 
 Players.PlayerRemoving:Connect(function(player)
-	if playerConnections[player.UserId] then
-		for _, conn in ipairs(playerConnections[player.UserId]) do
-			conn:Disconnect()
-		end
-		playerConnections[player.UserId] = nil
-	end
+	cleanupPlayerConns(player.UserId)
 	groupCache[player.UserId] = nil
 end)

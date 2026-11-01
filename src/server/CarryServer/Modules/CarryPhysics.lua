@@ -1,5 +1,6 @@
 --!optimize 2
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CarryConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("CarryConfig"))
 
@@ -102,6 +103,7 @@ end
 function CarryPhysics.restorePhysics(userId: number)
 	local properties = savedPhysics[userId]
 	if not properties then return end
+	local targetPlayer = Players:GetPlayerByUserId(userId)
 	for part, props in pairs(properties) do
 		if part and part.Parent then
 			part.CanCollide = props.CanCollide
@@ -111,7 +113,11 @@ function CarryPhysics.restorePhysics(userId: number)
 			end
 			if part:CanSetNetworkOwnership() then
 				pcall(function()
-					part:SetNetworkOwnershipAuto()
+					if targetPlayer and targetPlayer.Parent then
+						part:SetNetworkOwner(targetPlayer)
+					else
+						part:SetNetworkOwnershipAuto()
+					end
 				end)
 			end
 		end

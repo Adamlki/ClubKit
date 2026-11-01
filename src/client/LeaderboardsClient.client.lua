@@ -1,17 +1,23 @@
--- ==============================================================================
--- LEADERBOARDS CLIENT (AAA NIGHTCLUB EDITION)
--- Handles Top Likes, Top Robux Donation, and Top Saweria Donation leaderboards
--- Supports: All Time & Daily modes, Top 3 Podium, dynamic tab switching, auto-rotate
--- ==============================================================================
+--!optimize 2
+--!native
 
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
+local UserService = game:GetService("UserService")
 
-local AUTO_ROTATE_INTERVAL = 30 -- Auto-cycle between All Time and Daily every 30s
-local USER_INTERACTION_PAUSE = 30 -- Pause auto-rotate for 30s when a user clicks a tab
+local AUTO_ROTATE_INTERVAL = 30
+local USER_INTERACTION_PAUSE = 30
 
--- Helper to find models in Workspace.Leaderboard
+-- Batasi baris yang benar-benar dibuat/di-update. Payload server tetap boleh
+-- lebih besar, tetapi client tidak perlu membuat ratusan row sekaligus.
+local MAX_RENDER_ROWS = 25
+local MAX_USER_INFO_BATCH = 100
+
+local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
+
+local function formatThousands(num, separator)
+	return FormatUtils.formatNumber(num, separator or ",")
+end
+
 local function getLeaderboardBoard(boardName)
 	local folder = workspace:FindFirstChild("Leaderboard")
 	if folder then
@@ -21,24 +27,27 @@ local function getLeaderboardBoard(boardName)
 	return workspace:FindFirstChild(boardName, true)
 end
 
-local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
-
--- ==============================================================================
--- NUMBER FORMATTING
--- ==============================================================================
-local function formatThousands(num, separator)
-	return FormatUtils.formatNumber(num, separator or ",")
+local function getBoardElements(boardName, guiName)
+	local board = getLeaderboardBoard(boardName)
+	if not board then return end
+	local gui = (guiName and board:FindFirstChild(guiName)) or board:FindFirstChildWhichIsA("SurfaceGui")
+	if not gui then return end
+	local main = gui:FindFirstChild("MainFrame") or gui:FindFirstChild("Mainframe")
+	if not main then return end
+	local scroll = main:FindFirstChild("ScrollFrame")
+	local template = scroll and scroll:FindFirstChild("TemplateFrame")
+	if not (scroll and template) then return end
+	return main, main:FindFirstChild("Header"), scroll, template, main:FindFirstChild("PodiumFrame")
 end
 
-local UserService = game:GetService("UserService")
+local userInfoCache = {}
+local renderScheduled = false
 
--- Forward declarations for board renderers
 local renderLikesBoard
 local renderLevelBoard
 local renderRobuxBoard
 local renderSaweriaBoard
 
-local renderScheduled = false
 local function scheduleRenderAll()
 	if renderScheduled then return end
 	renderScheduled = true
@@ -51,10 +60,56 @@ local function scheduleRenderAll()
 	end)
 end
 
--- ==============================================================================
--- USERNAME & DISPLAYNAME RESOLVER & FORMATTER
--- ==============================================================================
-local userInfoCache = {}
+local pendingUserInfoIds = {}
+local userInfoFetchAttempted = {}
+local userInfoBatchScheduled = false
+
+local function flushUserInfoBatch()
+	userInfoBatchScheduled = false
+	local ids = {}
+	for userId in pairs(pendingUserInfoIds) do
+		table.insert(ids, userId)
+	end
+	table.clear(pendingUserInfoIds)
+
+	for startIndex = 1, #ids, MAX_USER_INFO_BATCH do
+		local batch = {}
+		for i = startIndex, math.min(startIndex + MAX_USER_INFO_BATCH - 1, #ids) do
+			table.insert(batch, ids[i])
+		end
+
+		local ok, infoList = pcall(UserService.GetUserInfosByUserIdsAsync, UserService, batch)
+		if ok and infoList then
+			for _, info in ipairs(infoList) do
+				local username = tostring(info.Username or "")
+				local cleanUser = username:gsub("^@", ""):gsub("%s+", "_")
+				local displayName = tostring(info.DisplayName or username)
+				userInfoCache[info.Id] = {
+					DisplayName = displayName,
+					Username = cleanUser ~= "" and ("@" .. cleanUser) or "",
+					HasDistinctUser = cleanUser ~= "" and displayName:lower() ~= cleanUser:lower(),
+				}
+			end
+		end
+
+		for _, userId in ipairs(batch) do
+			userInfoFetchAttempted[userId] = true
+		end
+	end
+
+	scheduleRenderAll()
+end
+
+local function queueUserInfoFetch(userId)
+	if userInfoCache[userId] or userInfoFetchAttempted[userId] then
+		return
+	end
+	pendingUserInfoIds[userId] = true
+	if userInfoBatchScheduled then return end
+	userInfoBatchScheduled = true
+	-- Kumpulkan beberapa row dulu supaya satu render tidak memicu puluhan request.
+	task.delay(0.05, flushUserInfoBatch)
+end
 
 local function resolveUserInfo(userId, fallbackDisplayName, fallbackUsername)
 	local cleanUser = fallbackUsername and fallbackUsername:gsub("^@", ""):gsub("%s+", "_") or ""
@@ -63,10 +118,7 @@ local function resolveUserInfo(userId, fallbackDisplayName, fallbackUsername)
 	end
 
 	local dName = fallbackDisplayName or "Player"
-	local hasDistinct = false
-	if cleanUser ~= "" and dName:lower() ~= cleanUser:lower() then
-		hasDistinct = true
-	end
+	local hasDistinct = (cleanUser ~= "" and dName:lower() ~= cleanUser:lower())
 
 	local result = {
 		DisplayName = dName,
@@ -82,44 +134,10 @@ local function resolveUserInfo(userId, fallbackDisplayName, fallbackUsername)
 		return userInfoCache[userId]
 	end
 
-	local needsFetch = false
-	if cleanUser == "" or dName == "Player" or dName:find("^Player_%d+") or dName:find("^Sultan_%d+") then
-		needsFetch = true
-	end
+	local needsFetch = (cleanUser == "" or dName == "Player" or dName:find("^Player_%d+") or dName:find("^Sultan_%d+"))
 
 	if needsFetch then
-		task.spawn(function()
-			local fetchedDisplay = nil
-			local fetchedUser = nil
-
-			local s, infoList = pcall(function()
-				return UserService:GetUserInfosByUserIdsAsync({userId})
-			end)
-			if s and infoList and #infoList > 0 then
-				local info = infoList[1]
-				fetchedDisplay = info.DisplayName
-				fetchedUser = info.Username
-			else
-				local s2, name = pcall(function()
-					return Players:GetNameFromUserIdAsync(userId)
-				end)
-				if s2 and name and name ~= "" then
-					fetchedDisplay = name
-					fetchedUser = name
-				end
-			end
-
-			if fetchedDisplay and fetchedUser then
-				local fClean = fetchedUser:gsub("^@", ""):gsub("%s+", "_")
-				local fDistinct = (fetchedDisplay:lower() ~= fClean:lower())
-				userInfoCache[userId] = {
-					DisplayName = fetchedDisplay,
-					Username = "@" .. fClean,
-					HasDistinctUser = fDistinct,
-				}
-				scheduleRenderAll()
-			end
-		end)
+		queueUserInfoFetch(userId)
 	else
 		userInfoCache[userId] = result
 	end
@@ -129,7 +147,6 @@ end
 
 local function applyNameLabels(nameLbl, userLbl, uInfo)
 	if not nameLbl then return end
-
 	nameLbl.Text = uInfo.DisplayName or "Player"
 
 	if userLbl then
@@ -141,8 +158,6 @@ local function applyNameLabels(nameLbl, userLbl, uInfo)
 			userLbl.Position = UDim2.new(0, 142, 0, 42)
 			userLbl.Size = UDim2.new(0, 260, 0, 20)
 		else
-			-- Nickname sama persis dengan username, atau tidak ada username terpisah:
-			-- Jangan tulis username 2 kali! Center nameLbl secara vertikal dan sembunyikan userLbl
 			nameLbl.Position = UDim2.new(0, 142, 0.5, -14)
 			nameLbl.Size = UDim2.new(0, 260, 0, 28)
 			userLbl.Visible = false
@@ -153,7 +168,6 @@ end
 
 local function applyPodiumNameLabels(nl, ul, uInfo)
 	if not nl then return end
-
 	nl.Text = uInfo.DisplayName or "-"
 
 	if ul then
@@ -171,111 +185,53 @@ local function applyPodiumNameLabels(nl, ul, uInfo)
 end
 
 local function getAvatarThumb(userId)
-	if not userId or userId <= 1 then
-		return "rbxthumb://type=AvatarHeadShot&id=1&w=150&h=150"
-	end
-	return string.format("rbxthumb://type=AvatarHeadShot&id=%d&w=150&h=150", userId)
+	local id = (userId and userId > 1) and userId or 1
+	return string.format("rbxthumb://type=AvatarHeadShot&id=%d&w=150&h=150", id)
 end
 
--- ==============================================================================
--- BOARD STATES
--- ==============================================================================
 local States = {
-	Likes = {
-		Mode = "AllTime", -- Strictly All Time
-		AllTime = {},
-		Daily = {},
-	},
-	Level = {
-		Mode = "AllTime", -- Strictly All Time
-		AllTime = {},
-	},
-	Robux = {
-		Mode = "AllTime",
-		AllTime = {},
-		Daily = {},
-		LastClick = 0,
-	},
-	Saweria = {
-		Mode = "AllTime",
-		AllTime = {},
-		Daily = {},
-		LastClick = 0,
-	},
+	Likes = { Mode = "AllTime", AllTime = {}, Daily = {} },
+	Level = { Mode = "AllTime", AllTime = {} },
+	Robux = { Mode = "AllTime", AllTime = {}, Daily = {}, LastClick = 0 },
+	Saweria = { Mode = "AllTime", AllTime = {}, Daily = {}, LastClick = 0 },
 }
 
--- Helper to style TabSwitcher buttons (used by Robux and Saweria boards)
+local RANK_COLORS = {
+	[1] = Color3.fromRGB(255, 215, 0),
+	[2] = Color3.fromRGB(192, 192, 192),
+	[3] = Color3.fromRGB(205, 127, 50),
+}
+local DEFAULT_RANK_COLOR = Color3.fromRGB(255, 255, 255)
+
 local function updateTabButtons(switcher, currentMode)
 	if not switcher then return end
 	local allTimeBtn = switcher:FindFirstChild("AllTimeBtn")
 	local dailyBtn = switcher:FindFirstChild("DailyBtn")
 
 	if allTimeBtn then
-		if currentMode == "AllTime" then
-			allTimeBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-			allTimeBtn.BackgroundTransparency = 0
-			allTimeBtn.TextColor3 = Color3.fromRGB(15, 15, 15)
-		else
-			allTimeBtn.BackgroundTransparency = 1
-			allTimeBtn.TextColor3 = Color3.fromRGB(160, 160, 160)
-		end
+		local selected = (currentMode == "AllTime")
+		allTimeBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		allTimeBtn.BackgroundTransparency = selected and 0 or 1
+		allTimeBtn.TextColor3 = selected and Color3.fromRGB(15, 15, 15) or Color3.fromRGB(160, 160, 160)
 	end
 
 	if dailyBtn then
-		if currentMode == "Daily" then
-			dailyBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-			dailyBtn.BackgroundTransparency = 0
-			dailyBtn.TextColor3 = Color3.fromRGB(15, 15, 15)
-		else
-			dailyBtn.BackgroundTransparency = 1
-			dailyBtn.TextColor3 = Color3.fromRGB(160, 160, 160)
-		end
+		local selected = (currentMode == "Daily")
+		dailyBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		dailyBtn.BackgroundTransparency = selected and 0 or 1
+		dailyBtn.TextColor3 = selected and Color3.fromRGB(15, 15, 15) or Color3.fromRGB(160, 160, 160)
 	end
 end
 
--- ==============================================================================
--- RENDER LIKES BOARD (All Time Only)
--- ==============================================================================
-renderLikesBoard = function()
-	local board = getLeaderboardBoard("JekyLikeBoard")
-	if not board then return end
-	local gui = board:FindFirstChild("JekyGui") or board:FindFirstChildWhichIsA("SurfaceGui")
-	if not gui then return end
-	local main = gui:FindFirstChild("MainFrame") or gui:FindFirstChild("Mainframe")
-	if not main then return end
-
-	local header = main:FindFirstChild("Header")
-	local scroll = main:FindFirstChild("ScrollFrame")
-	local template = scroll and scroll:FindFirstChild("TemplateFrame")
-	if not scroll or not template then return end
-
-	local state = States.Likes
-	local listData = (#state.AllTime > 0) and state.AllTime or state.Daily
-
-	-- Subtitle is permanently All Time Top Likes (no TabSwitcher)
-	if header then
-		local sub = header:FindFirstChild("Subtitle")
-		if sub then
-			sub.Text = "All Time Top Likes"
-		end
-		local title = header:FindFirstChild("Title")
-		if title then
-			title.Text = "Top Likes"
-		end
-	end
-
-	template.Visible = false
-
-	-- Pool / Reuse existing row items
+local function getOrCreatePool(scroll, template, targetCount)
 	local pool = {}
 	for _, c in ipairs(scroll:GetChildren()) do
 		if c:IsA("Frame") and c ~= template then
 			table.insert(pool, c)
 		end
 	end
-
-	-- Pre-create up to 30 items
-	for i = #pool + 1, math.max(30, #listData) do
+	local target = math.min(MAX_RENDER_ROWS, math.max(10, targetCount))
+	for i = #pool + 1, target do
 		local clone = template:Clone()
 		clone.Name = "Entry_" .. i
 		clone.Visible = false
@@ -283,116 +239,93 @@ renderLikesBoard = function()
 		table.insert(pool, clone)
 	end
 
-	for i, item in ipairs(listData) do
-		local row = pool[i]
-		if not row then
-			row = template:Clone()
-			row.Name = "Entry_" .. i
-			row.Parent = scroll
-			table.insert(pool, row)
-		end
-
-		row.Visible = true
-		row.LayoutOrder = i
-
-		local uInfo = resolveUserInfo(item.UserId, item.DisplayName, item.Username)
-		local rankLbl = row:FindFirstChild("RankLabel")
-		local avatarImg = row:FindFirstChild("AvatarImg")
-		local nameLbl = row:FindFirstChild("NameLabel")
-		local userLbl = row:FindFirstChild("UserLabel")
-		local valLbl = row:FindFirstChild("ValueLabel")
-		local iconLbl = row:FindFirstChild("IconLabel")
-
-		if rankLbl then
-			rankLbl.Text = "#" .. tostring(item.Rank or i)
-			if i == 1 then
-				rankLbl.TextColor3 = Color3.fromRGB(255, 215, 0)
-			elseif i == 2 then
-				rankLbl.TextColor3 = Color3.fromRGB(192, 192, 192)
-			elseif i == 3 then
-				rankLbl.TextColor3 = Color3.fromRGB(205, 127, 50)
-			else
-				rankLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-			end
-		end
-
-		if avatarImg then avatarImg.Image = getAvatarThumb(item.UserId) end
-		applyNameLabels(nameLbl, userLbl, uInfo)
-		if valLbl then valLbl.Text = formatThousands(item.Likes or item.Amount or 0, ".") end
-		if iconLbl and iconLbl:IsA("TextLabel") then
-			iconLbl.Text = "♡"
-			iconLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-		end
-	end
-
-	for i = #listData + 1, #pool do
+	-- Jika pool lama lebih besar dari batas baru, sembunyikan sisanya.
+	for i = target + 1, #pool do
 		pool[i].Visible = false
 	end
 
+	return pool
+end
+
+local function updateScrollCanvas(scroll)
 	local layout = scroll:FindFirstChildOfClass("UIListLayout")
 	if layout then
 		scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 20)
 	end
 end
 
--- ==============================================================================
--- RENDER LEVEL BOARD (All Time Only, Exactly Matches Like Board Style)
--- ==============================================================================
-renderLevelBoard = function()
-	local board = getLeaderboardBoard("JekyLevelBoard") or getLeaderboardBoard("EldetoLevelBoard")
-	if not board then return end
-	local gui = board:FindFirstChild("EldetoLevelBoard") or board:FindFirstChild("JekyGui") or board:FindFirstChildWhichIsA("SurfaceGui")
-	if not gui then return end
-	local main = gui:FindFirstChild("MainFrame") or gui:FindFirstChild("Mainframe")
-	if not main then return end
+renderLikesBoard = function()
+	local _, header, scroll, template = getBoardElements("JekyLikeBoard", "JekyGui")
+	if not scroll then return end
 
-	local header = main:FindFirstChild("Header")
-	local scroll = main:FindFirstChild("ScrollFrame")
-	local template = scroll and scroll:FindFirstChild("TemplateFrame")
-	if not scroll or not template then return end
-
-	local state = States.Level
-	local listData = state.AllTime or {}
+	local state = States.Likes
+	local listData = (#state.AllTime > 0) and state.AllTime or state.Daily
 
 	if header then
 		local sub = header:FindFirstChild("Subtitle")
-		if sub then
-			sub.Text = "All Time Top Level"
-		end
+		if sub then sub.Text = "All Time Top Likes" end
 		local title = header:FindFirstChild("Title")
-		if title then
-			title.Text = "Top Level"
-		end
+		if title then title.Text = "Top Likes" end
 	end
 
 	template.Visible = false
+	local pool = getOrCreatePool(scroll, template, #listData)
+	local count = math.min(#listData, #pool)
 
-	-- Pool / Reuse existing row items
-	local pool = {}
-	for _, c in ipairs(scroll:GetChildren()) do
-		if c:IsA("Frame") and c ~= template then
-			table.insert(pool, c)
-		end
-	end
-
-	-- Pre-create up to 30 items
-	for i = #pool + 1, math.max(30, #listData) do
-		local clone = template:Clone()
-		clone.Name = "Entry_" .. i
-		clone.Visible = false
-		clone.Parent = scroll
-		table.insert(pool, clone)
-	end
-
-	for i, item in ipairs(listData) do
+	for i = 1, count do
+		local item = listData[i]
 		local row = pool[i]
-		if not row then
-			row = template:Clone()
-			row.Name = "Entry_" .. i
-			row.Parent = scroll
-			table.insert(pool, row)
+		row.Visible = true
+		row.LayoutOrder = i
+
+		local rankLbl = row:FindFirstChild("RankLabel")
+		if rankLbl then
+			rankLbl.Text = "#" .. tostring(item.Rank or i)
+			rankLbl.TextColor3 = RANK_COLORS[i] or DEFAULT_RANK_COLOR
 		end
 
+		local avatarImg = row:FindFirstChild("AvatarImg")
+		if avatarImg then avatarImg.Image = getAvatarThumb(item.UserId) end
+
+		applyNameLabels(row:FindFirstChild("NameLabel"), row:FindFirstChild("UserLabel"), resolveUserInfo(item.UserId, item.DisplayName, item.Username))
+
+		local valLbl = row:FindFirstChild("ValueLabel")
+		if valLbl then valLbl.Text = formatThousands(item.Likes or item.Amount or 0, ".") end
+
+		local iconLbl = row:FindFirstChild("IconLabel")
+		if iconLbl and iconLbl:IsA("TextLabel") then
+			iconLbl.Text = "♡"
+			iconLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+		end
+	end
+
+	for i = count + 1, #pool do pool[i].Visible = false end
+	updateScrollCanvas(scroll)
+end
+
+renderLevelBoard = function()
+	local _, header, scroll, template = getBoardElements("JekyLevelBoard", "JekyGui")
+	if not scroll then
+		_, header, scroll, template = getBoardElements("EldetoLevelBoard", "EldetoLevelBoard")
+	end
+	if not scroll then return end
+
+	local listData = States.Level.AllTime or {}
+
+	if header then
+		local sub = header:FindFirstChild("Subtitle")
+		if sub then sub.Text = "All Time Top Level" end
+		local title = header:FindFirstChild("Title")
+		if title then title.Text = "Top Level" end
+	end
+
+	template.Visible = false
+	local pool = getOrCreatePool(scroll, template, #listData)
+	local count = math.min(#listData, #pool)
+
+	for i = 1, count do
+		local item = listData[i]
+		local row = pool[i]
 		row.Visible = true
 		row.LayoutOrder = i
 
@@ -400,393 +333,212 @@ renderLevelBoard = function()
 		local level = item.level or item.Level or 1
 		local rank = item.rank or item.Rank or i
 
-		local uInfo = resolveUserInfo(userId, item.DisplayName, item.Username)
 		local rankLbl = row:FindFirstChild("RankLabel")
-		local avatarImg = row:FindFirstChild("AvatarImg")
-		local nameLbl = row:FindFirstChild("NameLabel")
-		local userLbl = row:FindFirstChild("UserLabel")
-		local valLbl = row:FindFirstChild("ValueLabel")
-		local iconLbl = row:FindFirstChild("IconLabel")
-
 		if rankLbl then
 			rankLbl.Text = "#" .. tostring(rank)
-			if i == 1 then
-				rankLbl.TextColor3 = Color3.fromRGB(255, 215, 0)
-			elseif i == 2 then
-				rankLbl.TextColor3 = Color3.fromRGB(192, 192, 192)
-			elseif i == 3 then
-				rankLbl.TextColor3 = Color3.fromRGB(205, 127, 50)
-			else
-				rankLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-			end
+			rankLbl.TextColor3 = RANK_COLORS[i] or DEFAULT_RANK_COLOR
 		end
 
+		local avatarImg = row:FindFirstChild("AvatarImg")
 		if avatarImg then avatarImg.Image = getAvatarThumb(userId) end
-		applyNameLabels(nameLbl, userLbl, uInfo)
+
+		applyNameLabels(row:FindFirstChild("NameLabel"), row:FindFirstChild("UserLabel"), resolveUserInfo(userId, item.DisplayName, item.Username))
+
+		local valLbl = row:FindFirstChild("ValueLabel")
 		if valLbl then valLbl.Text = "Lv. " .. formatThousands(level, ".") end
+
+		local iconLbl = row:FindFirstChild("IconLabel")
 		if iconLbl and iconLbl:IsA("TextLabel") then
 			iconLbl.Text = "★"
 			iconLbl.TextColor3 = Color3.fromRGB(255, 215, 0)
 		end
 	end
 
-	for i = #listData + 1, #pool do
-		pool[i].Visible = false
-	end
+	for i = count + 1, #pool do pool[i].Visible = false end
+	updateScrollCanvas(scroll)
+end
 
-	local layout = scroll:FindFirstChildOfClass("UIListLayout")
-	if layout then
-		scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 20)
+local function renderPodium(podium, listData, formatValueFn)
+	if not podium then return end
+	local slotMap = {
+		podium:FindFirstChild("Slot_1"),
+		podium:FindFirstChild("Slot_2"),
+		podium:FindFirstChild("Slot_3"),
+	}
+	for rank = 1, 3 do
+		local slot = slotMap[rank]
+		if slot then
+			local data = listData[rank]
+			local av = slot:FindFirstChild("Avatar")
+			local nl = slot:FindFirstChild("NameLabel")
+			local ul = slot:FindFirstChild("UserLabel")
+			local al = slot:FindFirstChild("AmountLabel", true)
+
+			if data then
+				if av then av.Image = getAvatarThumb(data.UserId) end
+				applyPodiumNameLabels(nl, ul, resolveUserInfo(data.UserId, data.DisplayName, data.Username))
+				if al then al.Text = formatValueFn(data.Amount or 0) end
+			else
+				if av then av.Image = getAvatarThumb(1) end
+				applyPodiumNameLabels(nl, ul, { DisplayName = "-", HasDistinctUser = false })
+				if al then al.Text = formatValueFn(0) end
+			end
+		end
 	end
 end
 
-
--- ==============================================================================
--- RENDER ROBUX DONATION BOARD (Photo 2 Match)
--- ==============================================================================
 renderRobuxBoard = function()
-	local board = getLeaderboardBoard("JekyDonationBoard")
-	if not board then return end
-	local gui = board:FindFirstChild("EldetoGui") or board:FindFirstChildWhichIsA("SurfaceGui")
-	if not gui then return end
-	local main = gui:FindFirstChild("MainFrame") or gui:FindFirstChild("Mainframe")
-	if not main then return end
-
-	local header = main:FindFirstChild("Header")
-	local podium = main:FindFirstChild("PodiumFrame")
-	local scroll = main:FindFirstChild("ScrollFrame")
-	local template = scroll and scroll:FindFirstChild("TemplateFrame")
-	if not scroll or not template then return end
+	local _, header, scroll, template, podium = getBoardElements("JekyDonationBoard", "EldetoGui")
+	if not scroll then return end
 
 	local state = States.Robux
 	local isAllTime = (state.Mode == "AllTime")
 	local listData = isAllTime and state.AllTime or state.Daily
 
-	-- Update Subtitle & Tabs
 	if header then
 		local sub = header:FindFirstChild("Subtitle")
-		if sub then
-			sub.Text = isAllTime and "All Time Top Robux Donation" or "Top Daily Robux"
-		end
-		local switcher = header:FindFirstChild("TabSwitcher")
-		updateTabButtons(switcher, state.Mode)
+		if sub then sub.Text = isAllTime and "All Time Top Robux Donation" or "Top Daily Robux" end
+		updateTabButtons(header:FindFirstChild("TabSwitcher"), state.Mode)
 	end
 
 	if isAllTime then
-		-- ALL TIME: Show Podium for #1..#3, ScrollFrame for #4+
 		if podium then
 			podium.Visible = true
-			local slotMap = {
-				[1] = podium:FindFirstChild("Slot_1"),
-				[2] = podium:FindFirstChild("Slot_2"),
-				[3] = podium:FindFirstChild("Slot_3"),
-			}
-			for rank = 1, 3 do
-				local slot = slotMap[rank]
-				local data = listData[rank]
-				if slot then
-					local av = slot:FindFirstChild("Avatar")
-					local nl = slot:FindFirstChild("NameLabel")
-					local ul = slot:FindFirstChild("UserLabel")
-					local al = slot:FindFirstChild("AmountLabel", true)
-
-					if data then
-						local uInfo = resolveUserInfo(data.UserId, data.DisplayName, data.Username)
-						if av then av.Image = getAvatarThumb(data.UserId) end
-						applyPodiumNameLabels(nl, ul, uInfo)
-						if al then al.Text = formatThousands(data.Amount or 0, ",") end
-					else
-						if av then av.Image = getAvatarThumb(1) end
-						applyPodiumNameLabels(nl, ul, { DisplayName = "-", HasDistinctUser = false })
-						if al then al.Text = "0" end
-					end
-				end
-			end
+			renderPodium(podium, listData, function(amt) return formatThousands(amt, ",") end)
 		end
-
 		scroll.Position = UDim2.new(0, 24, 0, 405)
 		scroll.Size = UDim2.new(1, -48, 1, -420)
 	else
-		-- DAILY: Hide Podium, ScrollFrame starts at #1 right under Header
-		if podium then
-			podium.Visible = false
-		end
+		if podium then podium.Visible = false end
 		scroll.Position = UDim2.new(0, 24, 0, 105)
 		scroll.Size = UDim2.new(1, -48, 1, -120)
 	end
 
 	template.Visible = false
-
-	local pool = {}
-	for _, c in ipairs(scroll:GetChildren()) do
-		if c:IsA("Frame") and c ~= template then
-			table.insert(pool, c)
-		end
-	end
-
 	local startRank = isAllTime and 4 or 1
-	local renderItems = {}
-	for i = startRank, #listData do
-		table.insert(renderItems, listData[i])
-	end
+	local maxRows = isAllTime and (MAX_RENDER_ROWS - 3) or MAX_RENDER_ROWS
+	local count = math.min(maxRows, math.max(0, #listData - startRank + 1))
+	local pool = getOrCreatePool(scroll, template, count)
 
-	for i = #pool + 1, math.max(30, #renderItems) do
-		local clone = template:Clone()
-		clone.Name = "Entry_" .. i
-		clone.Visible = false
-		clone.Parent = scroll
-		table.insert(pool, clone)
-	end
-
-	for i, item in ipairs(renderItems) do
+	for i = 1, count do
+		local item = listData[startRank + i - 1]
 		local row = pool[i]
-		if not row then
-			row = template:Clone()
-			row.Name = "Entry_" .. i
-			row.Parent = scroll
-			table.insert(pool, row)
-		end
-
 		row.Visible = true
 		row.LayoutOrder = i
 
-		local uInfo = resolveUserInfo(item.UserId, item.DisplayName, item.Username)
 		local rankLbl = row:FindFirstChild("RankLabel")
-		local avatarImg = row:FindFirstChild("AvatarImg")
-		local nameLbl = row:FindFirstChild("NameLabel")
-		local userLbl = row:FindFirstChild("UserLabel")
-		local valLbl = row:FindFirstChild("ValueLabel")
-		local iconLbl = row:FindFirstChild("IconLabel")
-
 		if rankLbl then rankLbl.Text = "#" .. tostring(item.Rank or (startRank + i - 1)) end
+
+		local avatarImg = row:FindFirstChild("AvatarImg")
 		if avatarImg then avatarImg.Image = getAvatarThumb(item.UserId) end
-		applyNameLabels(nameLbl, userLbl, uInfo)
+
+		applyNameLabels(row:FindFirstChild("NameLabel"), row:FindFirstChild("UserLabel"), resolveUserInfo(item.UserId, item.DisplayName, item.Username))
+
+		local valLbl = row:FindFirstChild("ValueLabel")
 		if valLbl then valLbl.Text = formatThousands(item.Amount or 0, ",") end
+
+		local iconLbl = row:FindFirstChild("IconLabel")
 		if iconLbl and iconLbl:IsA("ImageLabel") then
 			iconLbl.Image = "rbxasset://textures/ui/common/robux_small.png"
 		end
 	end
 
-	for i = #renderItems + 1, #pool do
-		pool[i].Visible = false
-	end
-
-	local layout = scroll:FindFirstChildOfClass("UIListLayout")
-	if layout then
-		scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 20)
-	end
+	for i = count + 1, #pool do pool[i].Visible = false end
+	updateScrollCanvas(scroll)
 end
 
--- ==============================================================================
--- RENDER SAWERIA DONATION BOARD (Photo 3 Match)
--- ==============================================================================
 renderSaweriaBoard = function()
-	local board = getLeaderboardBoard("BoardSaweria")
-	if not board then return end
-	local gui = board:FindFirstChild("LeaderboardGui") or board:FindFirstChildWhichIsA("SurfaceGui")
-	if not gui then return end
-	local main = gui:FindFirstChild("MainFrame") or gui:FindFirstChild("Mainframe")
-	if not main then return end
-
-	local header = main:FindFirstChild("Header")
-	local podium = main:FindFirstChild("PodiumFrame")
-	local scroll = main:FindFirstChild("ScrollFrame")
-	local template = scroll and scroll:FindFirstChild("TemplateFrame")
-	if not scroll or not template then return end
+	local _, header, scroll, template, podium = getBoardElements("BoardSaweria", "LeaderboardGui")
+	if not scroll then return end
 
 	local state = States.Saweria
 	local isAllTime = (state.Mode == "AllTime")
 	local listData = isAllTime and state.AllTime or state.Daily
 
-	-- Update Subtitle & Tabs
 	if header then
 		local sub = header:FindFirstChild("Subtitle")
-		if sub then
-			sub.Text = isAllTime and "All Time Top Saweria Donation" or "Top Daily Saweria"
-		end
-		local switcher = header:FindFirstChild("TabSwitcher")
-		updateTabButtons(switcher, state.Mode)
+		if sub then sub.Text = isAllTime and "All Time Top Saweria Donation" or "Top Daily Saweria" end
+		updateTabButtons(header:FindFirstChild("TabSwitcher"), state.Mode)
 	end
 
 	if isAllTime then
 		if podium then
 			podium.Visible = true
-			local slotMap = {
-				[1] = podium:FindFirstChild("Slot_1"),
-				[2] = podium:FindFirstChild("Slot_2"),
-				[3] = podium:FindFirstChild("Slot_3"),
-			}
-			for rank = 1, 3 do
-				local slot = slotMap[rank]
-				local data = listData[rank]
-				if slot then
-					local av = slot:FindFirstChild("Avatar")
-					local nl = slot:FindFirstChild("NameLabel")
-					local ul = slot:FindFirstChild("UserLabel")
-					local al = slot:FindFirstChild("AmountLabel", true)
-
-					if data then
-						local uInfo = resolveUserInfo(data.UserId, data.DisplayName, data.Username)
-						if av then av.Image = getAvatarThumb(data.UserId) end
-						applyPodiumNameLabels(nl, ul, uInfo)
-						if al then al.Text = "Rp " .. formatThousands(data.Amount or 0, ".") end
-					else
-						if av then av.Image = getAvatarThumb(1) end
-						applyPodiumNameLabels(nl, ul, { DisplayName = "-", HasDistinctUser = false })
-						if al then al.Text = "Rp 0" end
-					end
-				end
-			end
+			renderPodium(podium, listData, function(amt) return "Rp " .. formatThousands(amt, ".") end)
 		end
-
 		scroll.Position = UDim2.new(0, 24, 0, 405)
 		scroll.Size = UDim2.new(1, -48, 1, -420)
 	else
-		if podium then
-			podium.Visible = false
-		end
+		if podium then podium.Visible = false end
 		scroll.Position = UDim2.new(0, 24, 0, 105)
 		scroll.Size = UDim2.new(1, -48, 1, -120)
 	end
 
 	template.Visible = false
-
-	local pool = {}
-	for _, c in ipairs(scroll:GetChildren()) do
-		if c:IsA("Frame") and c ~= template then
-			table.insert(pool, c)
-		end
-	end
-
 	local startRank = isAllTime and 4 or 1
-	local renderItems = {}
-	for i = startRank, #listData do
-		table.insert(renderItems, listData[i])
-	end
+	local maxRows = isAllTime and (MAX_RENDER_ROWS - 3) or MAX_RENDER_ROWS
+	local count = math.min(maxRows, math.max(0, #listData - startRank + 1))
+	local pool = getOrCreatePool(scroll, template, count)
 
-	for i = #pool + 1, math.max(30, #renderItems) do
-		local clone = template:Clone()
-		clone.Name = "Entry_" .. i
-		clone.Visible = false
-		clone.Parent = scroll
-		table.insert(pool, clone)
-	end
-
-	for i, item in ipairs(renderItems) do
+	for i = 1, count do
+		local item = listData[startRank + i - 1]
 		local row = pool[i]
-		if not row then
-			row = template:Clone()
-			row.Name = "Entry_" .. i
-			row.Parent = scroll
-			table.insert(pool, row)
-		end
-
 		row.Visible = true
 		row.LayoutOrder = i
 
-		local uInfo = resolveUserInfo(item.UserId, item.DisplayName, item.Username)
 		local rankLbl = row:FindFirstChild("RankLabel")
-		local avatarImg = row:FindFirstChild("AvatarImg")
-		local nameLbl = row:FindFirstChild("NameLabel")
-		local userLbl = row:FindFirstChild("UserLabel")
-		local valLbl = row:FindFirstChild("ValueLabel")
-
 		if rankLbl then rankLbl.Text = "#" .. tostring(item.Rank or (startRank + i - 1)) end
+
+		local avatarImg = row:FindFirstChild("AvatarImg")
 		if avatarImg then avatarImg.Image = getAvatarThumb(item.UserId) end
-		applyNameLabels(nameLbl, userLbl, uInfo)
+
+		applyNameLabels(row:FindFirstChild("NameLabel"), row:FindFirstChild("UserLabel"), resolveUserInfo(item.UserId, item.DisplayName, item.Username))
+
+		local valLbl = row:FindFirstChild("ValueLabel")
 		if valLbl then valLbl.Text = "Rp " .. formatThousands(item.Amount or 0, ".") end
 	end
 
-	for i = #renderItems + 1, #pool do
-		pool[i].Visible = false
-	end
+	for i = count + 1, #pool do pool[i].Visible = false end
+	updateScrollCanvas(scroll)
+end
 
-	local layout = scroll:FindFirstChildOfClass("UIListLayout")
-	if layout then
-		scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 20)
+local function bindTabSwitcher(boardName, guiName, stateObj, renderFn)
+	local board = getLeaderboardBoard(boardName)
+	local gui = board and (board:FindFirstChild(guiName) or board:FindFirstChildWhichIsA("SurfaceGui"))
+	local main = gui and (gui:FindFirstChild("MainFrame") or gui:FindFirstChild("Mainframe"))
+	local tabs = main and main:FindFirstChild("Header") and main.Header:FindFirstChild("TabSwitcher")
+	if not tabs then return end
+
+	for _, mode in ipairs({"AllTime", "Daily"}) do
+		local btn = tabs:FindFirstChild(mode .. "Btn")
+		if btn and not btn:GetAttribute("Bound") then
+			btn:SetAttribute("Bound", true)
+			btn.MouseButton1Click:Connect(function()
+				local now = os.clock()
+				if now - (stateObj.LastClick or 0) < 0.3 then return end
+				stateObj.LastClick = now
+				stateObj.Mode = mode
+				renderFn()
+			end)
+		end
 	end
 end
 
--- ==============================================================================
--- TAB SWITCHER CLICK BINDINGS
--- ==============================================================================
 local function setupTabClicks()
-	-- Robux Board
-	local robuxBoard = getLeaderboardBoard("JekyDonationBoard")
-	local robuxGui = robuxBoard and (robuxBoard:FindFirstChild("EldetoGui") or robuxBoard:FindFirstChildWhichIsA("SurfaceGui"))
-	local robuxMain = robuxGui and (robuxGui:FindFirstChild("MainFrame") or robuxGui:FindFirstChild("Mainframe"))
-	local robuxTabs = robuxMain and robuxMain:FindFirstChild("Header") and robuxMain.Header:FindFirstChild("TabSwitcher")
-	if robuxTabs then
-		local aBtn = robuxTabs:FindFirstChild("AllTimeBtn")
-		local dBtn = robuxTabs:FindFirstChild("DailyBtn")
-		if aBtn and not aBtn:GetAttribute("Bound") then
-			aBtn:SetAttribute("Bound", true)
-			aBtn.MouseButton1Click:Connect(function()
-				local now = os.clock()
-				if now - (States.Robux.LastClick or 0) < 0.3 then return end
-				States.Robux.LastClick = now
-				States.Robux.Mode = "AllTime"
-				renderRobuxBoard()
-			end)
-		end
-		if dBtn and not dBtn:GetAttribute("Bound") then
-			dBtn:SetAttribute("Bound", true)
-			dBtn.MouseButton1Click:Connect(function()
-				local now = os.clock()
-				if now - (States.Robux.LastClick or 0) < 0.3 then return end
-				States.Robux.LastClick = now
-				States.Robux.Mode = "Daily"
-				renderRobuxBoard()
-			end)
-		end
-	end
-
-	-- Saweria Board
-	local saweriaBoard = getLeaderboardBoard("BoardSaweria")
-	local saweriaGui = saweriaBoard and (saweriaBoard:FindFirstChild("LeaderboardGui") or saweriaBoard:FindFirstChildWhichIsA("SurfaceGui"))
-	local saweriaMain = saweriaGui and (saweriaGui:FindFirstChild("MainFrame") or saweriaGui:FindFirstChild("Mainframe"))
-	local saweriaTabs = saweriaMain and saweriaMain:FindFirstChild("Header") and saweriaMain.Header:FindFirstChild("TabSwitcher")
-	if saweriaTabs then
-		local aBtn = saweriaTabs:FindFirstChild("AllTimeBtn")
-		local dBtn = saweriaTabs:FindFirstChild("DailyBtn")
-		if aBtn and not aBtn:GetAttribute("Bound") then
-			aBtn:SetAttribute("Bound", true)
-			aBtn.MouseButton1Click:Connect(function()
-				local now = os.clock()
-				if now - (States.Saweria.LastClick or 0) < 0.3 then return end
-				States.Saweria.LastClick = now
-				States.Saweria.Mode = "AllTime"
-				renderSaweriaBoard()
-			end)
-		end
-		if dBtn and not dBtn:GetAttribute("Bound") then
-			dBtn:SetAttribute("Bound", true)
-			dBtn.MouseButton1Click:Connect(function()
-				local now = os.clock()
-				if now - (States.Saweria.LastClick or 0) < 0.3 then return end
-				States.Saweria.LastClick = now
-				States.Saweria.Mode = "Daily"
-				renderSaweriaBoard()
-			end)
-		end
-	end
+	bindTabSwitcher("JekyDonationBoard", "EldetoGui", States.Robux, renderRobuxBoard)
+	bindTabSwitcher("BoardSaweria", "LeaderboardGui", States.Saweria, renderSaweriaBoard)
 end
 
--- ==============================================================================
--- AUTO-ROTATE TIMER (Only Robux & Saweria auto-cycle; Likes & Level are All Time Only)
--- ==============================================================================
 task.spawn(function()
 	while true do
 		task.wait(AUTO_ROTATE_INTERVAL)
 		local now = os.clock()
 
-		-- Robux
 		if now - States.Robux.LastClick > USER_INTERACTION_PAUSE then
 			States.Robux.Mode = (States.Robux.Mode == "AllTime") and "Daily" or "AllTime"
 			renderRobuxBoard()
 		end
 
-		-- Saweria
 		if now - States.Saweria.LastClick > USER_INTERACTION_PAUSE then
 			States.Saweria.Mode = (States.Saweria.Mode == "AllTime") and "Daily" or "AllTime"
 			renderSaweriaBoard()
@@ -794,74 +546,34 @@ task.spawn(function()
 	end
 end)
 
--- ==============================================================================
--- REMOTE LISTENERS
--- ==============================================================================
-local updateLikeBoardRemote = ReplicatedStorage:WaitForChild("UpdateLikeBoard", 15)
-if updateLikeBoardRemote then
-	updateLikeBoardRemote.OnClientEvent:Connect(function(payload)
+local function setupBoardRemote(remoteName, stateObj, renderFn, isLevel)
+	local remote = ReplicatedStorage:WaitForChild(remoteName, 15)
+	if not remote then return end
+
+	remote.OnClientEvent:Connect(function(payload)
 		if type(payload) == "table" then
-			if payload.AllTime or payload.Daily then
-				States.Likes.AllTime = payload.AllTime or {}
-				States.Likes.Daily = payload.Daily or {}
+			if isLevel then
+				stateObj.AllTime = payload
+			elseif payload.AllTime or payload.Daily then
+				stateObj.AllTime = payload.AllTime or {}
+				stateObj.Daily = payload.Daily or {}
 			else
-				States.Likes.AllTime = payload
-				States.Likes.Daily = payload
+				stateObj.AllTime = payload
+				stateObj.Daily = payload
 			end
 		end
-		renderLikesBoard()
+		renderFn()
 	end)
-	updateLikeBoardRemote:FireServer()
+	remote:FireServer()
 end
 
-local updateLevelBoardRemote = ReplicatedStorage:WaitForChild("UpdateLevelBoard", 15)
-if updateLevelBoardRemote then
-	updateLevelBoardRemote.OnClientEvent:Connect(function(payload)
-		if type(payload) == "table" then
-			States.Level.AllTime = payload
-		end
-		renderLevelBoard()
-	end)
-	updateLevelBoardRemote:FireServer()
-end
+setupBoardRemote("UpdateLikeBoard", States.Likes, renderLikesBoard)
+setupBoardRemote("UpdateLevelBoard", States.Level, renderLevelBoard, true)
+setupBoardRemote("UpdateTopBoard", States.Robux, renderRobuxBoard)
+setupBoardRemote("UpdateSaweriaTopBoard", States.Saweria, renderSaweriaBoard)
 
-local updateTopBoardRemote = ReplicatedStorage:WaitForChild("UpdateTopBoard", 15)
-if updateTopBoardRemote then
-	updateTopBoardRemote.OnClientEvent:Connect(function(payload)
-		if type(payload) == "table" then
-			if payload.AllTime or payload.Daily then
-				States.Robux.AllTime = payload.AllTime or {}
-				States.Robux.Daily = payload.Daily or {}
-			else
-				States.Robux.AllTime = payload
-				States.Robux.Daily = payload
-			end
-		end
-		renderRobuxBoard()
-	end)
-	updateTopBoardRemote:FireServer()
-end
-
-local updateSaweriaEvent = ReplicatedStorage:WaitForChild("UpdateSaweriaTopBoard", 15)
-if updateSaweriaEvent then
-	updateSaweriaEvent.OnClientEvent:Connect(function(payload)
-		if type(payload) == "table" then
-			if payload.AllTime or payload.Daily then
-				States.Saweria.AllTime = payload.AllTime or {}
-				States.Saweria.Daily = payload.Daily or {}
-			else
-				States.Saweria.AllTime = payload
-				States.Saweria.Daily = payload
-			end
-		end
-		renderSaweriaBoard()
-	end)
-	updateSaweriaEvent:FireServer()
-end
-
--- Periodic setup re-check to bind buttons and ensure boards render cleanly
 task.spawn(function()
-	for i = 1, 5 do
+	for _ = 1, 5 do
 		setupTabClicks()
 		renderLikesBoard()
 		renderLevelBoard()
@@ -872,4 +584,3 @@ task.spawn(function()
 end)
 
 print("[LEADERBOARDS] Client initialized! Top Likes & Top Level (All Time Only), Top Robux & Saweria (All Time & Daily).")
-

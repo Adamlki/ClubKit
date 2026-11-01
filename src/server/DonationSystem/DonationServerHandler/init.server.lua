@@ -1,4 +1,5 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage     = game:GetService("ServerStorage")
 local Players           = game:GetService("Players")
 local TextService       = game:GetService("TextService")
 local TextChatService   = game:GetService("TextChatService")
@@ -8,13 +9,10 @@ local DonationDataStore     = require(script.DonationDataStore)
 local ProcessReceiptHandler = require(script.ProcessReceiptHandler)
 local ScreenBoardHandler    = require(script.ScreenBoardHandler)
 
--- ============================================
--- HELPER
--- ============================================
 local function debugLog(category, ...)
 	if not DonationConfig.DEBUG.ENABLED then return end
 	local show = (category == "BROADCAST" and DonationConfig.DEBUG.SHOW_BROADCAST)
-		or (category == "ERROR"     and DonationConfig.DEBUG.SHOW_ERRORS)
+		or (category == "ERROR" and DonationConfig.DEBUG.SHOW_ERRORS)
 	if not show then return end
 	if category == "ERROR" then
 		warn("[SERVER ERROR]", ...)
@@ -24,39 +22,34 @@ local function debugLog(category, ...)
 end
 
 local function getOrCreate(parent, className, name)
-	return parent:FindFirstChild(name) or (function()
-		local inst = Instance.new(className)
-		inst.Name   = name
+	local inst = parent:FindFirstChild(name)
+	if not inst then
+		inst = Instance.new(className)
+		inst.Name = name
 		inst.Parent = parent
-		return inst
-	end)()
+	end
+	return inst
 end
 
--- ============================================
--- REMOTES
--- ============================================
 local getProductsRemote    = getOrCreate(ReplicatedStorage, "RemoteFunction", "GetDeveloperProducts")
 local broadcastRemote      = getOrCreate(ReplicatedStorage, "RemoteFunction", "BroadcastDonationMessage")
 local receiveRemote        = getOrCreate(ReplicatedStorage, "RemoteEvent",    "ReceiveDonationBroadcast")
 local getPlayerStatsRemote = getOrCreate(ReplicatedStorage, "RemoteFunction", "GetPlayerDonationStats")
+local RobuxDonationEffectEvent = getOrCreate(ServerStorage, "BindableEvent", "RobuxDonationEffectEvent")
 
--- ============================================
--- STATE & 100-PLAYER CHAT PERMISSION CACHE
--- ============================================
-local broadcastQueue      = {}
-local isProcessingQueue   = false
-local playerCooldowns     = {}  -- [userId] = lastBroadcastTime
-local verifiedPurchases   = {}  -- [userId] = {[timestamp] = {amount, claimed}}
-local canChatCache        = {}  -- [userId] = boolean (100-Player Optimization: 1x cek per session)
+local broadcastQueue    = {}
+local isProcessingQueue = false
+local playerCooldowns   = {}
+local verifiedPurchases = {}
+local canChatCache      = {}
+local statsCooldown     = {}
 
-local addToQueue = nil
-local processQueue = nil
+local addToQueue
+local processQueue
 
 local function cachePlayerChatPermission(player)
 	task.spawn(function()
-		local ok, result = pcall(function()
-			return TextChatService:CanUserChatAsync(player.UserId)
-		end)
+		local ok, result = pcall(TextChatService.CanUserChatAsync, TextChatService, player.UserId)
 		if player and player.Parent then
 			canChatCache[player.UserId] = (not ok) or (result == true)
 		end
@@ -68,16 +61,13 @@ for _, p in ipairs(Players:GetPlayers()) do
 	cachePlayerChatPermission(p)
 end
 
--- ============================================
--- SECURITY
--- ============================================
 local function recordPurchase(userId, amount)
 	if not verifiedPurchases[userId] then
 		verifiedPurchases[userId] = {}
 	end
 	local purchaseTime = tick()
 	local isSmall = (amount < DonationConfig.BROADCAST.MIN_DONATION)
-	verifiedPurchases[userId][purchaseTime] = {amount = amount, claimed = isSmall}
+	verifiedPurchases[userId][purchaseTime] = { amount = amount, claimed = isSmall }
 	debugLog("BROADCAST", "Purchase recorded:", userId, amount)
 
 	if not isSmall then
@@ -85,7 +75,7 @@ local function recordPurchase(userId, amount)
 			local userPurchases = verifiedPurchases[userId]
 			if userPurchases and userPurchases[purchaseTime] and not userPurchases[purchaseTime].claimed then
 				userPurchases[purchaseTime].claimed = true
-				debugLog("BROADCAST", "Timeout tercapai untuk user:", userId, "- memicu broadcast default & efek")
+				debugLog("BROADCAST", "Timeout tercapai untuk user:", userId)
 				local p = Players:GetPlayerByUserId(userId)
 				local defaultMsg = DonationConfig.DEFAULT_SMALL_DONATION_MESSAGE or "Thank you for your donation!"
 				if p then
@@ -96,7 +86,7 @@ local function recordPurchase(userId, amount)
 						displayName = "Donator",
 						amount      = amount,
 						message     = defaultMsg,
-						timestamp   = tick()
+						timestamp   = tick(),
 					})
 					task.spawn(processQueue)
 				end
@@ -111,10 +101,8 @@ local function verifyPurchase(userId)
 		local purchases = verifiedPurchases[userId]
 		if purchases then
 			local now = tick()
-			local bestTimestamp = nil
-			local bestData = nil
+			local bestTimestamp, bestData
 
-			-- Ambil transaksi terverifikasi tertua yang belum di-claim dan memenuhi MIN_DONATION
 			for timestamp, data in pairs(purchases) do
 				if now - timestamp > DonationConfig.SECURITY.PURCHASE_TIMEOUT then
 					purchases[timestamp] = nil
@@ -128,7 +116,7 @@ local function verifyPurchase(userId)
 
 			if bestData then
 				bestData.claimed = true
-				debugLog("BROADCAST", "Purchase verified & claimed directly from verified queue:", userId, bestData.amount)
+				debugLog("BROADCAST", "Purchase verified:", userId, bestData.amount)
 				return true, bestData.amount
 			end
 		end
@@ -144,7 +132,7 @@ local function verifyPurchase(userId)
 		end
 	until false
 
-	debugLog("ERROR", "FAKE DONATION ATTEMPT (No verified purchase in queue):", userId)
+	debugLog("ERROR", "FAKE DONATION ATTEMPT:", userId)
 	return false, 0
 end
 
@@ -152,57 +140,31 @@ local function cleanupPlayerSecurity(userId)
 	verifiedPurchases[userId] = nil
 	playerCooldowns[userId]   = nil
 	canChatCache[userId]      = nil
+	statsCooldown[userId]     = nil
 end
 
--- ============================================
--- RATE LIMIT (COOLDOWN ANTAR BROADCAST CUSTOM)
--- ============================================
 local function getCooldownRemaining(userId)
 	local last = playerCooldowns[userId]
 	if not last then return 0 end
 	local remaining = DonationConfig.BROADCAST.COOLDOWN - (tick() - last)
-	if remaining > 0 then
-		return remaining
-	end
-	return 0
+	return math.max(0, remaining)
 end
 
--- ============================================
--- TEXT FILTERING
--- ============================================
 local function filterBroadcastMessage(message, fromPlayer)
 	if not DonationConfig.BROADCAST.ENABLED then return message end
 
-	local filterResult
-	local ok1, err1 = pcall(function()
-		filterResult = TextService:FilterStringAsync(
-			message,
-			fromPlayer.UserId,
-			Enum.TextFilterContext.PublicChat
-		)
+	local ok, filteredText = pcall(function()
+		local filterResult = TextService:FilterStringAsync(message, fromPlayer.UserId, Enum.TextFilterContext.PublicChat)
+		return filterResult and filterResult:GetNonChatStringForBroadcastAsync()
 	end)
 
-	if not ok1 or not filterResult then
-		debugLog("ERROR", "FilterStringAsync gagal:", err1)
+	if not ok or not filteredText then
+		debugLog("ERROR", "Filter broadcast gagal:", filteredText)
 		return nil
 	end
-
-	local filteredText
-	local ok2, err2 = pcall(function()
-		filteredText = filterResult:GetNonChatStringForBroadcastAsync()
-	end)
-
-	if not ok2 or filteredText == nil then
-		debugLog("ERROR", "GetNonChatStringForBroadcastAsync gagal:", err2)
-		return nil
-	end
-
 	return filteredText
 end
 
--- ============================================
--- BROADCAST / QUEUE
--- ============================================
 local function getPlayerQueueCount(userId)
 	local count = 0
 	for _, item in ipairs(broadcastQueue) do
@@ -252,36 +214,22 @@ processQueue = function()
 			end
 		end
 
-		local ServerStorage = game:GetService("ServerStorage")
-		local RobuxDonationEffectEvent = ServerStorage:FindFirstChild("RobuxDonationEffectEvent")
-		if not RobuxDonationEffectEvent then
-			RobuxDonationEffectEvent = Instance.new("BindableEvent")
-			RobuxDonationEffectEvent.Name = "RobuxDonationEffectEvent"
-			RobuxDonationEffectEvent.Parent = ServerStorage
-		end
 		local player = Players:GetPlayerByUserId(item.userId)
 		RobuxDonationEffectEvent:Fire(player or item.displayName, item.amount, shouldSpotlight)
 
 		if DonationConfig.SCREEN_BOARD.ENABLED then
-			local donorPlr = Players:GetPlayerByUserId(item.userId)
-			if donorPlr then
-				ScreenBoardHandler:ShowDonationMessage(donorPlr, item.amount, item.message)
-			else
-				local fakePlayer = {
-					UserId      = item.userId,
-					Name        = item.displayName,
-					DisplayName = item.displayName,
-				}
-				ScreenBoardHandler:ShowDonationMessage(fakePlayer, item.amount, item.message)
-				debugLog("BROADCAST", "Screen board diupdate (player offline):", item.displayName)
-			end
+			local donorPlr = Players:GetPlayerByUserId(item.userId) or {
+				UserId      = item.userId,
+				Name        = item.displayName,
+				DisplayName = item.displayName,
+			}
+			ScreenBoardHandler:ShowDonationMessage(donorPlr, item.amount, item.message)
 		end
 
 		task.wait(DonationConfig.BROADCAST.DISPLAY_DURATION + DonationConfig.BROADCAST.QUEUE_DELAY)
 	end
 
 	isProcessingQueue = false
-	debugLog("BROADCAST", "Queue selesai diproses")
 end
 
 addToQueue = function(player, message, amount, skipVerification)
@@ -295,7 +243,6 @@ addToQueue = function(player, message, amount, skipVerification)
 	end
 
 	if not skipVerification then
-		-- RATE LIMIT: Cek cooldown sebelum claim transaksi agar pembelian tidak hangus saat diblokir
 		local remaining = getCooldownRemaining(userId)
 		if remaining > 0 then
 			return false, string.format("Tunggu %d detik lagi sebelum broadcast berikutnya.", math.ceil(remaining))
@@ -321,41 +268,35 @@ addToQueue = function(player, message, amount, skipVerification)
 		displayName = player.DisplayName,
 		amount      = amount,
 		message     = message,
-		timestamp   = tick()
+		timestamp   = tick(),
 	})
 
 	if not skipVerification then
 		playerCooldowns[userId] = tick()
 	end
 
-	debugLog("BROADCAST", "Antrian:", player.DisplayName, "| Queue size:", #broadcastQueue)
 	task.spawn(processQueue)
 	return true, "Pesan ditambahkan ke antrian."
 end
 
--- ============================================
--- REMOTES - Products & Stats
--- ============================================
-local cachedProducts = nil
+local cachedProducts
 getProductsRemote.OnServerInvoke = function(player)
-	debugLog("BROADCAST", player.Name, "meminta daftar produk")
-
 	if not cachedProducts then
 		cachedProducts = {}
 		for _, p in ipairs(DonationConfig.PRODUCTS) do
-			table.insert(cachedProducts, {Id = p.id, Name = p.name, Price = p.price})
+			table.insert(cachedProducts, { Id = p.id, Name = p.name, Price = p.price })
 		end
 		table.sort(cachedProducts, function(a, b) return a.Price < b.Price end)
 	end
 	return cachedProducts
 end
 
-local statsCooldown = {}
 getPlayerStatsRemote.OnServerInvoke = function(clientPlayer)
-	if not clientPlayer then return {robux = 0, rupiah = 0} end
+	if not clientPlayer then return { robux = 0, rupiah = 0 } end
+
 	local now = os.clock()
 	if now - (statsCooldown[clientPlayer.UserId] or 0) < 3 then
-		return {robux = 0, rupiah = 0}
+		return { robux = 0, rupiah = 0 }
 	end
 	statsCooldown[clientPlayer.UserId] = now
 
@@ -367,18 +308,17 @@ getPlayerStatsRemote.OnServerInvoke = function(clientPlayer)
 
 	local totalRupiah = 0
 	local ok, SaweriaAPI = pcall(function()
-		return require(game:GetService("ServerStorage"):WaitForChild("Modules"):WaitForChild("SaweriaAPI"))
+		return require(ServerStorage:WaitForChild("Modules"):WaitForChild("SaweriaAPI"))
 	end)
 	if ok and SaweriaAPI then
-		local okData, donations = pcall(function() return SaweriaAPI:GetDonationData() end)
+		local okData, donations = pcall(SaweriaAPI.GetDonationData, SaweriaAPI)
 		if okData and type(donations) == "table" then
 			local pName = clientPlayer.Name:lower()
 			for _, d in ipairs(donations) do
 				local dName = tostring(d.donator or d.nama or d.Nama or ""):lower()
 				if dName == pName then
 					local raw = tostring(d.amount or d.jumlah or d.Jumlah or "0"):gsub("%D", "")
-					local amt = tonumber(raw) or 0
-					totalRupiah = totalRupiah + amt
+					totalRupiah += (tonumber(raw) or 0)
 				end
 			end
 		end
@@ -386,13 +326,10 @@ getPlayerStatsRemote.OnServerInvoke = function(clientPlayer)
 
 	return {
 		robux = totalRobux,
-		rupiah = totalRupiah
+		rupiah = totalRupiah,
 	}
 end
 
--- ============================================
--- REMOTES - Custom Broadcast Message
--- ============================================
 broadcastRemote.OnServerInvoke = function(player, message)
 	if not player or not player.Parent then
 		return false, "Player tidak valid."
@@ -401,7 +338,6 @@ broadcastRemote.OnServerInvoke = function(player, message)
 		return false, "Pesan tidak valid."
 	end
 
-	-- RATE LIMIT: Tolak lebih awal (sebelum filter konten) agar spam remote tidak membebani server
 	local remaining = getCooldownRemaining(player.UserId)
 	if remaining > 0 then
 		return false, string.format("Tunggu %d detik lagi sebelum broadcast berikutnya.", math.ceil(remaining))
@@ -412,20 +348,14 @@ broadcastRemote.OnServerInvoke = function(player, message)
 		return false, "Pesan tidak dapat dikirim karena gagal melewati filter konten."
 	end
 
-	-- Server otomatis membaca nominal donasi dari antrean transaksi database yang sudah diverifikasi
 	return addToQueue(player, filtered, nil, false)
 end
 
--- ============================================
--- INITIALIZATION & CALLBACKS
--- ============================================
 ProcessReceiptHandler:Initialize()
 
 ProcessReceiptHandler:RegisterCallback("SaveToDataStore", function(player, productId, amount, receiptInfo)
 	local ok, isNew = DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
-	if not ok then
-		debugLog("ERROR", "DataStore save gagal untuk:", player.Name)
-	end
+	if not ok then debugLog("ERROR", "DataStore save gagal untuk:", player.Name) end
 	return ok, isNew
 end)
 
@@ -438,24 +368,15 @@ ProcessReceiptHandler:RegisterCallback("AutoBroadcastAll", function(player, prod
 	if not DonationConfig.BROADCAST.ENABLED then return true end
 
 	if amount < DonationConfig.BROADCAST.MIN_DONATION then
-		local defaultMsg = DonationConfig.DEFAULT_SMALL_DONATION_MESSAGE
-		local ok, reason = addToQueue(player, defaultMsg, amount, true)
-		if not ok then
-			debugLog("ERROR", "Auto-broadcast kecil gagal:", reason)
-		end
+		local ok, reason = addToQueue(player, DonationConfig.DEFAULT_SMALL_DONATION_MESSAGE, amount, true)
+		if not ok then debugLog("ERROR", "Auto-broadcast kecil gagal:", reason) end
 		return ok
 	end
-
-	debugLog("BROADCAST", "Menunggu custom message dari:", player.Name)
 	return true
 end)
 
--- ============================================
--- PLAYER CLEANUP
--- ============================================
 Players.PlayerRemoving:Connect(function(player)
 	DonationDataStore:CleanupPlayer(player)
 	cleanupPlayerSecurity(player.UserId)
 	statsCooldown[player.UserId] = nil
-	debugLog("BROADCAST", "Cleanup selesai:", player.Name)
 end)

@@ -11,6 +11,15 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UIAnimator = require(ReplicatedStorage:WaitForChild("UIAnimator"))
 
 local gui = script.Parent
+
+-- Gate client-side: jangan inisialisasi shop jika feature flag OFF.
+local featureFolder = ReplicatedStorage:WaitForChild("FeatureFlags", 10)
+local shopFlag = featureFolder and featureFolder:WaitForChild("VIPShopEnabled", 5)
+if not (shopFlag and shopFlag.Value) then
+	gui.Enabled = false
+	return
+end
+
 local mainframe = gui:WaitForChild("MainFrame")
 local content = mainframe:WaitForChild("Content")
 local VIPFrame = content:WaitForChild("VIP Pass")

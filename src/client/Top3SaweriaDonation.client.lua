@@ -22,5 +22,3 @@ local SaweriaStatueManager = StatueRenderer.create({
 		return FormatUtils.formatRupiah(amount)
 	end,
 })
-
-return SaweriaStatueManager

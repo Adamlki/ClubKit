@@ -22,5 +22,3 @@ local RobuxStatueManager = StatueRenderer.create({
 		return FormatUtils.formatMoney(amount, "", " Robux")
 	end,
 })
-
-return RobuxStatueManager

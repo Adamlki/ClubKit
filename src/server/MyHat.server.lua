@@ -30,12 +30,16 @@ ShowIconEvent.Parent = RemotesFolder
 -- ====================================
 -- CONFIGURATION
 -- ====================================
+local itemsFolder = ServerStorage:WaitForChild("Items", 10)
+local crownTemplate = itemsFolder and (itemsFolder:FindFirstChild("Crown8bit") or itemsFolder:WaitForChild("Crown8bit", 10)) or nil
+
 local Config = {
 	-- Debug Settings
 	DebugMode = false,
 
 	-- Item Settings
-	AccessoryPath = ServerStorage:WaitForChild("Items"):WaitForChild("Crown8bit"),
+	AccessoryPath = crownTemplate,
+	AccessoryName = "Crown8bit",
 	RequiredRole = "Moderator",
 
 	-- Role Behavior
@@ -67,10 +71,19 @@ end
 -- ACCESSORY FUNCTIONS
 -- ====================================
 local function equipAccessory(character, player)
-	-- Cek jika sudah equipped
-	if character:FindFirstChild(Config.AccessoryPath.Name) then
+	local accName = Config.AccessoryName or "Crown8bit"
+	if character:FindFirstChild(accName) then
 		debugPrint(player.Name .. " accessory already equipped", false)
 		return false
+	end
+
+	if not Config.AccessoryPath then
+		local items = ServerStorage:FindFirstChild("Items")
+		Config.AccessoryPath = items and items:FindFirstChild(accName)
+		if not Config.AccessoryPath then
+			warn("[MyHat] ⚠️ Template accessory Crown8bit belum tersedia!")
+			return false
+		end
 	end
 
 	-- Clone dan equip
@@ -92,7 +105,8 @@ local function equipAccessory(character, player)
 end
 
 local function unequipAccessory(character, player)
-	local accessory = character:FindFirstChild(Config.AccessoryPath.Name)
+	local accName = Config.AccessoryName or (Config.AccessoryPath and Config.AccessoryPath.Name) or "Crown8bit"
+	local accessory = character:FindFirstChild(accName)
 
 	if not accessory then
 		debugPrint(player.Name .. " no accessory to unequip", false)
@@ -224,8 +238,7 @@ end)
 -- INITIALIZATION
 -- ====================================
 if not Config.AccessoryPath then
-	debugPrint("Accessory path not found in ServerStorage.Items!", false)
-	return
+	warn("[MyHat] ⚠️ Crown8bit tidak ditemukan saat inisialisasi ServerStorage.Items (akan dicoba lagi dinamis).")
 end
 
 debugPrint("Accessory System Initializing...", true)

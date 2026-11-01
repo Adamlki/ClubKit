@@ -8,13 +8,19 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 local RunService = game:GetService("RunService")
+local TextService = game:GetService("TextService")
 local SaweriaAPI = require(game:GetService("ServerStorage"):WaitForChild("Modules"):WaitForChild("SaweriaAPI"))
 local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
 local LeaderboardRegistry = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("LeaderboardRegistry"))
+local ServerConfig = require(ServerScriptService:WaitForChild("Config"):WaitForChild("ServerConfig"))
 
 local IS_STUDIO = RunService:IsStudio()
 local UPDATE_INTERVAL = IS_STUDIO and 30 or 60 -- Interval aman 60s untuk mencegah lonjakan ping (network spike) & micro-freeze
 local TOP_COUNT = 10
+
+-- BoardSaweria dirender oleh LeaderboardsClient. Jangan render ulang dari server;
+-- sebelumnya server dan client sama-sama membuat row ke SurfaceGui yang sama.
+local RENDER_BOARD_ON_SERVER = false
 
 local GetTopSaweriaFunc = ServerStorage:FindFirstChild("GetTopSaweriaFunc") or Instance.new("BindableFunction")
 GetTopSaweriaFunc.Name = "GetTopSaweriaFunc"
@@ -28,6 +34,40 @@ UpdateSaweriaEvent.Parent = ReplicatedStorage
 local userIdCache = {} 
 local cacheCount = 0
 local MAX_CACHE_LIMIT = 500
+local filteredNameCache = {}
+
+local function filterDonorName(rawName, userId)
+	if not rawName or rawName == "" then return "Anonymous" end
+	if filteredNameCache[rawName] then return filteredNameCache[rawName] end
+
+	local p = Players:FindFirstChild(rawName)
+	if p then
+		filteredNameCache[rawName] = p.DisplayName
+		return p.DisplayName
+	end
+
+	local safeUid = userId
+	if not safeUid or safeUid <= 1 then
+		local p1 = Players:GetPlayers()[1]
+		safeUid = p1 and p1.UserId or ServerConfig.GetPrimaryOwnerId()
+	end
+	if not safeUid or safeUid <= 0 then safeUid = 1 end
+
+	local filtered = nil
+	local ok = pcall(function()
+		local f = TextService:FilterStringAsync(rawName, safeUid, Enum.TextFilterContext.PublicChat)
+		if f then filtered = f:GetNonChatStringForBroadcastAsync() end
+	end)
+	if ok and filtered and #filtered > 0 then
+		filteredNameCache[rawName] = filtered
+		return filtered
+	end
+	if IS_STUDIO then
+		filteredNameCache[rawName] = rawName
+		return rawName
+	end
+	return "Donatur"
+end
 
 local function formatRupiah(amount)
 	return FormatUtils.formatRupiah(amount)
@@ -141,8 +181,14 @@ local function updateUIs()
 	local donations = getDonations()
 	local topDonators = #donations > 0 and aggregateDonations(donations) or {}
 
-	local root, gui, comp = findBoardComponents()
-	if not root then
+	local root, gui, comp
+	if RENDER_BOARD_ON_SERVER then
+		root, gui, comp = findBoardComponents()
+	end
+
+	if not RENDER_BOARD_ON_SERVER then
+		-- Client `LeaderboardsClient` yang mengisi BoardSaweria.
+	elseif not root then
 		if IS_STUDIO then
 			warn("[TopSaweria] ⚠️ Model 'BoardSaweria' atau 'Saweria' belum ditemukan di Workspace!")
 		end
@@ -197,9 +243,10 @@ local function updateUIs()
 						local userLbl = entry:FindFirstChild("UserLabel", true)
 						local amountLbl = entry:FindFirstChild("AmountLabel", true) or entry:FindFirstChild("ValueLabel", true)
 
+						local safeDonorName = filterDonorName(donator.name)
 						if rankLbl then rankLbl.Text = "#" .. i end
-						if nameLbl then nameLbl.Text = donator.name end
-						if userLbl then userLbl.Text = "@" .. donator.name:gsub("%s+", "_") end
+						if nameLbl then nameLbl.Text = safeDonorName end
+						if userLbl then userLbl.Text = "@" .. safeDonorName:gsub("%s+", "_") end
 						if amountLbl then amountLbl.Text = formatRupiah(donator.total) end
 					end
 
@@ -231,8 +278,9 @@ local function updateUIs()
 						local ul = slot:FindFirstChild("UserLabel")
 						local al = slot:FindFirstChild("AmountLabel", true) or slot:FindFirstChild("ValueLabel", true)
 						if donator then
-							if nl then nl.Text = donator.name end
-							if ul then ul.Text = "@" .. donator.name:gsub("%s+", "_") end
+							local safePodiumName = filterDonorName(donator.name)
+							if nl then nl.Text = safePodiumName end
+							if ul then ul.Text = "@" .. safePodiumName:gsub("%s+", "_") end
 							if al then al.Text = formatRupiah(donator.total) end
 						else
 							if nl then nl.Text = "-" end
@@ -252,7 +300,8 @@ local function updateUIs()
 			else
 				for i = 1, math.min(TOP_COUNT, #topDonators) do
 					local donor = topDonators[i]
-					displayText = displayText .. tostring(i) .. ". " .. donor.name .. "\n"
+					local safeListName = filterDonorName(donor.name)
+					displayText = displayText .. tostring(i) .. ". " .. safeListName .. "\n"
 					displayText = displayText .. formatRupiah(donor.total) .. "\n\n"
 				end
 			end
@@ -301,11 +350,12 @@ local function updateUIs()
 			local d = sourceDonators[rank]
 			local dName = d.name or "Unknown"
 			local uId = resolveUserId(dName)
+			local safeName = filterDonorName(dName, uId)
 			table.insert(list, {
 				Rank = rank,
 				UserId = uId,
-				DisplayName = dName,
-				Username = "@" .. dName:gsub("%s+", "_"),
+				DisplayName = safeName,
+				Username = "@" .. safeName:gsub("%s+", "_"),
 				Amount = d.total or 0,
 			})
 		end

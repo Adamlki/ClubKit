@@ -5,12 +5,16 @@ local Teams             = game:GetService("Teams")
 local ServerStorage     = game:GetService("ServerStorage")
 local DataStoreService  = game:GetService("DataStoreService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TextService       = game:GetService("TextService")
+local RunService        = game:GetService("RunService")
 
+local ServerScriptService = game:GetService("ServerScriptService")
+local ServerConfig       = require(ServerScriptService:WaitForChild("Config"):WaitForChild("ServerConfig"))
 local RoleSystem = require(ServerStorage.Modules.RoleSystem)
 local TeamGroups = require(ServerStorage.Modules.TeamGroups)
 
 CustomTeams.Config = {
-	DATASTORE_NAME  = "CustomTeamsData_v2",
+	DATASTORE_NAME  = RunService:IsStudio() and "CustomTeamsData_Studio_v2" or "CustomTeamsData_v2",
 	DATASTORE_RETRY = 3,
 	DATASTORE_DELAY = 1,
 	DEBUG_ENABLED   = false,
@@ -33,42 +37,36 @@ local function debugPrint(...)
 	if CustomTeams.Config.DEBUG_ENABLED then print("[CustomTeams]", ...) end
 end
 
--- ====================================
--- DATASTORE
--- ====================================
-local function dsGet(key)
+local function dsRetry(operation)
 	for i = 1, CustomTeams.Config.DATASTORE_RETRY do
-		local ok, r = pcall(function() return store:GetAsync(key) end)
-		if ok then return r end
-		if i < CustomTeams.Config.DATASTORE_RETRY then task.wait(CustomTeams.Config.DATASTORE_DELAY) end
+		local ok, result = pcall(operation)
+		if ok then return true, result end
+		if i < CustomTeams.Config.DATASTORE_RETRY then
+			task.wait(CustomTeams.Config.DATASTORE_DELAY)
+		end
 	end
+	return false, nil
+end
+
+local function dsGet(key)
+	local ok, result = dsRetry(function() return store:GetAsync(key) end)
+	if ok then return result end
 	return nil
 end
 
 local function dsSet(key, val)
-	for i = 1, CustomTeams.Config.DATASTORE_RETRY do
-		local ok = pcall(function() store:SetAsync(key, val) end)
-		if ok then return true end
-		if i < CustomTeams.Config.DATASTORE_RETRY then task.wait(CustomTeams.Config.DATASTORE_DELAY) end
-	end
-	return false
+	local ok = dsRetry(function() store:SetAsync(key, val) end)
+	return ok
 end
 
 local function dsRemove(key)
-	for i = 1, CustomTeams.Config.DATASTORE_RETRY do
-		local ok = pcall(function() store:RemoveAsync(key) end)
-		if ok then return true end
-		if i < CustomTeams.Config.DATASTORE_RETRY then task.wait(CustomTeams.Config.DATASTORE_DELAY) end
-	end
-	return false
+	local ok = dsRetry(function() store:RemoveAsync(key) end)
+	return ok
 end
 
 local function teamKey(n)   return "team:" .. n end
 local function playerKey(u) return "player:" .. tostring(u) end
 
--- ====================================
--- PERSISTENCE
--- ====================================
 local function saveTeamList()
 	local list = {}
 	for n in pairs(customTeamObjects) do table.insert(list, n) end
@@ -95,32 +93,24 @@ local function clearPlayerOverride(userId)
 	task.spawn(function() dsRemove(playerKey(userId)) end)
 end
 
--- ====================================
--- TEAM REGISTRY
--- ====================================
 local function registerTeam(team)
 	teamsByName[team.Name:lower()] = { exactName = team.Name, teamObj = team }
 end
 
 local function makeAndRegisterTeam(teamName, colorName, paletteIndex)
-	-- ✅ GANTI GetTemplateColor menjadi GetTemplateColorName
 	local displayColor = TeamGroups.GetTemplateColorName(colorName) 
 	local team = TeamGroups.MakeTeam(teamName, displayColor, paletteIndex)
 	registerTeam(team)
 	return team
 end
 
--- ====================================
--- TEAM LOOKUP — by exact name only
--- FIX: fallback scan hanya dilakukan jika cache miss, dan tetap exact match.
--- ====================================
 local function findTeamByName(name)
 	if not name or name == "" then return nil, "Nama team kosong!" end
 	name = name:match("^%s*(.-)%s*$")
 	local key = name:lower()
 	local e = teamsByName[key]
 	if e and e.teamObj and e.teamObj.Parent then return e.teamObj, e.exactName end
-	-- Fallback: scan Teams service (exact match)
+
 	for _, t in ipairs(Teams:GetTeams()) do
 		if t.Name:lower() == key then
 			teamsByName[key] = { exactName = t.Name, teamObj = t }
@@ -130,74 +120,8 @@ local function findTeamByName(name)
 	return nil, string.format("Team '%s' tidak ditemukan!", name)
 end
 
--- ====================================
--- ASSIGN PLAYER
--- ====================================
-local function assignPlayer(player)
-	local ov = playerOverrides[player.UserId]
-	if ov then
-		if hiddenTeams[ov] then
-			showCustomTeam(ov)
-		end
-		local team, name = findTeamByName(ov)
-		if team then
-			TeamGroups.SetPlayerTeam(player, team)
-			debugPrint("Assigned", player.Name, "-> override", name)
-			return
-		end
-		-- Override menunjuk team yang sudah tidak ada, bersihkan
-		clearPlayerOverride(player.UserId)
-	end
-	TeamGroups.AssignPlayer(player)
-end
-
--- ====================================
--- HIDE / SHOW CUSTOM TEAM OBJECT
--- FIX: showCustomTeam sekarang RETURN team object yang baru dibuat,
---      sehingga doMovePlayer bisa langsung pakai tanpa findTeamByName ulang.
---      Ini menghilangkan jeda antara show dan assign yang bisa bikin salah team.
--- ====================================
-
-local function countPlayersInTeam(teamObj)
-	local count = 0
-	for _, p in ipairs(Players:GetPlayers()) do
-		if p.Team == teamObj then count += 1 end
-	end
-	return count
-end
-
-local function hideCustomTeam(teamName)
-	local info = customTeamObjects[teamName]
-	if not info then return end
-	if hiddenTeams[teamName] then return end
-
-	if not info.TeamObj or not info.TeamObj.Parent then
-		hiddenTeams[teamName] = {
-			ColorName    = info.ColorName,
-			PaletteIndex = info.PaletteIndex,
-			Index        = info.Index,
-		}
-		info.TeamObj = nil
-		return
-	end
-
-	debugPrint("Hiding custom team (empty):", teamName)
-	hiddenTeams[teamName] = {
-		ColorName    = info.ColorName,
-		PaletteIndex = info.PaletteIndex,
-		Index        = info.Index,
-	}
-
-	teamsByName[teamName:lower()] = nil
-	info.TeamObj:Destroy()
-	info.TeamObj = nil
-	TeamGroups.RefreshTeamObjects()
-end
-
--- FIX: return team object agar caller tidak perlu findTeamByName lagi
 local function showCustomTeam(teamName)
 	if not hiddenTeams[teamName] then
-		-- Tidak sedang hidden, tapi pastikan terdaftar di teamsByName
 		local info = customTeamObjects[teamName]
 		if info and info.TeamObj and info.TeamObj.Parent then
 			registerTeam(info.TeamObj)
@@ -220,25 +144,68 @@ local function showCustomTeam(teamName)
 	info.TeamObj = team
 	TeamGroups.RefreshTeamObjects()
 
-	-- FIX: cek player masih online sebelum assign (synchronous agar tidak race condition)
 	for _, p in ipairs(Players:GetPlayers()) do
-		if playerOverrides[p.UserId] == teamName then
-			if p and p.Parent then
-				TeamGroups.SetPlayerTeam(p, team)
-				debugPrint("Reassigned", p.Name, "-> restored team", teamName)
-			end
+		if playerOverrides[p.UserId] == teamName and p and p.Parent then
+			TeamGroups.SetPlayerTeam(p, team)
+			debugPrint("Reassigned", p.Name, "-> restored team", teamName)
 		end
 	end
 
-	return team  -- return untuk doMovePlayer
+	return team
+end
+
+local function assignPlayer(player)
+	local ov = playerOverrides[player.UserId]
+	if ov then
+		if hiddenTeams[ov] then
+			showCustomTeam(ov)
+		end
+		local team, name = findTeamByName(ov)
+		if team then
+			TeamGroups.SetPlayerTeam(player, team)
+			debugPrint("Assigned", player.Name, "-> override", name)
+			return
+		end
+		clearPlayerOverride(player.UserId)
+	end
+	TeamGroups.AssignPlayer(player)
+end
+
+local function countPlayersInTeam(teamObj)
+	local count = 0
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p.Team == teamObj then count += 1 end
+	end
+	return count
+end
+
+local function hideCustomTeam(teamName)
+	local info = customTeamObjects[teamName]
+	if not info or hiddenTeams[teamName] then return end
+
+	local state = {
+		ColorName    = info.ColorName,
+		PaletteIndex = info.PaletteIndex,
+		Index        = info.Index,
+	}
+	hiddenTeams[teamName] = state
+
+	if not info.TeamObj or not info.TeamObj.Parent then
+		info.TeamObj = nil
+		return
+	end
+
+	debugPrint("Hiding custom team (empty):", teamName)
+	teamsByName[teamName:lower()] = nil
+	info.TeamObj:Destroy()
+	info.TeamObj = nil
+	TeamGroups.RefreshTeamObjects()
 end
 
 local function customTeamHasPlayer(teamName)
 	local info = customTeamObjects[teamName]
-	if info and info.TeamObj and info.TeamObj.Parent then
-		if countPlayersInTeam(info.TeamObj) > 0 then
-			return true
-		end
+	if info and info.TeamObj and info.TeamObj.Parent and countPlayersInTeam(info.TeamObj) > 0 then
+		return true
 	end
 	for _, ov in pairs(playerOverrides) do
 		if ov == teamName then return true end
@@ -256,7 +223,6 @@ local function refreshCustomTeamVisibility()
 	end
 end
 
--- FIX: debounce dinaikkan ke 1 detik agar tidak spam saat server penuh
 local function scheduleRefresh()
 	if refreshScheduled then return end
 	refreshScheduled = true
@@ -266,9 +232,6 @@ local function scheduleRefresh()
 	end)
 end
 
--- ====================================
--- NOTIFY
--- ====================================
 local function setupNotifyRemote()
 	local folder = ReplicatedStorage:FindFirstChild("CustomTeamsRemotes")
 	if not folder then
@@ -295,9 +258,6 @@ local function notify(player, msg, title, dur)
 	end
 end
 
--- ====================================
--- HELPERS
--- ====================================
 local function isAllowed(player)
 	local role = RoleSystem:GetPlayerRole(player)
 	for _, r in ipairs(CustomTeams.Config.ALLOWED_ROLES) do
@@ -319,27 +279,15 @@ local function findPlayer(q)
 	return found, found and nil or ("Player '" .. q .. "' tidak ditemukan!")
 end
 
--- ====================================
--- INTERNAL MOVE
--- FIX UTAMA: doMovePlayer sekarang memakai team object yang dikembalikan
--- langsung oleh showCustomTeam, bukan memanggil findTeamByName setelah show.
--- Ini memastikan tidak ada race condition antara "show team" dan "assign player".
--- ====================================
 local function doMovePlayer(invoker, target, teamName)
 	teamName = teamName:match("^%s*(.-)%s*$")
 
 	local foundTeam, exactName
-
 	if hiddenTeams[teamName] then
-		-- Team sedang hidden: restore dulu, langsung pakai return value-nya
-		local restoredTeam = showCustomTeam(teamName)
-		if restoredTeam then
-			foundTeam = restoredTeam
-			exactName = teamName
-		end
+		foundTeam = showCustomTeam(teamName)
+		if foundTeam then exactName = teamName end
 	end
 
-	-- Jika bukan hidden (atau showCustomTeam gagal), cari via registry
 	if not foundTeam then
 		foundTeam, exactName = findTeamByName(teamName)
 	end
@@ -348,17 +296,10 @@ local function doMovePlayer(invoker, target, teamName)
 		return false, string.format("Team '%s' tidak ditemukan!", teamName)
 	end
 
-	-- VALIDASI: hanya role Owner yang boleh masuk team Owner
-	if exactName == "Owner" then
-		local targetRole = RoleSystem:GetPlayerRole(target)
-		if targetRole ~= "Owner" then
-			return false, string.format(
-				"%s tidak bisa masuk ke team Owner! Hanya role Owner yang diizinkan.", target.Name
-			)
-		end
+	if exactName == "Owner" and RoleSystem:GetPlayerRole(target) ~= "Owner" then
+		return false, string.format("%s tidak bisa masuk ke team Owner! Hanya role Owner yang diizinkan.", target.Name)
 	end
 
-	-- FIX: verifikasi team object masih valid sebelum assign
 	if not foundTeam.Parent then
 		return false, string.format("Team '%s' tidak valid (sudah dihapus?).", exactName)
 	end
@@ -380,9 +321,6 @@ local function doMovePlayer(invoker, target, teamName)
 	return true, string.format("%s dipindahkan ke '%s'", target.DisplayName, exactName)
 end
 
--- ====================================
--- INIT FLOW
--- ====================================
 function CustomTeams.AppendCustomTeams()
 	teamsByName = {}
 	for _, t in ipairs(Teams:GetTeams()) do
@@ -421,7 +359,7 @@ function CustomTeams.LoadFromDataStore()
 					warn(string.format(
 						"[CustomTeams] Team '%s' tidak punya PaletteIndex di DS, generate baru: %d",
 						teamName, paletteIndex
-						))
+					))
 				end
 				customTeamObjects[teamName] = {
 					ColorName    = data.ColorName or "Abu-abu",
@@ -432,51 +370,18 @@ function CustomTeams.LoadFromDataStore()
 			end
 			loaded = loaded + 1
 		end)
-		
-		-- Jeda agar DataStore tidak dibombardir
 		task.wait(0.1) 
 	end
+
 	local t0 = tick()
 	while loaded < #teamList and (tick() - t0) < 10 do task.wait(0.05) end
 	debugPrint(string.format("LoadFromDataStore: %d/%d loaded", loaded, #teamList))
 end
 
-local handleCommand
-
-function CustomTeams.Init()
-	setupNotifyRemote()
-
-	local function hookPlayer(p)
-		p.Chatted:Connect(function(msg) handleCommand(p, msg) end)
-		p:GetPropertyChangedSignal("Team"):Connect(function()
-			scheduleRefresh()
-		end)
-	end
-
-	for _, p in ipairs(Players:GetPlayers()) do
-		hookPlayer(p)
-	end
-	Players.PlayerAdded:Connect(function(p)
-		hookPlayer(p)
-		task.delay(2, scheduleRefresh)
-	end)
-
-	Players.PlayerRemoving:Connect(function(p)
-		playerOverrides[p.UserId] = nil
-		assignedPlayers[p] = nil
-		task.delay(0.5, scheduleRefresh)
-	end)
-end
-
--- ====================================
--- PUBLIC API
--- ====================================
 function CustomTeams.HasOverride(userId)
 	return playerOverrides[userId] ~= nil
 end
 
--- FIX: AssignNewPlayer menunggu gamepass async selesai sebelum re-assign final.
--- Ini mencegah player dapat team "Tamu" sementara gamepass-nya belum terverifikasi.
 function CustomTeams.AssignNewPlayer(player)
 	if not player or not player.Parent then return end
 	if assignedPlayers[player] then return end
@@ -484,7 +389,6 @@ function CustomTeams.AssignNewPlayer(player)
 
 	RoleSystem:CachePlayerOwnership(player)
 
-	-- Load override dari DS jika belum ada di cache
 	if not playerOverrides[player.UserId] then
 		local saved = dsGet(playerKey(player.UserId))
 		if saved and player and player.Parent then
@@ -495,147 +399,25 @@ function CustomTeams.AssignNewPlayer(player)
 		end
 	end
 
-	-- Assign segera dengan role yang sudah tersedia (mungkin belum final jika gamepass async)
 	assignPlayer(player)
 
-	-- Tunggu gamepass async selesai (RoleSystem GAMEPASS_CHECK_TIMEOUT = 15s + buffer)
-	-- lalu re-assign jika player tidak punya custom override
 	task.spawn(function()
 		task.wait(16)
-		if player and player.Parent then
-			if not playerOverrides[player.UserId] then
-				-- Tidak ada override admin, assign ulang berdasarkan role final
-				assignPlayer(player)
-				debugPrint("Re-assigned after gamepass check:", player.Name)
-			end
+		if player and player.Parent and not playerOverrides[player.UserId] then
+			assignPlayer(player)
+			debugPrint("Re-assigned after gamepass check:", player.Name)
 		end
 	end)
 
 	task.delay(0.5, scheduleRefresh)
 end
 
--- Dipakai sistem lain (mis. SultanLeaderstatHandler) agar assignment tetap
--- menghormati override custom team dan tidak menulis team yang sama dua kali.
 function CustomTeams.RefreshPlayerTeam(player)
 	if not player or not player.Parent then return false end
 	assignPlayer(player)
 	return true
 end
 
--- ====================================
--- CHAT COMMANDS
--- ====================================
-local function cmdCreate(player, args)
-	if #args < 2 then
-		notify(player,
-			"Usage: ;create (nama) (warna)\nContoh: ;create Founder Merah\nWarna: Merah, Biru, Hijau, Emas, dll.",
-			"Syntax Error")
-		return
-	end
-	local teamName  = args[1]
-	local colorName = args[2]
-
-	if teamsByName[teamName:lower()] or hiddenTeams[teamName] then
-		notify(player, string.format("Team '%s' sudah ada!", teamName), "Gagal"); return
-	end
-
-	local template = TeamGroups.templateByName[colorName:lower()]
-	if not template then
-		local names = {}
-		for _, t in ipairs(TeamGroups.COLOR_TEMPLATES) do table.insert(names, t.name) end
-		notify(player,
-			string.format("Warna '%s' tidak valid!\nPilihan: %s", colorName, table.concat(names, ", ")),
-			"Warna Tidak Valid")
-		return
-	end
-
-	local paletteIndex = TeamGroups.NextFreePaletteIndex()
-	local nextIndex = 1
-	for _, info in pairs(customTeamObjects) do
-		if info.Index >= nextIndex then nextIndex = info.Index + 1 end
-	end
-
-	local info = { ColorName = template.name, PaletteIndex = paletteIndex, Index = nextIndex, TeamObj = nil }
-	customTeamObjects[teamName] = info
-
-	hiddenTeams[teamName] = {
-		ColorName    = template.name,
-		PaletteIndex = paletteIndex,
-		Index        = nextIndex,
-	}
-	debugPrint("New custom team created (hidden until player assigned):", teamName, "| palette:", paletteIndex)
-
-	task.spawn(function() saveTeamDS(teamName, info); saveTeamList() end)
-	notify(player,
-		string.format(
-			"Team '%s' (%s) berhasil dibuat! Team akan muncul saat ada player yang bergabung.",
-			teamName, template.name
-		),
-		"Sukses", 6)
-end
-
-local function cmdUncreate(player, args)
-	if #args < 1 then notify(player, "Usage: ;uncreate (nama_team)", "Syntax Error"); return end
-	local teamName = args[1]
-	local info = customTeamObjects[teamName]
-	if not info then
-		notify(player, string.format("Custom team '%s' tidak ditemukan!", teamName), "Gagal"); return
-	end
-
-	local affected = {}
-	if info.TeamObj then
-		for _, p in ipairs(Players:GetPlayers()) do
-			if p.Team == info.TeamObj then table.insert(affected, p) end
-		end
-	end
-
-	teamsByName[teamName:lower()] = nil
-	hiddenTeams[teamName] = nil
-	customTeamObjects[teamName] = nil
-	if info.TeamObj and info.TeamObj.Parent then info.TeamObj:Destroy() end
-	TeamGroups.RefreshTeamObjects()
-
-	for _, p in ipairs(affected) do
-		clearPlayerOverride(p.UserId)
-		TeamGroups.AssignPlayer(p)
-		notify(p, string.format("Team '%s' dihapus.", teamName), "Team Dihapus", 6)
-	end
-	for uid, ov in pairs(playerOverrides) do
-		if ov == teamName then clearPlayerOverride(uid) end
-	end
-	task.spawn(function() deleteTeamDS(teamName); saveTeamList() end)
-	notify(player, string.format("Team '%s' dihapus. %d player dikembalikan.", teamName, #affected), "Sukses", 6)
-end
-
-local function cmdMoveTeam(player, args)
-	if #args < 2 then notify(player, "Usage: ;moveteam (player) (team)", "Syntax Error"); return end
-	local target, err = findPlayer(args[1])
-	if not target then notify(player, err, "Player Tidak Ditemukan"); return end
-	local ok, msg = doMovePlayer(player, target, args[2])
-	notify(player, msg, ok and "Sukses" or "Gagal")
-end
-
-handleCommand = function(player, message)
-	local prefix = CustomTeams.Config.PREFIX
-	if message:sub(1, #prefix) ~= prefix then return end
-	if not isAllowed(player) then
-		notify(player, "Akses ditolak! Minimal role: Admin", "Akses Ditolak"); return
-	end
-	local parts = {}
-	for p in message:sub(#prefix + 1):gmatch("%S+") do table.insert(parts, p) end
-	if #parts == 0 then return end
-	local cmd  = parts[1]:lower()
-	local args = {}
-	for i = 2, #parts do table.insert(args, parts[i]) end
-	if     cmd == "create"   then cmdCreate(player, args)
-	elseif cmd == "uncreate" then cmdUncreate(player, args)
-	elseif cmd == "moveteam" then cmdMoveTeam(player, args)
-	end
-end
-
--- ====================================
--- PUBLIC API untuk AdminPanelServer
--- ====================================
 function CustomTeams.MovePlayer(invoker, target, teamName)
 	if not invoker or not target or not teamName then return false, "Parameter tidak lengkap!" end
 	return doMovePlayer(invoker, target, teamName)
@@ -644,18 +426,54 @@ end
 function CustomTeams.CreateTeam(invoker, teamName, colorName)
 	if not invoker or not teamName or teamName == "" then return false, "Nama team kosong!" end
 	teamName = teamName:match("^%s*(.-)%s*$")
+	if #teamName < 2 then return false, "Nama team minimal 2 karakter!" end
 	if #teamName > 30 then return false, "Nama team max 30 karakter!" end
 
 	if teamsByName[teamName:lower()] or hiddenTeams[teamName] then
 		return false, string.format("Team '%s' sudah ada!", teamName)
 	end
 
-	colorName = colorName or "Abu-abu"
-	local template = TeamGroups.templateByName[colorName:lower()]
-	if not template then
-		colorName = "Abu-abu"
-		template  = TeamGroups.templateByName["abu-abu"]
+	-- [CRIT-02] Filter teks nama team via TextService sebelum disimpan / dibuat
+	local filteredTeamName = teamName
+	if not RunService:IsStudio() then
+		local filterOk, filterResult = pcall(function()
+			local invokerId = (typeof(invoker) == "Instance" and invoker:IsA("Player")) and invoker.UserId or 0
+			if invokerId <= 0 then
+				local p1 = Players:GetPlayers()[1]
+				invokerId = p1 and p1.UserId or ServerConfig.GetPrimaryOwnerId()
+			end
+			return TextService:FilterStringAsync(teamName, invokerId)
+		end)
+
+		if not filterOk or not filterResult then
+			return false, "Layanan filter teks sedang gangguan. Silakan coba lagi nanti."
+		end
+
+		local broadcastOk, broadcastStr = pcall(function()
+			return filterResult:GetNonChatStringForBroadcastAsync()
+		end)
+
+		if not broadcastOk or not broadcastStr then
+			return false, "Gagal memproses filter nama team. Silakan coba lagi nanti."
+		end
+
+		filteredTeamName = broadcastStr
+
+		-- Tolak jika teks hasil filter berbeda dari input asli (ada kata/karakter yang disensor)
+		if filteredTeamName ~= teamName then
+			return false, "Nama team tidak diizinkan atau mengandung kata yang disensor oleh Roblox!"
+		end
 	end
+
+	teamName = filteredTeamName
+
+	-- Periksa lagi duplikasi dengan nama hasil filter
+	if teamsByName[teamName:lower()] or hiddenTeams[teamName] then
+		return false, string.format("Team '%s' sudah ada!", teamName)
+	end
+
+	colorName = colorName or "Abu-abu"
+	local template = TeamGroups.templateByName[colorName:lower()] or TeamGroups.templateByName["abu-abu"]
 
 	local paletteIndex = TeamGroups.NextFreePaletteIndex()
 	local nextIndex = 1
@@ -665,7 +483,6 @@ function CustomTeams.CreateTeam(invoker, teamName, colorName)
 
 	local info = { ColorName = template.name, PaletteIndex = paletteIndex, Index = nextIndex, TeamObj = nil }
 	customTeamObjects[teamName] = info
-
 	hiddenTeams[teamName] = {
 		ColorName    = template.name,
 		PaletteIndex = paletteIndex,
@@ -684,50 +501,57 @@ function CustomTeams.DeleteTeam(invoker, teamName)
 	if not invoker or not teamName or teamName == "" then return false, "Nama team kosong!" end
 	local info = customTeamObjects[teamName]
 	if not info then
-		return false, string.format(
-			"Hanya custom team yang bisa dihapus. '%s' tidak ditemukan.", teamName
-		)
+		return false, string.format("Hanya custom team yang bisa dihapus. '%s' tidak ditemukan.", teamName)
 	end
+
 	local affected = {}
 	if info.TeamObj then
 		for _, p in ipairs(Players:GetPlayers()) do
 			if p.Team == info.TeamObj then table.insert(affected, p) end
 		end
 	end
+
 	teamsByName[teamName:lower()] = nil
 	hiddenTeams[teamName] = nil
 	customTeamObjects[teamName] = nil
 	if info.TeamObj and info.TeamObj.Parent then info.TeamObj:Destroy() end
 	TeamGroups.RefreshTeamObjects()
+
 	for _, p in ipairs(affected) do
 		clearPlayerOverride(p.UserId)
 		TeamGroups.AssignPlayer(p)
 		notify(p, string.format("Team '%s' dihapus.", teamName), "Team Dihapus", 6)
 	end
+
 	for uid, ov in pairs(playerOverrides) do
 		if ov == teamName then clearPlayerOverride(uid) end
 	end
+
 	task.spawn(function() deleteTeamDS(teamName); saveTeamList() end)
 	return true, string.format("Team '%s' dihapus! (%d player dikembalikan)", teamName, #affected)
+end
+
+local function toRGB(color)
+	return math.floor(color.R * 255 + 0.5), math.floor(color.G * 255 + 0.5), math.floor(color.B * 255 + 0.5)
 end
 
 function CustomTeams.GetTeamList()
 	local result = {}
 
 	for _, team in ipairs(Teams:GetTeams()) do
-		if team.Name == "Owner" then continue end
-
-		local c = team.TeamColor.Color
-		local r = team:GetAttribute("ExactColorR") or math.floor(c.R * 255 + 0.5)
-		local g = team:GetAttribute("ExactColorG") or math.floor(c.G * 255 + 0.5)
-		local b = team:GetAttribute("ExactColorB") or math.floor(c.B * 255 + 0.5)
-		table.insert(result, {
-			name           = team.Name,
-			brickColorName = team.TeamColor.Name,
-			r = r, g = g, b = b,
-			isCustom       = customTeamObjects[team.Name] ~= nil,
-			isHidden       = false,
-		})
+		if team.Name ~= "Owner" then
+			local c = team.TeamColor.Color
+			local defR, defG, defB = toRGB(c)
+			table.insert(result, {
+				name           = team.Name,
+				brickColorName = team.TeamColor.Name,
+				r              = team:GetAttribute("ExactColorR") or defR,
+				g              = team:GetAttribute("ExactColorG") or defG,
+				b              = team:GetAttribute("ExactColorB") or defB,
+				isCustom       = customTeamObjects[team.Name] ~= nil,
+				isHidden       = false,
+			})
+		end
 	end
 
 	for teamName, hInfo in pairs(hiddenTeams) do
@@ -737,15 +561,14 @@ function CustomTeams.GetTeamList()
 			local brickColorName = nil
 			if template and template.brickColorName then
 				brickColorName = template.brickColorName
-				local c = BrickColor.new(brickColorName).Color
-				r = math.floor(c.R * 255 + 0.5)
-				g = math.floor(c.G * 255 + 0.5)
-				b = math.floor(c.B * 255 + 0.5)
+				r, g, b = toRGB(BrickColor.new(brickColorName).Color)
 			end
 			table.insert(result, {
 				name           = teamName,
 				brickColorName = brickColorName,
-				r = r, g = g, b = b,
+				r              = r,
+				g              = g,
+				b              = b,
 				isCustom       = true,
 				isHidden       = true,
 			})
@@ -757,6 +580,127 @@ end
 
 function CustomTeams.GetColorTemplates()
 	return TeamGroups.COLOR_TEMPLATES
+end
+
+local function cmdCreate(player, args)
+	if #args < 2 then
+		notify(player,
+			"Usage: ;create (nama) (warna)\nContoh: ;create Founder Merah\nWarna: Merah, Biru, Hijau, Emas, dll.",
+			"Syntax Error")
+		return
+	end
+
+	local teamName  = args[1]
+	local colorName = args[2]
+
+	local template = TeamGroups.templateByName[colorName:lower()]
+	if not template then
+		local names = {}
+		for _, t in ipairs(TeamGroups.COLOR_TEMPLATES) do table.insert(names, t.name) end
+		notify(player,
+			string.format("Warna '%s' tidak valid!\nPilihan: %s", colorName, table.concat(names, ", ")),
+			"Warna Tidak Valid")
+		return
+	end
+
+	local ok, msg = CustomTeams.CreateTeam(player, teamName, colorName)
+	notify(player, msg, ok and "Sukses" or "Gagal", 6)
+end
+
+local function cmdUncreate(player, args)
+	if #args < 1 then notify(player, "Usage: ;uncreate (nama_team)", "Syntax Error"); return end
+	local ok, msg = CustomTeams.DeleteTeam(player, args[1])
+	notify(player, msg, ok and "Sukses" or "Gagal", 6)
+end
+
+local function cmdMoveTeam(player, args)
+	if #args < 2 then notify(player, "Usage: ;moveteam (player) (team)", "Syntax Error"); return end
+	local target, err = findPlayer(args[1])
+	if not target then notify(player, err, "Player Tidak Ditemukan"); return end
+	local ok, msg = CustomTeams.MovePlayer(player, target, args[2])
+	notify(player, msg, ok and "Sukses" or "Gagal")
+end
+
+local CHAT_COMMANDS = {
+	create   = cmdCreate,
+	uncreate = cmdUncreate,
+	moveteam = cmdMoveTeam,
+}
+
+local lastCustomTeamCmd = {} -- [userId] = { text = string, timestamp = number }
+
+local function handleCommand(player, message)
+	if not player or not player.Parent then return end
+	local prefix = CustomTeams.Config.PREFIX
+	if message:sub(1, #prefix) ~= prefix then return end
+	if not isAllowed(player) then
+		notify(player, "Akses ditolak! Minimal role: Admin", "Akses Ditolak")
+		return
+	end
+
+	-- Deduplikasi perintah untuk mencegah eksekusi ganda jika dipicu Chatted + TextChatCommand bersamaan
+	local now = os.clock()
+	local last = lastCustomTeamCmd[player.UserId]
+	if last and last.text == message and (now - last.timestamp) < 0.5 then
+		return
+	end
+	lastCustomTeamCmd[player.UserId] = { text = message, timestamp = now }
+
+	local parts = {}
+	for p in message:sub(#prefix + 1):gmatch("%S+") do table.insert(parts, p) end
+	if #parts == 0 then return end
+
+	local handler = CHAT_COMMANDS[parts[1]:lower()]
+	if handler then
+		local args = {}
+		for i = 2, #parts do table.insert(args, parts[i]) end
+		handler(player, args)
+	end
+end
+
+function CustomTeams.Init()
+	setupNotifyRemote()
+
+	-- [LOW-01] Integrasi TextChatCommand untuk TextChatService modern
+	pcall(function()
+		local TextChatService = game:GetService("TextChatService")
+		local cmdFolder = TextChatService:FindFirstChild("TextChatCommands")
+		if cmdFolder then
+			local function registerTCC(name, primaryAlias)
+				local cmd = cmdFolder:FindFirstChild(name)
+				if not cmd then
+					cmd = Instance.new("TextChatCommand")
+					cmd.Name = name
+					cmd.PrimaryAlias = primaryAlias
+					cmd.Parent = cmdFolder
+				end
+				cmd.Triggered:Connect(function(textSource, rawMsg)
+					local p = Players:GetPlayerByUserId(textSource.UserId)
+					if p then handleCommand(p, rawMsg) end
+				end)
+			end
+			registerTCC("CustomTeamCreate", ";create")
+			registerTCC("CustomTeamUncreate", ";uncreate")
+			registerTCC("CustomTeamMove", ";moveteam")
+		end
+	end)
+
+	local function hookPlayer(p)
+		p.Chatted:Connect(function(msg) handleCommand(p, msg) end)
+		p:GetPropertyChangedSignal("Team"):Connect(scheduleRefresh)
+	end
+
+	for _, p in ipairs(Players:GetPlayers()) do hookPlayer(p) end
+	Players.PlayerAdded:Connect(function(p)
+		hookPlayer(p)
+		task.delay(2, scheduleRefresh)
+	end)
+
+	Players.PlayerRemoving:Connect(function(p)
+		playerOverrides[p.UserId] = nil
+		assignedPlayers[p] = nil
+		task.delay(0.5, scheduleRefresh)
+	end)
 end
 
 return CustomTeams

@@ -157,6 +157,8 @@ local notificationQueue = {}
 local isShowingNotification = false
 
 local allButtons = {}
+local buttonColorMap = {}
+local buttonCategoryMap = {}
 local emoteIdCache = {}
 for name, id in pairs(AnimationRegistry.Dances) do
 	local norm = normalizeId(id)
@@ -251,13 +253,7 @@ local function freezeHumanoidForPose(character, freeze)
 end
 
 local function isCurrentAnimPose()
-	if not currentAnimation then return false end
-	for _, data in ipairs(allButtons) do
-		if data.button == currentAnimation and data.category == "Pose" then
-			return true
-		end
-	end
-	return false
+	return currentAnimation ~= nil and buttonCategoryMap[currentAnimation] == "Pose"
 end
 
 local function restoreCharacterAnimations(character)
@@ -325,14 +321,16 @@ local function showNotification(message, duration, bgColor)
 	end
 end
 
-trackConnection(syncNotificationRE.OnClientEvent:Connect(function(notifType, leaderName)
-	if notifType == "sync_success" then
+local NOTIF_HANDLERS = {
+	sync_success = function(leaderName)
 		local leaderPlayer = Players:FindFirstChild(leaderName)
 		local displayName = leaderPlayer and leaderPlayer.DisplayName or leaderName
 		showNotification("Coordinate dance are apply to " .. displayName, 2.5, Color3.fromRGB(0, 0, 0))
-	elseif notifType == "unsync_success" then
+	end,
+	unsync_success = function()
 		showNotification("Unsynced", 2, Color3.fromRGB(0, 0, 0))
-	elseif notifType == "leader_left" then
+	end,
+	leader_left = function(leaderName)
 		showNotification("LEAD " .. leaderName .. " meninggalkan server", 4, Color3.fromRGB(200, 30, 30))
 		if player.Character then
 			restoreCharacterAnimations(player.Character)
@@ -341,30 +339,28 @@ trackConnection(syncNotificationRE.OnClientEvent:Connect(function(notifType, lea
 				localSyncTrack = nil 
 			end
 		end
-	elseif notifType == "leader_blocked" then
+	end,
+	leader_blocked = function()
 		showNotification("You are a Dance Leader!\nCannot sync to followers", 3, Color3.fromRGB(0, 0, 0))
-	elseif notifType == "circular_blocked" then
+	end,
+	circular_blocked = function()
 		showNotification("Cannot create circular coordinate dance", 2.5, Color3.fromRGB(0, 0, 0))
-	end
+	end,
+}
+
+trackConnection(syncNotificationRE.OnClientEvent:Connect(function(notifType, leaderName)
+	local handler = NOTIF_HANDLERS[notifType]
+	if handler then handler(leaderName) end
 end))
 
 local previousAnimation = nil
 local function updateButtonVisuals()
 	if previousAnimation then
-		local originalColor = Color3.fromRGB(34, 34, 38)
-		for _, data in ipairs(allButtons) do
-			if data.button == previousAnimation then
-				originalColor = data.originalColor
-				break
-			end
-		end
-		previousAnimation.BackgroundColor3 = originalColor
+		previousAnimation.BackgroundColor3 = buttonColorMap[previousAnimation] or Color3.fromRGB(34, 34, 38)
 	end
-
 	if currentAnimation then
-		currentAnimation.BackgroundColor3 = Color3.fromRGB(50, 52, 60) 
+		currentAnimation.BackgroundColor3 = Color3.fromRGB(50, 52, 60)
 	end
-
 	previousAnimation = currentAnimation
 end
 
@@ -393,33 +389,15 @@ local function findAnimById(danceId)
 	if animByIdCache[danceId] then return animByIdCache[danceId] end
 
 	local numId = tostring(danceId):match("%d+")
-
-	for _, anim in ipairs(emotesFolder:GetChildren()) do
-		if anim:IsA("Animation") and anim.AnimationId == danceId then 
-			animByIdCache[danceId] = anim
-			return anim 
-		end
-	end
-	local poseFolder = emotesFolder:FindFirstChild("Pose")
-	if poseFolder then
-		for _, anim in ipairs(poseFolder:GetChildren()) do
-			if anim:IsA("Animation") and anim.AnimationId == danceId then 
-				animByIdCache[danceId] = anim
-				return anim 
-			end
-		end
-	end
-
-	if numId then
-		for _, anim in ipairs(emotesFolder:GetDescendants()) do
-			if anim:IsA("Animation") and anim.AnimationId:match("%d+") == numId then
+	for _, anim in ipairs(emotesFolder:GetDescendants()) do
+		if anim:IsA("Animation") then
+			if anim.AnimationId == danceId or (numId and anim.AnimationId:match("%d+") == numId) then
 				animByIdCache[danceId] = anim
 				return anim
 			end
 		end
 	end
 
-	-- Fallback instance agar sync tidak pernah gagal
 	local fallbackAnim = Instance.new("Animation")
 	fallbackAnim.Name = "DynamicSyncAnim"
 	fallbackAnim.AnimationId = danceId
@@ -1376,6 +1354,8 @@ local function createEmoteButton(animation, category)
 
 	newButton.Parent = containerlist
 	table.insert(allButtons, { button = newButton, animation = animation, category = category, name = animation.Name, originalColor = originalColor })
+	buttonColorMap[newButton] = originalColor
+	buttonCategoryMap[newButton] = category
 	return newButton
 end
 
@@ -1406,18 +1386,19 @@ function updateDisplay()
 	end)
 end
 
+local CATEGORY_BUTTONS = {
+	Dance = danceBtn,
+	Pose = poseBtn,
+	Favorite = favoriteBtn,
+}
+
 local function setActiveCategory(category)
 	currentCategory = category
-	-- Active tab: Dark/Black with pure white text. Inactive tabs: Medium gray pill with silver text.
-	danceBtn.BackgroundColor3 = (category == "Dance") and Color3.fromRGB(15, 15, 18) or Color3.fromRGB(68, 70, 75)
-	danceBtn.TextColor3 = (category == "Dance") and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(215, 215, 220)
-
-	poseBtn.BackgroundColor3 = (category == "Pose") and Color3.fromRGB(15, 15, 18) or Color3.fromRGB(68, 70, 75)
-	poseBtn.TextColor3 = (category == "Pose") and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(215, 215, 220)
-
-	favoriteBtn.BackgroundColor3 = (category == "Favorite") and Color3.fromRGB(15, 15, 18) or Color3.fromRGB(68, 70, 75)
-	favoriteBtn.TextColor3 = (category == "Favorite") and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(215, 215, 220)
-
+	for cat, btn in pairs(CATEGORY_BUTTONS) do
+		local sel = (cat == category)
+		btn.BackgroundColor3 = sel and Color3.fromRGB(15, 15, 18) or Color3.fromRGB(68, 70, 75)
+		btn.TextColor3 = sel and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(215, 215, 220)
+	end
 	updateDisplay()
 end
 
@@ -1581,8 +1562,25 @@ end)
 -- ANTI-DRIFT BACKGROUND SYNC (OPTIMIZED — 200ms INTERVAL, 60 STUD CULL)
 -- ============================================
 task.spawn(function()
-	local ANTI_DRIFT_INTERVAL = 0.2 -- 5x per detik (cukup untuk visual sync)
-	local CULL_DISTANCE = 60 -- Hanya sync player dalam 60 studs
+	local ANTI_DRIFT_INTERVAL = 0.2
+	local CULL_DISTANCE = 60
+
+	local function wrapDiff(diff, len)
+		if diff > len / 2 then return diff - len end
+		if diff < -len / 2 then return diff + len end
+		return diff
+	end
+
+	local function syncTrackPosition(track, targetPos, targetSpeed, snapThreshold)
+		if track.Length <= 0 then return end
+		local diff = wrapDiff(targetPos - track.TimePosition, track.Length)
+		if math.abs(diff) > (snapThreshold or 0.03) then
+			pcall(function() track.TimePosition = targetPos end)
+			pcall(function() track:AdjustSpeed(targetSpeed) end)
+		elseif math.abs(track.Speed - targetSpeed) > 0.02 then
+			pcall(function() track:AdjustSpeed(targetSpeed) end)
+		end
+	end
 
 	while isScriptActive do 
 		task.wait(ANTI_DRIFT_INTERVAL)
@@ -1592,15 +1590,12 @@ task.spawn(function()
 		local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
 		if not myHrp then continue end
 
-		-- 🔥 OPTIMASI LIVE SERVER: Jika player sedang tidak menari & tidak sync (misal cuma "jalan doang"),
-		-- lewati pemrosesan anti-drift untuk 20+ player lain agar tidak membebani CPU & Animator
 		local isDancing = (localAnimTrack and localAnimTrack.IsPlaying) or (localSyncTrack and localSyncTrack.IsPlaying)
 		if not isDancing and not isSyncing then
 			task.wait(1.0)
 			continue
 		end
 
-		-- 1. Anti-drift untuk LOCAL PLAYER jika sedang SYNCING ke leader
 		local activeLeader = currentLeaderName or (myChar and myChar:GetAttribute("Syncing"))
 		if isSyncing and localSyncTrack and localSyncTrack.IsPlaying and activeLeader then
 			local leaderPlayer = Players:FindFirstChild(activeLeader)
@@ -1615,22 +1610,15 @@ task.spawn(function()
 					local ltId = lt.Animation and lt.Animation.AnimationId
 					if ltId and (normalizeId(ltId) == myNorm or ltId == myAnimId) and lt.IsPlaying then
 						if localSyncTrack.Length > 0 then
-							local diff = lt.TimePosition - localSyncTrack.TimePosition
-							if diff > localSyncTrack.Length / 2 then diff = diff - localSyncTrack.Length end
-							if diff < -localSyncTrack.Length / 2 then diff = diff + localSyncTrack.Length end
-
+							local diff = wrapDiff(lt.TimePosition - localSyncTrack.TimePosition, localSyncTrack.Length)
 							local leaderSpeed = leaderChar:GetAttribute("DanceSpeed") or lt.Speed
 							local absDiff = math.abs(diff)
 
-							-- 1. Deadzone (<= 0.05s / 50ms): Animasi presisi sinkron, kunci ke speed leader
 							if absDiff <= 0.05 then
 								pcall(function() localSyncTrack:AdjustSpeed(leaderSpeed) end)
-							-- 2. Micro-Pitch Catch-up (0.05s s/d 0.40s): Sesuaikan tempo ±5% s/d ±15% tanpa patah-patah!
 							elseif absDiff <= 0.40 then
 								local nudge = math.clamp(diff * 0.35, -0.15, 0.15)
-								local smoothSpeed = math.max(0.05, leaderSpeed * (1 + nudge))
-								pcall(function() localSyncTrack:AdjustSpeed(smoothSpeed) end)
-							-- 3. Hard Desync (> 0.40s): Hanya snap jika desinkronisasi parah (lag spike / minimize)
+								pcall(function() localSyncTrack:AdjustSpeed(math.max(0.05, leaderSpeed * (1 + nudge))) end)
 							else
 								pcall(function() localSyncTrack.TimePosition = lt.TimePosition end)
 								pcall(function() localSyncTrack:AdjustSpeed(leaderSpeed) end)
@@ -1642,23 +1630,19 @@ task.spawn(function()
 				end
 			end
 
-			-- Fallback ke DanceStartTime server jika track leader di client belum ke-load
 			if not synced and leaderChar and localSyncTrack.Length > 0 then
 				local sTime = fakeStartTimes[leaderChar] or leaderChar:GetAttribute("DanceStartTime")
 				local sSpeed = leaderChar:GetAttribute("DanceSpeed") or 1
 				if sTime then
 					local expectedPos = ((workspace:GetServerTimeNow() - sTime) * sSpeed) % localSyncTrack.Length
-					local diff = expectedPos - localSyncTrack.TimePosition
-					if diff > localSyncTrack.Length / 2 then diff = diff - localSyncTrack.Length end
-					if diff < -localSyncTrack.Length / 2 then diff = diff + localSyncTrack.Length end
+					local diff = wrapDiff(expectedPos - localSyncTrack.TimePosition, localSyncTrack.Length)
 					local absDiff = math.abs(diff)
 
 					if absDiff <= 0.05 then
 						pcall(function() localSyncTrack:AdjustSpeed(sSpeed) end)
 					elseif absDiff <= 0.40 then
 						local nudge = math.clamp(diff * 0.35, -0.15, 0.15)
-						local smoothSpeed = math.max(0.05, sSpeed * (1 + nudge))
-						pcall(function() localSyncTrack:AdjustSpeed(smoothSpeed) end)
+						pcall(function() localSyncTrack:AdjustSpeed(math.max(0.05, sSpeed * (1 + nudge))) end)
 					else
 						pcall(function() localSyncTrack.TimePosition = expectedPos end)
 						pcall(function() localSyncTrack:AdjustSpeed(sSpeed) end)
@@ -1667,122 +1651,77 @@ task.spawn(function()
 			end
 		end
 
-		-- 2. Anti-drift untuk SEMUA PLAYER di sekitar (60 studs)
 		local myReferenceTrack = localSyncTrack or localAnimTrack
 
 		for _, p in ipairs(Players:GetPlayers()) do
 			local char = p.Character
-			if char and char ~= myChar then
-				local targetHrp = char:FindFirstChild("HumanoidRootPart")
-				if not targetHrp or (myHrp.Position - targetHrp.Position).Magnitude > CULL_DISTANCE then 
-					continue 
-				end
+			if not (char and char ~= myChar) then continue end
 
-				local animator = char:FindFirstChild("Humanoid") and char.Humanoid:FindFirstChild("Animator")
-				if not animator then continue end
+			local targetHrp = char:FindFirstChild("HumanoidRootPart")
+			if not targetHrp or (myHrp.Position - targetHrp.Position).Magnitude > CULL_DISTANCE then 
+				continue 
+			end
 
-				local syncingTo = char:GetAttribute("Syncing")
+			local animator = char:FindFirstChild("Humanoid") and char.Humanoid:FindFirstChild("Animator")
+			if not animator then continue end
 
-				-- Skenario A: Player ini sedang sync ke SAYA (Local Player adalah Leader)
-				if syncingTo == player.Name then
-					if myReferenceTrack and myReferenceTrack.IsPlaying then
-						local myNorm = myReferenceTrack.Animation and normalizeId(myReferenceTrack.Animation.AnimationId)
-						for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-							local tId = track.Animation and track.Animation.AnimationId
-							if tId and (normalizeId(tId) == myNorm or tId == myReferenceTrack.Animation.AnimationId) then
-								local exactPos = myReferenceTrack.TimePosition
-								local diff = exactPos - track.TimePosition
+			local syncingTo = char:GetAttribute("Syncing")
 
-								if track.Length > 0 then
-									if diff > track.Length / 2 then diff = diff - track.Length end
-									if diff < -track.Length / 2 then diff = diff + track.Length end
-
-									-- 🔥 0ms FRAME-PERFECT SYNC: Snap jika selisih > 30ms (<2 frame)
-									if math.abs(diff) > 0.03 then
-										pcall(function() track.TimePosition = exactPos end)
-										pcall(function() track:AdjustSpeed(currentSpeed) end)
-									else
-										if math.abs(track.Speed - currentSpeed) > 0.02 then
-											pcall(function() track:AdjustSpeed(currentSpeed) end)
-										end
-									end
-								end
-							end
+			if syncingTo == player.Name then
+				if myReferenceTrack and myReferenceTrack.IsPlaying then
+					local myNorm = myReferenceTrack.Animation and normalizeId(myReferenceTrack.Animation.AnimationId)
+					for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+						local tId = track.Animation and track.Animation.AnimationId
+						if tId and (normalizeId(tId) == myNorm or tId == myReferenceTrack.Animation.AnimationId) then
+							syncTrackPosition(track, myReferenceTrack.TimePosition, currentSpeed, 0.03)
 						end
 					end
-					continue 
 				end
+				continue 
+			end
 
-				-- Skenario B: Player ini sedang sync ke PLAYER LAIN (Leader bukan saya)
-				if syncingTo and syncingTo ~= "" then
-					local leader = Players:FindFirstChild(syncingTo)
-					local leaderChar = leader and leader.Character
-					local leaderAnimator = leaderChar and leaderChar:FindFirstChild("Humanoid") and leaderChar.Humanoid:FindFirstChild("Animator")
-					local currentDanceId = char:GetAttribute("CurrentDanceID")
-					local danceNorm = currentDanceId and normalizeId(currentDanceId)
-
-					local leaderTrack = nil
-					if leaderAnimator then
-						for _, lt in ipairs(leaderAnimator:GetPlayingAnimationTracks()) do
-							local ltId = lt.Animation and lt.Animation.AnimationId
-							if ltId and (normalizeId(ltId) == danceNorm or ltId == currentDanceId) and lt.IsPlaying then
-								leaderTrack = lt
-								break
-							end
-						end
-					end
-
-					if leaderTrack and leaderTrack.Length > 0 then
-						for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-							local tId = track.Animation and track.Animation.AnimationId
-							if tId and (normalizeId(tId) == danceNorm or tId == currentDanceId) then
-								local exactPos = leaderTrack.TimePosition
-								local diff = exactPos - track.TimePosition
-
-								if track.Length > 0 then
-									if diff > track.Length / 2 then diff = diff - track.Length end
-									if diff < -track.Length / 2 then diff = diff + track.Length end
-
-									if math.abs(diff) > 0.03 then
-										pcall(function() track.TimePosition = exactPos end)
-										pcall(function() track:AdjustSpeed(leaderTrack.Speed) end)
-									end
-								end
-							end
-						end
-						continue
-					end
-				end
-
-				-- Skenario C: Solo dancer (Fallback ke Server Time)
-				local startTime = fakeStartTimes[char] or char:GetAttribute("DanceStartTime")
-				local speed = char:GetAttribute("DanceSpeed") or 1
+			if syncingTo and syncingTo ~= "" then
+				local leader = Players:FindFirstChild(syncingTo)
+				local leaderChar = leader and leader.Character
+				local leaderAnimator = leaderChar and leaderChar:FindFirstChild("Humanoid") and leaderChar.Humanoid:FindFirstChild("Animator")
 				local currentDanceId = char:GetAttribute("CurrentDanceID")
+				local danceNorm = currentDanceId and normalizeId(currentDanceId)
 
-				if startTime and currentDanceId then
-					local danceNorm = normalizeId(currentDanceId)
+				local leaderTrack
+				if leaderAnimator then
+					for _, lt in ipairs(leaderAnimator:GetPlayingAnimationTracks()) do
+						local ltId = lt.Animation and lt.Animation.AnimationId
+						if ltId and (normalizeId(ltId) == danceNorm or ltId == currentDanceId) and lt.IsPlaying then
+							leaderTrack = lt
+							break
+						end
+					end
+				end
+
+				if leaderTrack and leaderTrack.Length > 0 then
 					for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
 						local tId = track.Animation and track.Animation.AnimationId
 						if tId and (normalizeId(tId) == danceNorm or tId == currentDanceId) then
-							if track.Length > 0 then
-								local elapsed = workspace:GetServerTimeNow() - startTime
-								local exactPos = (elapsed * speed) % track.Length
+							syncTrackPosition(track, leaderTrack.TimePosition, leaderTrack.Speed, 0.03)
+						end
+					end
+					continue
+				end
+			end
 
-								if exactPos > 0 then
-									local diff = exactPos - track.TimePosition
-									if diff > track.Length / 2 then diff = diff - track.Length end
-									if diff < -track.Length / 2 then diff = diff + track.Length end
+			local startTime = fakeStartTimes[char] or char:GetAttribute("DanceStartTime")
+			local speed = char:GetAttribute("DanceSpeed") or 1
+			local currentDanceId = char:GetAttribute("CurrentDanceID")
 
-									if math.abs(diff) > 0.03 then
-										pcall(function() track.TimePosition = exactPos end)
-										pcall(function() track:AdjustSpeed(speed) end)
-									else
-										if math.abs(track.Speed - speed) > 0.02 then
-											pcall(function() track:AdjustSpeed(speed) end)
-										end
-									end
-								end
-							end
+			if startTime and currentDanceId then
+				local danceNorm = normalizeId(currentDanceId)
+				for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+					local tId = track.Animation and track.Animation.AnimationId
+					if tId and (normalizeId(tId) == danceNorm or tId == currentDanceId) and track.Length > 0 then
+						local elapsed = workspace:GetServerTimeNow() - startTime
+						local exactPos = (elapsed * speed) % track.Length
+						if exactPos > 0 then
+							syncTrackPosition(track, exactPos, speed, 0.03)
 						end
 					end
 				end

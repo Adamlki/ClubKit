@@ -223,13 +223,17 @@ local function resolveUserId(donatorName)
 		return activePlayer.UserId
 	end
 
+	local ownerId = ServerConfig.GetPrimaryOwnerId()
+	if ownerId and ownerId > 0 then
+		return ownerId
+	end
+
 	return 1
 end
 
 -- ============================================
 -- MAIN MODULE
 -- ============================================
-local SaweriaScreenBoardHandler = {}
 
 function SaweriaScreenBoardHandler:ShowDonationMessage(donatorName, amount, message)
 	if not CONFIG.ENABLED then return false end
@@ -249,7 +253,11 @@ function SaweriaScreenBoardHandler:ShowDonationMessage(donatorName, amount, mess
 	if targetPlayer then
 		displayNameText = string.format("%s (@%s)", targetPlayer.DisplayName, targetPlayer.Name)
 	else
-		displayNameText = string.format("%s (@%s)", donatorName, donatorName:lower():gsub("%s+", ""))
+		local filteredDonator = filterMessage(donatorName, userId)
+		if filteredDonator == CONFIG.DEFAULT_MESSAGE then
+			filteredDonator = "Donatur"
+		end
+		displayNameText = string.format("%s (@%s)", filteredDonator, filteredDonator:lower():gsub("%s+", ""))
 	end
 
 	task.spawn(function()

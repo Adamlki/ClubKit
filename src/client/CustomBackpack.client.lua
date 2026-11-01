@@ -3,27 +3,20 @@ local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
-local RunService = game:GetService("RunService")
 
 local isMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
 
-local function disableBackpack()
-	pcall(function()
-		StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
-	end)
-end
-
-disableBackpack()
+pcall(function()
+	StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
+end)
 
 local CONFIG = {
 	ClickSoundId = "rbxassetid://4499400560",
-
 	SlotSize = isMobile and 30 or 50,
 	Padding = 4,
 	SectionPadding = 6,
 	CornerRadius = 14,
 	MaxHotbarSlots = 9,
-
 	AnimSpeed = 0.3,
 	ClickCooldown = 0.5,
 	Colors = {
@@ -33,32 +26,37 @@ local CONFIG = {
 		SubText = Color3.fromRGB(140, 140, 140),
 		Border = Color3.fromRGB(25, 25, 25),
 	},
-
 	EyeOpenId = "rbxassetid://125603824847579", 
 	EyeClosedId = "rbxassetid://70802654569830", 
+}
+
+local KEY_TO_SLOT = {
+	[Enum.KeyCode.One]   = 1, [Enum.KeyCode.Two]   = 2, [Enum.KeyCode.Three] = 3,
+	[Enum.KeyCode.Four]  = 4, [Enum.KeyCode.Five]  = 5, [Enum.KeyCode.Six]   = 6,
+	[Enum.KeyCode.Seven] = 7, [Enum.KeyCode.Eight] = 8, [Enum.KeyCode.Nine]  = 9,
 }
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-local function getTotalTools()
-	local count = 0
+local function forEachTool(callback)
 	local backpack = player:FindFirstChild("Backpack")
 	if backpack then
 		for _, item in ipairs(backpack:GetChildren()) do
-			if item:IsA("Tool") then
-				count += 1
-			end
+			if item:IsA("Tool") then callback(item) end
 		end
 	end
 	local char = player.Character
 	if char then
 		for _, item in ipairs(char:GetChildren()) do
-			if item:IsA("Tool") then
-				count += 1
-			end
+			if item:IsA("Tool") then callback(item) end
 		end
 	end
+end
+
+local function getTotalTools()
+	local count = 0
+	forEachTool(function() count += 1 end)
 	return count
 end
 
@@ -112,9 +110,9 @@ hbList.Padding = UDim.new(0, CONFIG.Padding)
 hbList.Parent = hotbarFrame
 
 local hbPadding = Instance.new("UIPadding")
-local p = CONFIG.Padding
-hbPadding.PaddingLeft, hbPadding.PaddingRight = UDim.new(0, p), UDim.new(0, p)
-hbPadding.PaddingTop, hbPadding.PaddingBottom = UDim.new(0, p), UDim.new(0, p)
+local pad = CONFIG.Padding
+hbPadding.PaddingLeft, hbPadding.PaddingRight = UDim.new(0, pad), UDim.new(0, pad)
+hbPadding.PaddingTop, hbPadding.PaddingBottom = UDim.new(0, pad), UDim.new(0, pad)
 hbPadding.Parent = hotbarFrame
 
 local isHotbarCollapsed = false
@@ -153,51 +151,39 @@ local function setHotbarCollapsed(collapsed)
 	eyeIcon.Image = collapsed and CONFIG.EyeClosedId or CONFIG.EyeOpenId
 
 	local targetPadding = collapsed and UDim.new(0, 0) or UDim.new(0, CONFIG.Padding)
-	TweenService:Create(hbList, TweenInfo.new(CONFIG.AnimSpeed, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Padding = targetPadding}):Play()
+	TweenService:Create(hbList, TweenInfo.new(CONFIG.AnimSpeed, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Padding = targetPadding }):Play()
 
 	for _, v in pairs(hotbarFrame:GetChildren()) do
 		if v:IsA("GuiButton") and v.Name ~= "EyeBtn" then
-			if not collapsed then
-				v.Visible = true
-			end
+			if not collapsed then v.Visible = true end
 
 			local targetSize = collapsed and UDim2.new(0, 0, 0, CONFIG.SlotSize) or UDim2.new(0, CONFIG.SlotSize, 0, CONFIG.SlotSize)
-			local targetBgTrans = 0.1
-
-			if not collapsed then
-				if v.BackgroundColor3 == Color3.fromRGB(25, 25, 25) then
-					targetBgTrans = 0
-				end
-			else
-				targetBgTrans = 1
-			end
+			local targetBgTrans = collapsed and 1 or (v.BackgroundColor3 == Color3.fromRGB(25, 25, 25) and 0 or 0.1)
 
 			local twParams = {
 				Size = targetSize,
-				BackgroundTransparency = targetBgTrans
+				BackgroundTransparency = targetBgTrans,
 			}
-
 			if v:IsA("ImageButton") then twParams.ImageTransparency = collapsed and 1 or 0 end
 			if v:IsA("TextButton") then twParams.TextTransparency = collapsed and 1 or 0 end
 
 			local tw = TweenService:Create(v, TweenInfo.new(CONFIG.AnimSpeed, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), twParams)
 			tw:Play()
 
+			local transTarget = collapsed and 1 or 0
 			for _, child in pairs(v:GetChildren()) do
 				if child:IsA("ImageLabel") then
-					TweenService:Create(child, TweenInfo.new(CONFIG.AnimSpeed), {ImageTransparency = collapsed and 1 or 0}):Play()
+					TweenService:Create(child, TweenInfo.new(CONFIG.AnimSpeed), { ImageTransparency = transTarget }):Play()
 				elseif child:IsA("TextLabel") then
-					TweenService:Create(child, TweenInfo.new(CONFIG.AnimSpeed), {TextTransparency = collapsed and 1 or 0}):Play()
+					TweenService:Create(child, TweenInfo.new(CONFIG.AnimSpeed), { TextTransparency = transTarget }):Play()
 				elseif child:IsA("UIStroke") then
-					TweenService:Create(child, TweenInfo.new(CONFIG.AnimSpeed), {Transparency = collapsed and 1 or 0}):Play()
+					TweenService:Create(child, TweenInfo.new(CONFIG.AnimSpeed), { Transparency = transTarget }):Play()
 				end
 			end
 
 			if collapsed then
 				tw.Completed:Once(function()
-					if isHotbarCollapsed then
-						v.Visible = false
-					end
+					if isHotbarCollapsed then v.Visible = false end
 				end)
 			end
 		end
@@ -209,7 +195,6 @@ eyeBtn.MouseButton1Click:Connect(function()
 	local now = os.clock()
 	if now - lastEyeClick < 0.3 then return end
 	lastEyeClick = now
-
 	playSound()
 	setHotbarCollapsed(not isHotbarCollapsed)
 end)
@@ -253,43 +238,21 @@ local function cleanSlots()
 end
 
 local function autoBindTool(tool)
-	if not tool or not tool:IsA("Tool") then return end
-	if isToolInHotbar(tool) then return end
+	if not tool or not tool:IsA("Tool") or isToolInHotbar(tool) then return end
 	local slot = getNextFreeSlot()
 	if slot then BoundSlots[slot] = tool end
 end
 
 local function autoBindInitial()
-	local backpack = player:FindFirstChild("Backpack")
-	if backpack then
-		for _, tool in ipairs(backpack:GetChildren()) do
-			if tool:IsA("Tool") then
-				autoBindTool(tool)
-			end
-		end
-	end
-	local char = player.Character
-	if char then
-		for _, tool in ipairs(char:GetChildren()) do
-			if tool:IsA("Tool") then
-				autoBindTool(tool)
-			end
-		end
-	end
+	forEachTool(autoBindTool)
 end
 
--- ============================================
--- 🛡️ PROTEKSI ANTI-SPAM KLIK TOOLS (COOLDOWN 0.5s)
--- ============================================
 local lastToolActionTime = 0
-
 local function toggleTool(tool, btn)
 	if not tool or not tool:IsA("Tool") then return false end
 
 	local now = os.clock()
-	if (now - lastToolActionTime) < CONFIG.ClickCooldown then
-		return false
-	end
+	if (now - lastToolActionTime) < CONFIG.ClickCooldown then return false end
 	lastToolActionTime = now
 
 	local char = player.Character
@@ -344,20 +307,18 @@ local function makeSlotButton(parent, slotIndex, tool, isEquipped, layoutOrder)
 	num.Parent = btn
 
 	if tool then
+		local stroke = Instance.new("UIStroke")
+		stroke.Parent = btn
 		if isEquipped then
-			local stroke = Instance.new("UIStroke")
 			stroke.Color = Color3.fromRGB(200, 200, 215)
 			stroke.Thickness = 1.5
 			stroke.Transparency = 0.1
-			stroke.Parent = btn
 			btn.BackgroundTransparency = 0
 			btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
 		else
-			local stroke = Instance.new("UIStroke")
 			stroke.Color = CONFIG.Colors.Border
 			stroke.Thickness = 1
 			stroke.Transparency = 0.3
-			stroke.Parent = btn
 			btn.BackgroundTransparency = 0.2
 			btn.BackgroundColor3 = CONFIG.Colors.Container
 		end
@@ -387,7 +348,6 @@ local function makeSlotButton(parent, slotIndex, tool, isEquipped, layoutOrder)
 			local now = os.clock()
 			if now - lastSlotClick < 0.3 then return end
 			lastSlotClick = now
-
 			toggleTool(tool, btn)
 		end)
 	else
@@ -401,8 +361,7 @@ end
 local function updateVisuals()
 	cleanSlots()
 
-	local totalTools = getTotalTools()
-	if totalTools == 0 then
+	if getTotalTools() == 0 then
 		mainContainer.Visible = false
 		return
 	end
@@ -442,20 +401,13 @@ local function updateVisuals()
 end
 
 UserInputService.InputBegan:Connect(function(input, processed)
-	if processed then return end
-	if input.UserInputType == Enum.UserInputType.Keyboard then
-		local map = {
-			[Enum.KeyCode.One]=1,[Enum.KeyCode.Two]=2,[Enum.KeyCode.Three]=3,
-			[Enum.KeyCode.Four]=4,[Enum.KeyCode.Five]=5,[Enum.KeyCode.Six]=6,
-			[Enum.KeyCode.Seven]=7,[Enum.KeyCode.Eight]=8,[Enum.KeyCode.Nine]=9
-		}
-		local slotNum = map[input.KeyCode]
-		if slotNum and not isHotbarCollapsed and getTotalTools() > 0 then
-			local tool = BoundSlots[slotNum]
-			if tool then
-				local btn = hotbarFrame:FindFirstChild("Slot" .. slotNum)
-				toggleTool(tool, btn)
-			end
+	if processed or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+
+	local slotNum = KEY_TO_SLOT[input.KeyCode]
+	if slotNum and not isHotbarCollapsed and getTotalTools() > 0 then
+		local tool = BoundSlots[slotNum]
+		if tool then
+			toggleTool(tool, hotbarFrame:FindFirstChild("Slot" .. slotNum))
 		end
 	end
 end)
@@ -463,9 +415,7 @@ end)
 local eventConnections = {}
 local function clearEventConnections()
 	for _, conn in ipairs(eventConnections) do
-		if conn then
-			conn:Disconnect()
-		end
+		if conn then conn:Disconnect() end
 	end
 	table.clear(eventConnections)
 end
@@ -476,31 +426,22 @@ local function hookEvents()
 	local backpack = player:WaitForChild("Backpack")
 	local char = player.Character
 
-	table.insert(eventConnections, backpack.ChildAdded:Connect(function(child)
-		if child:IsA("Tool") then
-			task.defer(function() cleanSlots() autoBindTool(child) updateVisuals() end)
-		end
-	end))
-
-	table.insert(eventConnections, backpack.ChildRemoved:Connect(function(child)
-		if child:IsA("Tool") then
-			task.defer(function() cleanSlots() updateVisuals() end)
-		end
-	end))
-
-	if char then
-		table.insert(eventConnections, char.ChildAdded:Connect(function(child)
+	local function listenContainer(container)
+		if not container then return end
+		table.insert(eventConnections, container.ChildAdded:Connect(function(child)
 			if child:IsA("Tool") then
 				task.defer(function() cleanSlots() autoBindTool(child) updateVisuals() end)
 			end
 		end))
-
-		table.insert(eventConnections, char.ChildRemoved:Connect(function(child)
+		table.insert(eventConnections, container.ChildRemoved:Connect(function(child)
 			if child:IsA("Tool") then
 				task.defer(function() cleanSlots() updateVisuals() end)
 			end
 		end))
 	end
+
+	listenContainer(backpack)
+	listenContainer(char)
 end
 
 if player.Character then
@@ -521,4 +462,3 @@ player.CharacterRemoving:Connect(function()
 	mainContainer.Visible = false
 	clearEventConnections()
 end)
-

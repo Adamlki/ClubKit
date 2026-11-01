@@ -1,16 +1,10 @@
 --!optimize 2
 
--- ============================================
--- SINGLETON PROTECTION & GLOBAL FLAGS
--- ============================================
 if _G.__SettingClientLoaded then return end
 _G.__SettingClientLoaded = true
 
 local ClientSettingsState = require(script.Parent:WaitForChild("Modules"):WaitForChild("ClientSettingsState"))
 
--- ============================================
--- CONFIGURATION
--- ============================================
 local CONFIG = {
 	DEBUG_MODE = false, 
 	DEBUG_DETAILED = false, 
@@ -34,11 +28,7 @@ local CONFIG = {
 	BG_COLOR_OFF = Color3.fromRGB(28, 28, 28),
 }
 
--- ============================================
--- SERVICES
--- ============================================
 local player = game:GetService("Players")
-local replicatedstorage = game:GetService("ReplicatedStorage")
 local tweenservice = game:GetService("TweenService")
 local lighting = game:GetService("Lighting")
 local textChatService = game:GetService("TextChatService")
@@ -47,9 +37,6 @@ local collectionService = game:GetService("CollectionService")
 local localPlayer = player.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
 
--- ============================================
--- UI REFERENCES
--- ============================================
 local gui = script.Parent:IsA("ScreenGui") and script.Parent or playerGui:WaitForChild("SettingGui", 30)
 if not gui then
 	warn("[SettingClient] SettingGui tidak ditemukan di PlayerGui dalam 30 detik!")
@@ -67,9 +54,6 @@ local containerframe = mainframe:WaitForChild("ContainerFrame")
 local templateframe = containerframe:WaitForChild("TemplateFrame")
 templateframe.Visible = false
 
--- ============================================
--- UTILITY FUNCTIONS
--- ============================================
 local Utils = {}
 
 function Utils:IsAura(object)
@@ -84,15 +68,12 @@ end
 function Utils:AnimateButton(button, bg, isActive)
 	button.AnchorPoint = Vector2.new(0.5, 0.5)
 	local tweenInfo = TweenInfo.new(CONFIG.ANIMATION_DURATION, CONFIG.ANIMATION_STYLE, CONFIG.ANIMATION_DIRECTION)
-	local newPosition = isActive and CONFIG.BUTTON_POS_ON or CONFIG.BUTTON_POS_OFF
-	local newColor = isActive and CONFIG.BG_COLOR_ON or CONFIG.BG_COLOR_OFF
 	local stroke = bg:FindFirstChildOfClass("UIStroke")
 	if stroke then
-		local newStrokeColor = isActive and Color3.fromRGB(46, 210, 115) or Color3.fromRGB(44, 44, 44)
-		tweenservice:Create(stroke, tweenInfo, {Color = newStrokeColor}):Play()
+		tweenservice:Create(stroke, tweenInfo, { Color = isActive and Color3.fromRGB(46, 210, 115) or Color3.fromRGB(44, 44, 44) }):Play()
 	end
-	tweenservice:Create(button, tweenInfo, {Position = newPosition}):Play()
-	tweenservice:Create(bg, tweenInfo, {BackgroundColor3 = newColor}):Play()
+	tweenservice:Create(button, tweenInfo, { Position = isActive and CONFIG.BUTTON_POS_ON or CONFIG.BUTTON_POS_OFF }):Play()
+	tweenservice:Create(bg, tweenInfo, { BackgroundColor3 = isActive and CONFIG.BG_COLOR_ON or CONFIG.BG_COLOR_OFF }):Play()
 end
 
 function Utils:HideBasePart(part, shouldHide)
@@ -103,48 +84,30 @@ function Utils:HideBasePart(part, shouldHide)
 		if part:GetAttribute("OriginalTransparency") == nil then
 			part:SetAttribute("OriginalTransparency", part.Transparency)
 		end
-		if shouldHide then
-			part.Transparency = 1
-		else
-			part.Transparency = part:GetAttribute("OriginalTransparency") or 0
-		end
+		part.Transparency = shouldHide and 1 or (part:GetAttribute("OriginalTransparency") or 0)
 		return true
 	end
 	return false
 end
 
+function Utils:HideEnabled(obj, shouldHide)
+	if obj:GetAttribute("OriginalEnabled") == nil then
+		obj:SetAttribute("OriginalEnabled", obj.Enabled)
+	end
+	obj.Enabled = if shouldHide then false else (obj:GetAttribute("OriginalEnabled") == true)
+	return true
+end
+
 function Utils:HideEffect(effect, shouldHide)
 	if effect:IsA("ParticleEmitter") or effect:IsA("Fire") or effect:IsA("Smoke") or effect:IsA("Sparkles") or effect:IsA("Trail") or effect:IsA("Beam") then
-
-		-- [TAMBAHKAN INI]: Simpan kondisi asli sebelum dimanipulasi
-		if effect:GetAttribute("OriginalEnabled") == nil then
-			effect:SetAttribute("OriginalEnabled", effect.Enabled)
-		end
-
-		if shouldHide then
-			effect.Enabled = false
-		else
-			-- [UBAH INI]: Kembalikan ke kondisi asli, bukan dipaksa 'true'
-			effect.Enabled = effect:GetAttribute("OriginalEnabled")
-		end
-		return true
+		return self:HideEnabled(effect, shouldHide)
 	end
 	return false
 end
 
 function Utils:HideLight(light, shouldHide)
-	if light:IsA("Light") or light:IsA("PointLight") or light:IsA("SpotLight") or light:IsA("SurfaceLight") then
-
-		if light:GetAttribute("OriginalEnabled") == nil then
-			light:SetAttribute("OriginalEnabled", light.Enabled)
-		end
-
-		if shouldHide then
-			light.Enabled = false
-		else
-			light.Enabled = light:GetAttribute("OriginalEnabled")
-		end
-		return true
+	if light:IsA("Light") then
+		return self:HideEnabled(light, shouldHide)
 	end
 	return false
 end
@@ -157,9 +120,6 @@ function Utils:HideGui(guiObj, shouldHide)
 	return false
 end
 
--- ============================================
--- SYSTEM DECLARATIONS
--- ============================================
 local OverheadSystem = {}
 local BubbleChatSystem = {}
 local ShadowSystem = {}
@@ -180,16 +140,13 @@ local FeatureManager = {
 	featureStates = {}
 }
 
--- ============================================
--- FEATURES CONFIGURATION
--- ============================================
 local FEATURES = {
 	{
 		id = "overhead",
 		name = "Hide Player Name",
 		defaultState = false,
 		onToggle = function(self, isActive) OverheadSystem:SetVisible(not isActive) end,
-		onCharacterAdded = function(self, character, player) OverheadSystem:OnCharacterAdded(character, player) end
+		onCharacterAdded = function(self, character, p) OverheadSystem:OnCharacterAdded(character, p) end
 	},
 	{
 		id = "bubblechat",
@@ -208,14 +165,14 @@ local FEATURES = {
 		name = "Hide All Players",
 		defaultState = false,
 		onToggle = function(self, isActive) PlayerHideSystem:SetPlayersVisible(not isActive) end,
-		onCharacterAdded = function(self, character, player) PlayerHideSystem:OnCharacterAdded(character, player) end
+		onCharacterAdded = function(self, character, p) PlayerHideSystem:OnCharacterAdded(character, p) end
 	},
 	{
 		id = "effects",
 		name = "Hide Effect Player",
 		defaultState = false,
 		onToggle = function(self, isActive) EffectsSystem:SetEffectsVisible(not isActive) end,
-		onCharacterAdded = function(self, character, player) EffectsSystem:OnCharacterAdded(character, player) end
+		onCharacterAdded = function(self, character, p) EffectsSystem:OnCharacterAdded(character, p) end
 	},
 	{
 		id = "donationeffect",
@@ -243,9 +200,6 @@ local FEATURES = {
 	}
 }
 
--- ============================================
--- FEATURE MANAGER
--- ============================================
 function FeatureManager:RegisterFeature(featureConfig)
 	if not featureConfig.id or not featureConfig.name then return false end
 
@@ -258,19 +212,17 @@ function FeatureManager:RegisterFeature(featureConfig)
 	if label then label.Text = featureConfig.name end
 
 	local bg = featureFrame:FindFirstChild("Templatebg")
-	if not bg then return false end
+	local button = bg and (bg:FindFirstChild("OnBtn") or bg:FindFirstChild("TemplateBtn"))
+	if not bg or not button then return false end
 
-	local button = bg:FindFirstChild("OnBtn") or bg:FindFirstChild("TemplateBtn")
-	if not button then return false end
-
-	self.featureStates[featureConfig.id] = featureConfig.defaultState or false
+	local isActive = featureConfig.defaultState or false
+	self.featureStates[featureConfig.id] = isActive
 
 	local lastToggleClick = 0
 	button.MouseButton1Click:Connect(function()
 		local now = os.clock()
 		if now - lastToggleClick < 0.3 then return end
 		lastToggleClick = now
-
 		self:ToggleFeature(featureConfig.id)
 	end)
 
@@ -279,34 +231,25 @@ function FeatureManager:RegisterFeature(featureConfig)
 		button = button, bg = bg, label = label
 	}
 
-	if self.featureStates[featureConfig.id] then
-		button.Position = CONFIG.BUTTON_POS_ON
-		bg.BackgroundColor3 = CONFIG.BG_COLOR_ON
-		local stroke = bg:FindFirstChildOfClass("UIStroke")
-		if stroke then stroke.Color = Color3.fromRGB(46, 210, 115) end
-		if featureConfig.onToggle then
-			task.spawn(function() featureConfig.onToggle(featureConfig, true) end)
-		end
-	else
-		button.Position = CONFIG.BUTTON_POS_OFF
-		bg.BackgroundColor3 = CONFIG.BG_COLOR_OFF
-		local stroke = bg:FindFirstChildOfClass("UIStroke")
-		if stroke then stroke.Color = Color3.fromRGB(44, 44, 44) end
-		if featureConfig.onToggle then
-			task.spawn(function() featureConfig.onToggle(featureConfig, false) end)
-		end
+	button.Position = isActive and CONFIG.BUTTON_POS_ON or CONFIG.BUTTON_POS_OFF
+	bg.BackgroundColor3 = isActive and CONFIG.BG_COLOR_ON or CONFIG.BG_COLOR_OFF
+	local stroke = bg:FindFirstChildOfClass("UIStroke")
+	if stroke then stroke.Color = isActive and Color3.fromRGB(46, 210, 115) or Color3.fromRGB(44, 44, 44) end
+
+	if featureConfig.onToggle then
+		task.spawn(function() featureConfig.onToggle(featureConfig, isActive) end)
 	end
 
 	featureFrame.Parent = containerframe
 	return true
 end
+
 function FeatureManager:ToggleFeature(featureId)
 	local feature = self.features[featureId]
 	if not feature or not feature.button then return end
 
 	local newState = not self.featureStates[featureId]
 	self.featureStates[featureId] = newState
-
 	Utils:AnimateButton(feature.button, feature.bg, newState)
 
 	if feature.config.onToggle then
@@ -316,8 +259,7 @@ end
 
 function FeatureManager:SetFeature(featureId, targetState)
 	local feature = self.features[featureId]
-	if not feature or not feature.button then return end
-	if self.featureStates[featureId] == targetState then return end
+	if not feature or not feature.button or self.featureStates[featureId] == targetState then return end
 
 	self.featureStates[featureId] = targetState
 	Utils:AnimateButton(feature.button, feature.bg, targetState)
@@ -332,16 +274,13 @@ function FeatureManager:GetFeatureState(featureId)
 end
 
 function FeatureManager:OnCharacterAdded(character, playerObj)
-	for featureId, feature in pairs(self.features) do
+	for _, feature in pairs(self.features) do
 		if feature.config.onCharacterAdded then
 			feature.config.onCharacterAdded(feature.config, character, playerObj)
 		end
 	end
 end
 
--- ============================================
--- HIDE ALL UI SYSTEM
--- ============================================
 function HideUISystem:SetVisible(isHiding)
 	if isHiding then
 		self.hiddenGuis = {}
@@ -354,20 +293,16 @@ function HideUISystem:SetVisible(isHiding)
 		mainframe.Visible = false
 		unhideBtn.Visible = true
 
-		-- 🔥 FIX 2: Cegah UI baru muncul saat mode Hide UI sedang menyala (Penjaga Pintu)
 		if not self.childAddedConn then
 			self.childAddedConn = playerGui.ChildAdded:Connect(function(childGui)
-				if childGui:IsA("ScreenGui") and childGui ~= gui then
-					-- task.wait() TELAH DIHAPUS DI SINI AGAR TIDAK FLICKER
-					if childGui.Enabled then
-						self.hiddenGuis[childGui] = true
-						childGui.Enabled = false
-					end
+				if childGui:IsA("ScreenGui") and childGui ~= gui and childGui.Enabled then
+					self.hiddenGuis[childGui] = true
+					childGui.Enabled = false
 				end
 			end)
 		end
 	else
-		for hiddenGui, _ in pairs(self.hiddenGuis) do
+		for hiddenGui in pairs(self.hiddenGuis) do
 			if hiddenGui and hiddenGui.Parent then hiddenGui.Enabled = true end
 		end
 		self.hiddenGuis = {} 
@@ -380,16 +315,12 @@ function HideUISystem:SetVisible(isHiding)
 	end
 end
 
--- ============================================
--- MAINFRAME & UNHIDE TOGGLE
--- ============================================
 if settingBtn then
 	local lastSettingClick = 0
 	settingBtn.MouseButton1Click:Connect(function()
 		local now = os.clock()
 		if now - lastSettingClick < 0.3 then return end
 		lastSettingClick = now
-
 		mainframe.Visible = not mainframe.Visible
 	end)
 end
@@ -399,7 +330,6 @@ closeBtn.MouseButton1Click:Connect(function()
 	local now = os.clock()
 	if now - lastCloseSettingClick < 0.3 then return end
 	lastCloseSettingClick = now
-
 	mainframe.Visible = false
 end)
 
@@ -408,13 +338,9 @@ unhideBtn.MouseButton1Click:Connect(function()
 	local now = os.clock()
 	if now - lastUnhideClick < 0.3 then return end
 	lastUnhideClick = now
-
 	if FeatureManager:GetFeatureState("hideui") then FeatureManager:ToggleFeature("hideui") end
 end)
 
--- ============================================
--- OTHER SYSTEMS
--- ============================================
 function BubbleChatSystem:SetVisible(visible)
 	pcall(function()
 		local bubbleChatConfig = textChatService:FindFirstChild("BubbleChatConfiguration")
@@ -435,12 +361,7 @@ function OverheadSystem:SetVisible(visible)
 
 	for _, otherPlayer in pairs(player:GetPlayers()) do
 		if otherPlayer.Character then
-			-- 🔥 FIX 1: Cross-check dengan status Hide Players
-			local shouldHide = isHidingNames
-			if otherPlayer ~= localPlayer and isHidingPlayers then
-				shouldHide = true
-			end
-
+			local shouldHide = isHidingNames or (otherPlayer ~= localPlayer and isHidingPlayers)
 			self:HideOverheadGui(otherPlayer.Character, shouldHide)
 		end
 	end
@@ -450,15 +371,7 @@ function OverheadSystem:OnCharacterAdded(character, otherPlayer)
 	character.ChildAdded:Connect(function(child)
 		if child.Name == "PlayerOverhead" then
 			task.wait(0.1)
-
-			local isHidingNames = FeatureManager:GetFeatureState("overhead")
-			local isHidingPlayers = FeatureManager:GetFeatureState("players")
-
-			local shouldHide = isHidingNames
-			if otherPlayer ~= localPlayer and isHidingPlayers then
-				shouldHide = true
-			end
-
+			local shouldHide = FeatureManager:GetFeatureState("overhead") or (otherPlayer ~= localPlayer and FeatureManager:GetFeatureState("players"))
 			if shouldHide and child:IsA("BillboardGui") then
 				child.Enabled = false
 			end
@@ -466,15 +379,7 @@ function OverheadSystem:OnCharacterAdded(character, otherPlayer)
 	end)
 
 	task.wait(CONFIG.WAIT_FOR_OVERHEAD)
-
-	local isHidingNames = FeatureManager:GetFeatureState("overhead")
-	local isHidingPlayers = FeatureManager:GetFeatureState("players")
-
-	local shouldHide = isHidingNames
-	if otherPlayer ~= localPlayer and isHidingPlayers then
-		shouldHide = true
-	end
-
+	local shouldHide = FeatureManager:GetFeatureState("overhead") or (otherPlayer ~= localPlayer and FeatureManager:GetFeatureState("players"))
 	if shouldHide then
 		self:HideOverheadGui(character, true)
 	end
@@ -484,14 +389,10 @@ function ShadowSystem:SetVisible(visible)
 	lighting.GlobalShadows = visible
 end
 
--- ============================================
--- EFFECTS HIDE SYSTEM
--- ============================================
 function EffectsSystem:HideCharacterEffects(character, shouldHide)
 	for _, descendant in pairs(character:GetDescendants()) do
 		if not descendant:FindFirstAncestorOfClass("Tool") then
 			Utils:HideEffect(descendant, shouldHide)
-			
 		end
 	end
 end
@@ -502,7 +403,6 @@ function EffectsSystem:HideAuraEffects(character, shouldHide)
 			Utils:HideBasePart(child, shouldHide)
 			for _, descendant in pairs(child:GetDescendants()) do
 				Utils:HideEffect(descendant, shouldHide) 
-				 
 				Utils:HideBasePart(descendant, shouldHide)
 			end
 		end
@@ -510,64 +410,57 @@ function EffectsSystem:HideAuraEffects(character, shouldHide)
 end
 
 function EffectsSystem:SetEffectsVisible(visible)
-	local isHidingEffects = FeatureManager:GetFeatureState("effects")
-	local isHidingPlayers = FeatureManager:GetFeatureState("players")
-	local shouldHide = isHidingEffects or isHidingPlayers
-
-	-- Sembunyikan efek di semua karakter (kecuali Tool)
+	local shouldHide = FeatureManager:GetFeatureState("effects") or FeatureManager:GetFeatureState("players")
 	for _, otherPlayer in pairs(player:GetPlayers()) do
 		if otherPlayer ~= localPlayer and otherPlayer.Character then
-			local character = otherPlayer.Character
-			self:HideCharacterEffects(character, shouldHide)
-			self:HideAuraEffects(character, shouldHide)
+			self:HideCharacterEffects(otherPlayer.Character, shouldHide)
+			self:HideAuraEffects(otherPlayer.Character, shouldHide)
 		end
 	end
 end
 
 function EffectsSystem:OnCharacterAdded(character, otherPlayer)
-	if otherPlayer ~= localPlayer then
-		task.wait(CONFIG.WAIT_FOR_EFFECTS)
+	if otherPlayer == localPlayer then return end
+	task.wait(CONFIG.WAIT_FOR_EFFECTS)
 
-		local isHidingEffects = FeatureManager:GetFeatureState("effects")
-		local isHidingPlayers = FeatureManager:GetFeatureState("players")
-		local shouldHide = isHidingEffects or isHidingPlayers
-
-		if shouldHide then
-			self:HideCharacterEffects(character, true)
-			self:HideAuraEffects(character, true)
-		end
-
-		character.DescendantAdded:Connect(function(descendant)
-			if descendant:IsA("ParticleEmitter") or descendant:IsA("Light") then
-				if not descendant:FindFirstAncestorOfClass("Tool") then
-					if FeatureManager:GetFeatureState("effects") or FeatureManager:GetFeatureState("players") then
-						Utils:HideEffect(descendant, true)
-					end
-				end
-			end
-		end)
-
-		character.ChildAdded:Connect(function(child)
-			task.wait(CONFIG.WAIT_FOR_EFFECTS)
-			if Utils:IsAura(child) and not child:IsA("Tool") and (FeatureManager:GetFeatureState("effects") or FeatureManager:GetFeatureState("players")) then
-				Utils:HideBasePart(child, true)
-				for _, descendant in pairs(child:GetDescendants()) do
-					Utils:HideEffect(descendant, true)
-					Utils:HideBasePart(descendant, true)
-				end
-			end
-		end)
+	local shouldHide = FeatureManager:GetFeatureState("effects") or FeatureManager:GetFeatureState("players")
+	if shouldHide then
+		self:HideCharacterEffects(character, true)
+		self:HideAuraEffects(character, true)
 	end
+
+	character.DescendantAdded:Connect(function(descendant)
+		if descendant:IsA("ParticleEmitter") or descendant:IsA("Light") then
+			if not descendant:FindFirstAncestorOfClass("Tool") and (FeatureManager:GetFeatureState("effects") or FeatureManager:GetFeatureState("players")) then
+				Utils:HideEffect(descendant, true)
+			end
+		end
+	end)
+
+	character.ChildAdded:Connect(function(child)
+		task.wait(CONFIG.WAIT_FOR_EFFECTS)
+		if Utils:IsAura(child) and not child:IsA("Tool") and (FeatureManager:GetFeatureState("effects") or FeatureManager:GetFeatureState("players")) then
+			Utils:HideBasePart(child, true)
+			for _, descendant in pairs(child:GetDescendants()) do
+				Utils:HideEffect(descendant, true)
+				Utils:HideBasePart(descendant, true)
+			end
+		end
+	end)
 end
 
--- ============================================
--- DONATION EFFECT SYSTEM (ROBUX & SAWERIA)
--- ============================================
+local MEGA_EFFECT_KEYWORDS = { "Smite", "Starfall", "BlackHole", "Nuke" }
+local function matchesAny(name, keywords)
+	for _, kw in ipairs(keywords) do
+		if string.find(name, kw) then return true end
+	end
+	return false
+end
+
 function DonationEffectSystem:SetVisible(visible)
 	local shouldHide = not visible
 	ClientSettingsState.setDonationEffectsHidden(shouldHide)
 
-	-- 1. Sembunyikan/hancurkan objek donasi 3D di Workspace (DonationEffect tag)
 	for _, effect in ipairs(collectionService:GetTagged("DonationEffect")) do
 		if shouldHide then
 			pcall(function() effect:Destroy() end)
@@ -581,15 +474,12 @@ function DonationEffectSystem:SetVisible(visible)
 		end
 	end
 
-	-- 2. Sembunyikan semprotan panggung (StageEffects)
 	local stageEffectsFolder = workspace:FindFirstChild("StageEffects")
 	if stageEffectsFolder then
 		for _, stageFX in ipairs(stageEffectsFolder:GetChildren()) do
 			if stageFX:IsA("BasePart") then
 				local sound = stageFX:FindFirstChild("HissSound")
-				if sound and shouldHide then
-					pcall(function() sound:Stop() end)
-				end
+				if sound and shouldHide then pcall(function() sound:Stop() end) end
 				for _, fx in ipairs(stageFX:GetChildren()) do
 					if fx:IsA("ParticleEmitter") or fx:IsA("Smoke") then
 						Utils:HideEffect(fx, shouldHide)
@@ -599,9 +489,7 @@ function DonationEffectSystem:SetVisible(visible)
 		end
 	end
 
-	-- 3. Hapus seketika efek mega animasi 3D yang sedang aktif jika disembunyikan
 	if shouldHide then
-		-- Hapus dari folder ActiveEffects
 		local activeEffects = workspace:FindFirstChild("ActiveEffects")
 		if activeEffects then
 			for _, effect in ipairs(activeEffects:GetChildren()) do
@@ -609,36 +497,28 @@ function DonationEffectSystem:SetVisible(visible)
 			end
 		end
 
-		-- Bersihkan semua folder efek jika ada yang ter-parent langsung di workspace
 		for _, child in ipairs(workspace:GetChildren()) do
-			if child:IsA("Folder") or child:IsA("Model") then
-				local name = child.Name
-				if string.find(name, "Smite_") or string.find(name, "Starfall_") or string.find(name, "BlackHole_") or string.find(name, "Nuke_") then
-					pcall(function() child:Destroy() end)
-				end
+			if (child:IsA("Folder") or child:IsA("Model")) and matchesAny(child.Name, MEGA_EFFECT_KEYWORDS) then
+				pcall(function() child:Destroy() end)
 			end
 		end
 
-		-- Hentikan & bersihkan suara efek donasi di workspace
 		for _, snd in ipairs(workspace:GetChildren()) do
-			if snd:IsA("Sound") and (string.find(snd.Name, "Smite") or string.find(snd.Name, "Donation") or string.find(snd.Name, "Starfall")) then
+			if snd:IsA("Sound") and matchesAny(snd.Name, { "Smite", "Donation", "Starfall" }) then
 				pcall(function() snd:Stop(); snd:Destroy() end)
 			end
 		end
 
-		-- Bersihkan efek pencahayaan donasi di Lighting (agar layar tidak tertinggal merah/gelap)
 		for _, lightEffect in ipairs(lighting:GetChildren()) do
-			if string.find(lightEffect.Name, "Smite") or string.find(lightEffect.Name, "Starfall") or string.find(lightEffect.Name, "BlackHole") or string.find(lightEffect.Name, "Nuke") then
+			if matchesAny(lightEffect.Name, MEGA_EFFECT_KEYWORDS) then
 				pcall(function() lightEffect:Destroy() end)
 			end
 		end
 
-		-- Hentikan guncangan kamera (CameraShake) jika sedang aktif
 		pcall(function() game:GetService("RunService"):UnbindFromRenderStep("CameraShaker") end)
 	end
 end
 
--- Event: Deteksi donasi baru di Workspace saat Hide Effect Donate aktif
 collectionService:GetInstanceAddedSignal("DonationEffect"):Connect(function(effect)
 	task.wait(0.1)
 	if FeatureManager:GetFeatureState("donationeffect") or _G.HideDonationEffects then
@@ -651,7 +531,6 @@ collectionService:GetInstanceAddedSignal("DonationEffect"):Connect(function(effe
 	end
 end)
 
--- Listener pencegah server replication menyalakan StageEffects saat disembunyikan
 local stageEffectsFolder = workspace:FindFirstChild("StageEffects")
 if stageEffectsFolder then
 	for _, stageFX in ipairs(stageEffectsFolder:GetChildren()) do
@@ -677,81 +556,53 @@ if stageEffectsFolder then
 	end
 end
 
--- ============================================
--- ADMIN NOTIFICATION SYSTEM
--- ============================================
 function AdminNotifSystem:SetVisible(visible)
 	local shouldHide = not visible
 	ClientSettingsState.setAdminNotifHidden(shouldHide)
 
 	if shouldHide then
 		local notifGui = playerGui:FindFirstChild("MessageNotifications")
-		if notifGui then
-			local listFrame = notifGui:FindFirstChild("NotificationList")
-			if listFrame then
-				for _, child in ipairs(listFrame:GetChildren()) do
-					if child:IsA("Frame") and child.Name ~= "TemplateFrame" then
-						child.Visible = false
-						child:Destroy()
-					end
+		local listFrame = notifGui and notifGui:FindFirstChild("NotificationList")
+		if listFrame then
+			for _, child in ipairs(listFrame:GetChildren()) do
+				if child:IsA("Frame") and child.Name ~= "TemplateFrame" then
+					child.Visible = false
+					child:Destroy()
 				end
 			end
 		end
 	end
 end
 
--- ============================================
--- DONATION NOTIFICATION SYSTEM (ROBUX & SAWERIA)
--- ============================================
 function DonationNotifSystem:SetVisible(visible)
 	local shouldHide = not visible
 	ClientSettingsState.setDonationNotifHidden(shouldHide)
 
 	if shouldHide then
-		-- 1. Sembunyikan notifikasi Saweria jika sedang tampil di layar
 		local notifSaweriaGui = playerGui:FindFirstChild("NotifSaweriaGui")
-		if notifSaweriaGui then
-			local notifFrame = notifSaweriaGui:FindFirstChild("NotifFrame")
-			if notifFrame then
-				notifFrame.Visible = false
-				notifFrame.Position = UDim2.new(0.5, 0, -0.2, 0)
-			end
+		local notifFrame = notifSaweriaGui and notifSaweriaGui:FindFirstChild("NotifFrame")
+		if notifFrame then
+			notifFrame.Visible = false
+			notifFrame.Position = UDim2.new(0.5, 0, -0.2, 0)
 		end
 		_G.__ActiveDonationNotification = nil
 
-		-- 2. Sembunyikan notifikasi Robux jika sedang tampil di layar
 		local donationBoardGui = playerGui:FindFirstChild("DonationBoard")
-		if donationBoardGui then
-			local notifFrame = donationBoardGui:FindFirstChild("NotificationFrame")
-			if notifFrame then
-				notifFrame.Visible = false
-			end
-		end
+		local dbFrame = donationBoardGui and donationBoardGui:FindFirstChild("NotificationFrame")
+		if dbFrame then dbFrame.Visible = false end
 
-		-- 3. Sembunyikan Cinematic Level 4 jika sedang aktif
 		local level4Gui = playerGui:FindFirstChild("Level4Donation")
 		if level4Gui then
 			local container = level4Gui:FindFirstChild("CinematicContainer")
-			if container then
-				container.Visible = false
-			end
+			if container then container.Visible = false end
 			local skipFrame = level4Gui:FindFirstChild("SkipFrame")
-			if skipFrame then
-				skipFrame.Visible = false
-			end
+			if skipFrame then skipFrame.Visible = false end
 		end
 	end
 end
 
--- ============================================
--- PLAYER HIDE SYSTEM
--- ============================================
 function PlayerHideSystem:HideObject(object, shouldHide)
-	local isHidingEffects = FeatureManager:GetFeatureState("effects")
-
-	-- Efek tidak boleh muncul ulang jika salah satu tombol (Hide Players atau Hide Effects) menyala
-	local hideEffect = shouldHide or isHidingEffects
-
+	local hideEffect = shouldHide or FeatureManager:GetFeatureState("effects")
 	for _, descendant in pairs(object:GetDescendants()) do
 		Utils:HideBasePart(descendant, shouldHide)
 		Utils:HideEffect(descendant, hideEffect)
@@ -773,108 +624,85 @@ end
 
 function PlayerHideSystem:SetPlayersVisible(visible)
 	local isHidingPlayers = FeatureManager:GetFeatureState("players")
-	local isHidingNames = FeatureManager:GetFeatureState("overhead")
+	local hideOverhead = isHidingPlayers or FeatureManager:GetFeatureState("overhead")
 
 	for _, otherPlayer in pairs(player:GetPlayers()) do
 		if otherPlayer ~= localPlayer and otherPlayer.Character then
 			local character = otherPlayer.Character
-
 			self:HideObject(character, isHidingPlayers)
 			self:HideTools(otherPlayer, character, isHidingPlayers)
-
-			local hideOverhead = isHidingPlayers or isHidingNames
 			OverheadSystem:HideOverheadGui(character, hideOverhead) 
 		end
 	end
 end
 
 function PlayerHideSystem:OnCharacterAdded(character, otherPlayer)
-	if otherPlayer ~= localPlayer then
-		task.wait(CONFIG.WAIT_FOR_ACCESSORIES)
+	if otherPlayer == localPlayer then return end
+	task.wait(CONFIG.WAIT_FOR_ACCESSORIES)
 
-		if FeatureManager:GetFeatureState("players") then
-			self:HideObject(character, true)
-			self:HideTools(otherPlayer, character, true)
+	if FeatureManager:GetFeatureState("players") then
+		self:HideObject(character, true)
+		self:HideTools(otherPlayer, character, true)
+		OverheadSystem:HideOverheadGui(character, true)
+	end
 
-			OverheadSystem:HideOverheadGui(character, true)
+	character.ChildAdded:Connect(function(child)
+		task.wait(CONFIG.WAIT_FOR_TOOLS)
+		if FeatureManager:GetFeatureState("players") and (child:IsA("Tool") or Utils:IsAura(child)) then
+			self:HideObject(child, true)
 		end
+	end)
 
-		character.ChildAdded:Connect(function(child)
+	self.backpackConns = self.backpackConns or {}
+	if self.backpackConns[otherPlayer] then
+		self.backpackConns[otherPlayer]:Disconnect()
+		self.backpackConns[otherPlayer] = nil
+	end
+	if otherPlayer.Backpack then
+		self.backpackConns[otherPlayer] = otherPlayer.Backpack.ChildAdded:Connect(function(child)
 			task.wait(CONFIG.WAIT_FOR_TOOLS)
-			if FeatureManager:GetFeatureState("players") then
-				if child:IsA("Tool") or Utils:IsAura(child) then 
-					self:HideObject(child, true) 
-				end
+			if child:IsA("Tool") and FeatureManager:GetFeatureState("players") then
+				self:HideObject(child, true)
 			end
 		end)
-
-		-- FIX MEMORY LEAK: Simpan dan putus koneksi Backpack.ChildAdded lama agar tidak bertumpuk setiap respawn
-		self.backpackConns = self.backpackConns or {}
-		if self.backpackConns[otherPlayer] then
-			self.backpackConns[otherPlayer]:Disconnect()
-			self.backpackConns[otherPlayer] = nil
-		end
-		if otherPlayer.Backpack then
-			self.backpackConns[otherPlayer] = otherPlayer.Backpack.ChildAdded:Connect(function(child)
-				task.wait(CONFIG.WAIT_FOR_TOOLS)
-				if child:IsA("Tool") and FeatureManager:GetFeatureState("players") then
-					self:HideObject(child, true)
-				end
-			end)
-		end
 	end
 end
 
--- ============================================
--- POV CAMERA FOCUS SYSTEM
--- ============================================
 function CameraFocusSystem:Init()
 	local povFrame = containerframe:WaitForChild("POVFocusFrame", 5)
 	if not povFrame then return end
 
 	local defaultBtn = povFrame:WaitForChild("DefaultBtn", 5)
-	local headBtn = povFrame:WaitForChild("HeadBtn", 5)
-	local bodyBtn = povFrame:WaitForChild("BodyBtn", 5)
+	local headBtn    = povFrame:WaitForChild("HeadBtn", 5)
+	local bodyBtn    = povFrame:WaitForChild("BodyBtn", 5)
 
 	if not defaultBtn or not headBtn or not bodyBtn then return end
 
-	self.buttons = {
-		DEFAULT = defaultBtn,
-		HEAD = headBtn,
-		BODY = bodyBtn,
-	}
+	self.buttons = { DEFAULT = defaultBtn, HEAD = headBtn, BODY = bodyBtn }
 
 	for mode, btn in pairs(self.buttons) do
-		btn.MouseButton1Click:Connect(function()
-			self:SetFocus(mode, true)
-		end)
-
+		btn.MouseButton1Click:Connect(function() self:SetFocus(mode, true) end)
 		btn.MouseEnter:Connect(function()
 			if self.currentMode ~= mode then
-				tweenservice:Create(btn, TweenInfo.new(0.18), {BackgroundColor3 = Color3.fromRGB(32, 32, 32)}):Play()
+				tweenservice:Create(btn, TweenInfo.new(0.18), { BackgroundColor3 = Color3.fromRGB(32, 32, 32) }):Play()
 			end
 		end)
-
 		btn.MouseLeave:Connect(function()
 			if self.currentMode ~= mode then
-				tweenservice:Create(btn, TweenInfo.new(0.18), {BackgroundColor3 = Color3.fromRGB(22, 22, 22)}):Play()
+				tweenservice:Create(btn, TweenInfo.new(0.18), { BackgroundColor3 = Color3.fromRGB(22, 22, 22) }):Play()
 			end
 		end)
 	end
 
-	-- Karakter Added & Respawn
 	local function onChar(char)
 		char:WaitForChild("Humanoid", 10)
 		task.wait(0.25)
 		self:ApplyCurrentFocus()
 	end
 
-	if localPlayer.Character then
-		task.spawn(onChar, localPlayer.Character)
-	end
+	if localPlayer.Character then task.spawn(onChar, localPlayer.Character) end
 	localPlayer.CharacterAdded:Connect(onChar)
 
-	-- Monitor Camera Subject & Type
 	local cam = workspace.CurrentCamera
 	if cam then
 		cam:GetPropertyChangedSignal("CameraType"):Connect(function()
@@ -884,13 +712,10 @@ function CameraFocusSystem:Init()
 		end)
 
 		cam:GetPropertyChangedSignal("CameraSubject"):Connect(function()
-			if self.isApplying or cam.CameraType ~= Enum.CameraType.Custom then return end
-			if self.currentMode ~= "DEFAULT" then
-				local char = localPlayer.Character
-				local expected = self:GetTargetPart(self.currentMode, char)
-				if expected and cam.CameraSubject ~= expected then
-					task.defer(function() self:ApplyCurrentFocus() end)
-				end
+			if self.isApplying or cam.CameraType ~= Enum.CameraType.Custom or self.currentMode == "DEFAULT" then return end
+			local expected = self:GetTargetPart(self.currentMode, localPlayer.Character)
+			if expected and cam.CameraSubject ~= expected then
+				task.defer(function() self:ApplyCurrentFocus() end)
 			end
 		end)
 	end
@@ -903,12 +728,9 @@ function CameraFocusSystem:GetTargetPart(mode, char)
 	if mode == "HEAD" then
 		return char:FindFirstChild("Head")
 	elseif mode == "BODY" then
-		return char:FindFirstChild("UpperTorso") 
-			or char:FindFirstChild("Torso") 
-			or char:FindFirstChild("HumanoidRootPart")
-	else
-		return char:FindFirstChildOfClass("Humanoid")
+		return char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
 	end
+	return char:FindFirstChildOfClass("Humanoid")
 end
 
 local lastFocusClickTime = 0
@@ -936,24 +758,16 @@ function CameraFocusSystem:ApplyCurrentFocus()
 	if not char then return end
 
 	local hum = char:FindFirstChildOfClass("Humanoid")
-	if hum and hum.Health <= 0 then return end -- Tidak mengganggu kamera saat karakter mati
+	if hum and hum.Health <= 0 then return end
 
 	local cam = workspace.CurrentCamera
 	if not cam or cam.CameraType ~= Enum.CameraType.Custom then return end
 
 	self.isApplying = true
-
 	local target = self:GetTargetPart(self.currentMode, char)
-	if target then
-		cam.CameraSubject = target
-	elseif hum then
-		cam.CameraSubject = hum
-	end
+	cam.CameraSubject = target or hum
 
-	if hum then
-		hum.CameraOffset = Vector3.zero
-	end
-
+	if hum then hum.CameraOffset = Vector3.zero end
 	self.isApplying = false
 	self:UpdateVisuals()
 end
@@ -963,29 +777,25 @@ function CameraFocusSystem:UpdateVisuals()
 
 	for mode, btn in pairs(self.buttons) do
 		local isActive = (mode == self.currentMode)
-		local targetBg = isActive and CONFIG.BG_COLOR_ON or Color3.fromRGB(22, 22, 22)
-		local targetStroke = isActive and Color3.fromRGB(46, 210, 115) or Color3.fromRGB(44, 44, 44)
-		local targetText = isActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(180, 180, 180)
+		tweenservice:Create(btn, tweenInfo, {
+			BackgroundColor3 = isActive and CONFIG.BG_COLOR_ON or Color3.fromRGB(22, 22, 22),
+			TextColor3       = isActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(180, 180, 180),
+		}):Play()
 
-		tweenservice:Create(btn, tweenInfo, {BackgroundColor3 = targetBg, TextColor3 = targetText}):Play()
 		local stroke = btn:FindFirstChildOfClass("UIStroke")
 		if stroke then
-			tweenservice:Create(stroke, tweenInfo, {Color = targetStroke}):Play()
+			tweenservice:Create(stroke, tweenInfo, {
+				Color = isActive and Color3.fromRGB(46, 210, 115) or Color3.fromRGB(44, 44, 44),
+			}):Play()
 		end
 	end
 end
 
--- ============================================
--- INITIALIZE
--- ============================================
 CameraFocusSystem:Init()
 for _, featureConfig in ipairs(FEATURES) do
 	FeatureManager:RegisterFeature(featureConfig)
 end
 
--- FIX CRITICAL BUG & MEMORY LEAK:
--- 1. Hubungkan CharacterAdded untuk SEMUA pemain (termasuk 99 pemain yang sudah ada di server saat kita join)
--- 2. Bersihkan semua koneksi saat pemain keluar dari server (PlayerRemoving) untuk server 24/7
 local otherPlayerCharConns = {}
 
 local function monitorOtherPlayer(otherPlayer)
@@ -1002,10 +812,7 @@ local function monitorOtherPlayer(otherPlayer)
 	end
 end
 
-for _, otherPlayer in ipairs(player:GetPlayers()) do
-	monitorOtherPlayer(otherPlayer)
-end
-
+for _, otherPlayer in ipairs(player:GetPlayers()) do monitorOtherPlayer(otherPlayer) end
 player.PlayerAdded:Connect(monitorOtherPlayer)
 
 player.PlayerRemoving:Connect(function(leavingPlayer)
@@ -1019,12 +826,7 @@ player.PlayerRemoving:Connect(function(leavingPlayer)
 	end
 end)
 
-
--- ============================================
--- GRAPHICS QUALITY MONITOR (DECOUPLED FROM COREGUI)
--- ============================================
 local userSettings = UserSettings():GetService("UserGameSettings")
-
 local isUpdatingQuality = false
 local function onGraphicsQualityChanged()
 	if isUpdatingQuality then return end
@@ -1034,19 +836,10 @@ local function onGraphicsQualityChanged()
 		pcall(function()
 			local quality = userSettings.SavedQualityLevel
 			local qualityValue = quality and quality.Value or 0
-			
-			-- Automatic = 0. Manual levels = QualityLevel1 (1) to QualityLevel10 (10).
-			-- Level 1-4 bars are the left (low graphics) side of the graphics slider.
 			if qualityValue > 0 then
-				if qualityValue <= 4 then
-					-- Bar kiri (1-4 bar / Grafik rendah): Aktifkan Hide Effect Player & Hide All Shadow
-					FeatureManager:SetFeature("effects", true)
-					FeatureManager:SetFeature("shadow", true)
-				else
-					-- Bar kanan (5-10 bar / Grafik sedang-tinggi): Matikan fitur sembunyikan otomatis
-					FeatureManager:SetFeature("effects", false)
-					FeatureManager:SetFeature("shadow", false)
-				end
+				local isLow = qualityValue <= 4
+				FeatureManager:SetFeature("effects", isLow)
+				FeatureManager:SetFeature("shadow", isLow)
 			end
 		end)
 		isUpdatingQuality = false
@@ -1054,5 +847,4 @@ local function onGraphicsQualityChanged()
 end
 
 userSettings:GetPropertyChangedSignal("SavedQualityLevel"):Connect(onGraphicsQualityChanged)
--- Panggil saat inisialisasi awal di thread terpisah
 task.defer(onGraphicsQualityChanged)

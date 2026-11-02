@@ -129,9 +129,16 @@ local REQUEST_COOLDOWN = 5
 
 remote.OnServerEvent:Connect(function(player)
 	if not player or not player.Parent then return end
+
 	local now = os.clock()
 	if now - (requestCooldowns[player.UserId] or 0) < REQUEST_COOLDOWN then
-		return -- Ignore spam requests from clients
+		-- Throttle the reply itself, not only the DataStore fetch.
+		if cachedTopData and #cachedTopData > 0 then
+			pcall(function()
+				remote:FireClient(player, cachedTopData)
+			end)
+		end
+		return
 	end
 	requestCooldowns[player.UserId] = now
 
@@ -139,14 +146,15 @@ remote.OnServerEvent:Connect(function(player)
 		pcall(function()
 			remote:FireClient(player, cachedTopData)
 		end)
-	else
-		-- Fetch on first client if empty
-		pcall(refreshLeaderboard)
-		if cachedTopData and #cachedTopData > 0 then
-			pcall(function()
-				remote:FireClient(player, cachedTopData)
-			end)
-		end
+		return
+	end
+
+	-- Fetch on first client if empty
+	pcall(refreshLeaderboard)
+	if cachedTopData and #cachedTopData > 0 then
+		pcall(function()
+			remote:FireClient(player, cachedTopData)
+		end)
 	end
 end)
 

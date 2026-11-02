@@ -63,9 +63,6 @@ end
 -- ============================================
 -- REMOTE HANDLERS
 -- ============================================
-local dynamicAnimCount = 0
-local MAX_DYNAMIC_ANIMS = 100
-
 animationStartRE.OnServerEvent:Connect(function(player, animationId, shouldPlay, speed, clientFadeTime, isSpam, clientStartTime)
 	-- 🔥 SECURITY FIX: Cegah Type Spoofing & NaN / Inf Injection
 	if animationId ~= nil and type(animationId) ~= "string" and type(animationId) ~= "number" then return end
@@ -92,15 +89,8 @@ animationStartRE.OnServerEvent:Connect(function(player, animationId, shouldPlay,
 			animation = loadedAnimationsByNormId[norm]
 		end
 
-		-- Fallback aman dengan batas maksimum cache agar tidak bisa di-exploit menjadi Memory Leak DoS
-		if not animation and norm:match("^%d+$") and dynamicAnimCount < MAX_DYNAMIC_ANIMS then
-			dynamicAnimCount += 1
-			animation = Instance.new("Animation")
-			animation.AnimationId = "rbxassetid://" .. norm
-			loadedAnimationsById[animationId] = animation
-			loadedAnimationsByNormId[norm] = animation
-		end
-
+		-- Hanya animasi yang ada di AnimationRegistry/Emotes yang boleh diputar.
+		-- Jangan membuat Animation dari ID arbitrer dari client.
 		if shouldPlay and not animation then
 			return
 		end

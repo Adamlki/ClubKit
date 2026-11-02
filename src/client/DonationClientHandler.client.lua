@@ -49,6 +49,7 @@ local State = {
 }
 
 local donationIcon
+local TopbarPanelRegistry = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("TopbarPanelRegistry"))
 
 local function debugLog(...)
 	if ClientConfig.DEBUG.ENABLED and ClientConfig.DEBUG.SHOW_EVENTS then
@@ -310,7 +311,13 @@ pcall(function()
 		:setLabel("")
 		:setOrder(2)
 
+	TopbarPanelRegistry:Register("Donation", function()
+		deselectDonationIcon()
+		if UI.mainFrame then UI.mainFrame.Visible = false end
+	end)
+
 	donationIcon.selected:Connect(function()
+		TopbarPanelRegistry:CloseOthers("Donation")
 		openFrame(UI.mainFrame)
 		if not State.productsLoaded then loadProducts() end
 	end)

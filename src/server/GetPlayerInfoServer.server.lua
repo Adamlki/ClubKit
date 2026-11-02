@@ -38,6 +38,9 @@ local REQUEST_TIMEOUT = 5  -- detik maksimal menunggu request roproxy
 -- CACHE SYSTEM
 -- ============================================
 local cache = {}
+local profileLoadingLocks = {}
+local activeProfileFetches = 0
+local MAX_CONCURRENT_PROFILE_FETCHES = 2
 
 local function getCached(userId)
 	local entry = cache[userId]
@@ -271,70 +274,112 @@ local function fetchPrimaryGroup(userId)
 	}
 end
 
+local function cachedResponse(cached, userId, callerPlayer)
+	return {
+		-- Filter ulang per caller karena hasil filter bergantung pada penerima
+		description    = filterBio(cached.rawDescription, userId, callerPlayer),
+		friendsCount   = cached.friendsCount,
+		followersCount = cached.followersCount,
+		followingCount = cached.followingCount,
+		primaryGroup   = cached.primaryGroup,
+	}
+end
+
 local function fetchPlayerInfo(userId, callerPlayer)
 	-- Cek cache terlebih dahulu
 	local cached = getCached(userId)
 	if cached then
-		return {
-			-- Filter ulang per caller karena hasil filter bergantung pada penerima
-			description    = filterBio(cached.rawDescription, userId, callerPlayer),
-			friendsCount   = cached.friendsCount,
-			followersCount = cached.followersCount,
-			followingCount = cached.followingCount,
-			primaryGroup   = cached.primaryGroup,
-		}
+		return cachedResponse(cached, userId, callerPlayer)
 	end
 
-	-- Fetch primary group via native GroupService (super fast & reliable)
-	local primaryGroup = fetchPrimaryGroup(userId)
-
-	local rawDescription = ""
-	local friendsCount   = 0
-	local followersCount = 0
-	local followingCount = 0
-
-	-- Cek circuit breaker roproxy
-	if os.clock() >= proxyCircuitOpenUntil then
-		local completedTasks = 0
-		task.spawn(function()
-			rawDescription = fetchDescription(userId)
-			completedTasks += 1
-		end)
-
-		task.wait(0.1)
-		task.spawn(function()
-			friendsCount = fetchFriendsCount(userId)
-			completedTasks += 1
-		end)
-
-		task.wait(0.1)
-		task.spawn(function()
-			followersCount = fetchFollowersCount(userId)
-			completedTasks += 1
-		end)
-
-		task.wait(0.1)
-		task.spawn(function()
-			followingCount = fetchFollowingCount(userId)
-			completedTasks += 1
-		end)
-
-		local startTime = os.clock()
-		while completedTasks < 4 and (os.clock() - startTime) < 3.5 do
-			task.wait(0.05)
+	-- If another caller is already loading this exact profile, wait for it
+	-- instead of firing 4 duplicate roproxy requests per caller.
+	if profileLoadingLocks[userId] then
+		local lockStart = os.clock()
+		while profileLoadingLocks[userId] and (os.clock() - lockStart) < 10 do
+			task.wait(0.1)
+		end
+		local afterWait = getCached(userId)
+		if afterWait then
+			return cachedResponse(afterWait, userId, callerPlayer)
 		end
 	end
 
-	-- Simpan ke cache agar TIDAK PERNAH request berulang kali (Anti-Lag, Anti-429)
-	setCached(userId, rawDescription, friendsCount, followersCount, followingCount, primaryGroup)
+	profileLoadingLocks[userId] = true
 
-	return {
-		description    = filterBio(rawDescription, userId, callerPlayer),
-		friendsCount   = friendsCount,
-		followersCount = followersCount,
-		followingCount = followingCount,
-		primaryGroup   = primaryGroup,
-	}
+	while activeProfileFetches >= MAX_CONCURRENT_PROFILE_FETCHES do
+		task.wait(0.05)
+	end
+	activeProfileFetches += 1
+
+	local ok, result = pcall(function()
+		-- Fetch primary group via native GroupService (super fast & reliable)
+		local primaryGroup = fetchPrimaryGroup(userId)
+
+		local rawDescription = ""
+		local friendsCount   = 0
+		local followersCount = 0
+		local followingCount = 0
+
+		-- Cek circuit breaker roproxy
+		if os.clock() >= proxyCircuitOpenUntil then
+			local completedTasks = 0
+			task.spawn(function()
+				rawDescription = fetchDescription(userId)
+				completedTasks += 1
+			end)
+
+			task.wait(0.1)
+			task.spawn(function()
+				friendsCount = fetchFriendsCount(userId)
+				completedTasks += 1
+			end)
+
+			task.wait(0.1)
+			task.spawn(function()
+				followersCount = fetchFollowersCount(userId)
+				completedTasks += 1
+			end)
+
+			task.wait(0.1)
+			task.spawn(function()
+				followingCount = fetchFollowingCount(userId)
+				completedTasks += 1
+			end)
+
+			local startTime = os.clock()
+			while completedTasks < 4 and (os.clock() - startTime) < 3.5 do
+				task.wait(0.05)
+			end
+		end
+
+		-- Simpan ke cache agar TIDAK PERNAH request berulang kali (Anti-Lag, Anti-429)
+		setCached(userId, rawDescription, friendsCount, followersCount, followingCount, primaryGroup)
+
+		return {
+			description    = filterBio(rawDescription, userId, callerPlayer),
+			friendsCount   = friendsCount,
+			followersCount = followersCount,
+			followingCount = followingCount,
+			primaryGroup   = primaryGroup,
+		}
+	end)
+
+	activeProfileFetches = math.max(0, activeProfileFetches - 1)
+	profileLoadingLocks[userId] = nil
+
+	if not ok then
+		warn("[GetPlayerInfo] Fetch profile gagal untuk", userId, ":", tostring(result))
+		return {
+			description = "",
+			friendsCount = 0,
+			followersCount = 0,
+			followingCount = 0,
+			primaryGroup = { emblem = "http://www.roblox.com/asset/?id=100615948228188" },
+		}
+	end
+
+	return result
 end
 
 -- ============================================

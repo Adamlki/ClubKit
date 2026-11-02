@@ -11,6 +11,7 @@ local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local Icon      = require(ReplicatedStorage:WaitForChild("Icon"))
 local UIAnimator = require(ReplicatedStorage:WaitForChild("UIAnimator"))
+local TopbarPanelRegistry = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("TopbarPanelRegistry"))
 
 local CONFIG = {
 	Alignment = "left",
@@ -161,6 +162,25 @@ local menuIcon      = nil
 local dropdownIcons = {}
 local isInitialized = false
 
+local function closeAllTopbarPanels()
+	for _, data in pairs(icons) do
+		if data.isOpen then
+			local toggleDrawer = data.gui and data.gui:FindFirstChild("ToggleDrawer")
+			if toggleDrawer then
+				toggleDrawer:Fire(false)
+			elseif data.animate then
+				UIAnimator.Close(data.frame)
+			else
+				data.frame.Visible = false
+			end
+			data.isOpen = false
+			data.icon:deselect()
+		end
+	end
+end
+
+TopbarPanelRegistry:Register("TopbarPlus", closeAllTopbarPanels)
+
 -- ============================================================
 -- INSTANT ICON CREATION (NO YIELDING)
 -- ============================================================
@@ -283,6 +303,7 @@ local function bindIconLogic(name, icon, gui, frame, closeBtnPath, originalBtnNa
 		lastToggleIconTime = now
 
 		playClick()
+		TopbarPanelRegistry:CloseOthers("TopbarPlus")
 		for otherName, d in pairs(icons) do
 			if otherName ~= name and d.isOpen and not d.lockSync then
 				local toggleDrawer = d.gui and d.gui:FindFirstChild("ToggleDrawer")
@@ -365,25 +386,37 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-	local gui = playerGui:WaitForChild("GamepassShop", 10)
+	local gui = playerGui:WaitForChild("GamepassShop")
 	if gui then
-		-- Selalu tutup dulu; buka hanya jika feature flag mengizinkan.
 		gui.Enabled = false
 		local frame = gui:FindFirstChild("MainFrame")
 		if frame then frame.Visible = false end
 	end
 
-	local featureFolder = ReplicatedStorage:WaitForChild("FeatureFlags", 10)
-	local shopFlag = featureFolder and featureFolder:WaitForChild("VIPShopEnabled", 5)
-	if not (shopFlag and shopFlag.Value) then return end
 	if not gui or not gamepassIcon then return end
-
 	local frame = gui:FindFirstChild("MainFrame")
 	if not frame then return end
 
-	gui.Enabled = true
-	bindIconLogic("Gamepass", gamepassIcon, gui, frame, {"Header","CloseBtn"})
-	gamepassIcon:setEnabled(true)
+	local featureFolder = ReplicatedStorage:WaitForChild("FeatureFlags")
+	local shopFlag = featureFolder:WaitForChild("VIPShopEnabled")
+	local bound = false
+
+	local function applyShopEnabled()
+		if shopFlag.Value == true then
+			if not bound then
+				bound = true
+				bindIconLogic("Gamepass", gamepassIcon, gui, frame, {"Header","CloseBtn"})
+			end
+			gui.Enabled = true
+			gamepassIcon:setEnabled(true)
+		else
+			gui.Enabled = false
+			gamepassIcon:setEnabled(false)
+		end
+	end
+
+	applyShopEnabled()
+	shopFlag:GetPropertyChangedSignal("Value"):Connect(applyShopEnabled)
 end)
 
 task.spawn(function()
@@ -462,20 +495,31 @@ task.spawn(function()
 			local ar = ReplicatedStorage:WaitForChild("AccessoryRemotes", 10)
 			if ar and hatIcon then
 				bindIconLogic("MyHat", hatIcon, gui, frame, frame:FindFirstChild("Header") and {"Header","CloseBtn"} or {"CloseBtn"})
-				hatIcon:setEnabled(false)
 				
+				local function setHatEnabled(show)
+					hatIcon:setEnabled(show == true)
+					if not show and icons["MyHat"] then
+						local d = icons["MyHat"]
+						if d.isOpen then
+							if d.animate then UIAnimator.Close(d.frame) else d.frame.Visible = false end
+							d.isOpen = false
+							hatIcon:deselect()
+						end
+					end
+				end
+
+				-- Attribute tetap benar walau event ShowIcon sudah lewat
+				-- sebelum client selesai binding.
+				setHatEnabled(player:GetAttribute("CanUseHat") == true)
+				local attrConn = player:GetAttributeChangedSignal("CanUseHat"):Connect(function()
+					setHatEnabled(player:GetAttribute("CanUseHat") == true)
+				end)
+				hatIcon:addToJanitor(attrConn)
+
 				local se = ar:WaitForChild("ShowIcon", 5)
 				if se then
 					local sc = se.OnClientEvent:Connect(function(show)
-						hatIcon:setEnabled(show)
-						if not show and icons["MyHat"] then
-							local d = icons["MyHat"]
-							if d.isOpen then
-								if d.animate then UIAnimator.Close(d.frame) else d.frame.Visible = false end
-								d.isOpen = false
-								hatIcon:deselect()
-							end
-						end
+						setHatEnabled(show)
 					end)
 					hatIcon:addToJanitor(sc)
 				end

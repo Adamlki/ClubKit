@@ -390,10 +390,13 @@ function ShadowSystem:SetVisible(visible)
 end
 
 function EffectsSystem:HideCharacterEffects(character, shouldHide)
+	local processed = 0
 	for _, descendant in pairs(character:GetDescendants()) do
 		if not descendant:FindFirstAncestorOfClass("Tool") then
 			Utils:HideEffect(descendant, shouldHide)
 		end
+		processed += 1
+		if processed % 50 == 0 then task.wait() end
 	end
 end
 

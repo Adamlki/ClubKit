@@ -25,7 +25,8 @@ local redBox         = colorPickFrame:WaitForChild("Red")
 local greenBox       = colorPickFrame:WaitForChild("Green")
 local blueBox        = colorPickFrame:WaitForChild("Blue")
 
-local effectFrame    = mainFrame:WaitForChild("EffectFrame")
+-- Instance GUI lama bernama EffectFrame; isinya preset warna, bukan animasi.
+local colorPresetFrame = mainFrame:WaitForChild("EffectFrame")
 
 local liveBanner     = mainFrame:WaitForChild("LiveBanner")
 local livePreviewPill = liveBanner:WaitForChild("PreviewPill")
@@ -115,7 +116,7 @@ local function setColor(c)
 end
 
 local lastColorClick = 0
-for _, child in ipairs(effectFrame:GetChildren()) do
+for _, child in ipairs(colorPresetFrame:GetChildren()) do
 	if child:IsA("TextButton") then
 		child.MouseButton1Click:Connect(function()
 			local now = os.clock()
@@ -193,8 +194,6 @@ previewBtn.MouseButton1Click:Connect(function()
 		previewCustomTitleRemote:FireServer({
 			Title = state.title,
 			Color = state.color,
-			GradientEnabled = false,
-			GradientEffect = "none",
 		})
 	end
 
@@ -251,8 +250,6 @@ applyBtn.MouseButton1Click:Connect(function()
 		return applyCustomTitleRemote:InvokeServer({
 			Title = trimmed,
 			Color = state.color,
-			GradientEnabled = false,
-			GradientEffect = "none",
 		})
 	end)
 

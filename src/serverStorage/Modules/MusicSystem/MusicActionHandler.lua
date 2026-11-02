@@ -32,7 +32,8 @@ local ACTION_HANDLERS = {
 
 local function getCachedSongTitle(musicId)
 	local cached = SONG_TITLE_CACHE[musicId]
-	if cached and (os.clock() - cached.timestamp) < CACHE_DURATION then
+	-- os.time() (wall clock), bukan os.clock() (CPU time), supaya TTL 1 jam benar.
+	if cached and (os.time() - cached.timestamp) < CACHE_DURATION then
 		return cached.title
 	end
 	return nil
@@ -41,7 +42,7 @@ end
 local function setCachedSongTitle(musicId, title)
 	SONG_TITLE_CACHE[musicId] = {
 		title = title,
-		timestamp = os.clock(),
+		timestamp = os.time(),
 	}
 end
 
@@ -166,7 +167,10 @@ function MusicActionHandler:HandleAddToQueue(player, data)
 		if not musicData.Duration or musicData.Duration <= 0 then
 			musicData.Duration = self.config.DEFAULT_SONG_DURATION
 		end
-		musicData.PlaybackSpeed = musicData.PlaybackSpeed or 1.0
+		-- MusicModule memakai nama field `speed`/`pitch`; normalisasi ke nama
+		-- yang dipakai playback manager agar kecepatan tidak selalu 1.0x.
+		musicData.PlaybackSpeed = musicData.PlaybackSpeed or musicData.speed or 1.0
+		musicData.PitchOctave = musicData.PitchOctave or musicData.pitch or 1.0
 
 		local success, errorMsg = self.queueManager:AddToQueue(musicData, player.DisplayName, player.UserId, role)
 		if not success then

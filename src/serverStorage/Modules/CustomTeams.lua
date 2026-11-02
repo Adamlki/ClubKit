@@ -3,7 +3,7 @@ local CustomTeams = {}
 local Players           = game:GetService("Players")
 local Teams             = game:GetService("Teams")
 local ServerStorage     = game:GetService("ServerStorage")
-local DataStoreService  = game:GetService("DataStoreService")
+local DataStoreEnv     = require(script.Parent:WaitForChild("DataStoreEnv"))
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TextService       = game:GetService("TextService")
 local RunService        = game:GetService("RunService")
@@ -14,7 +14,7 @@ local RoleSystem = require(ServerStorage.Modules.RoleSystem)
 local TeamGroups = require(ServerStorage.Modules.TeamGroups)
 
 CustomTeams.Config = {
-	DATASTORE_NAME  = RunService:IsStudio() and "CustomTeamsData_Studio_v2" or "CustomTeamsData_v2",
+	DATASTORE_NAME  = "CustomTeamsData_v2",
 	DATASTORE_RETRY = 3,
 	DATASTORE_DELAY = 1,
 	DEBUG_ENABLED   = false,
@@ -23,7 +23,7 @@ CustomTeams.Config = {
 	NOTIF_DURATION  = 5,
 }
 
-local store             = DataStoreService:GetDataStore(CustomTeams.Config.DATASTORE_NAME)
+local store, writeStore  = DataStoreEnv.Get(CustomTeams.Config.DATASTORE_NAME)
 local customTeamObjects = {}  
 local playerOverrides   = {}  
 local assignedPlayers   = {}
@@ -55,7 +55,7 @@ local function dsGet(key)
 end
 
 local function dsSet(key, val)
-	local ok = dsRetry(function() store:SetAsync(key, val) end)
+	local ok = dsRetry(function() writeStore:SetAsync(key, val) end)
 	return ok
 end
 
@@ -433,7 +433,6 @@ function CustomTeams.CreateTeam(invoker, teamName, colorName)
 		return false, string.format("Team '%s' sudah ada!", teamName)
 	end
 
-	-- [CRIT-02] Filter teks nama team via TextService sebelum disimpan / dibuat
 	local filteredTeamName = teamName
 	if not RunService:IsStudio() then
 		local filterOk, filterResult = pcall(function()
@@ -453,13 +452,13 @@ function CustomTeams.CreateTeam(invoker, teamName, colorName)
 			return filterResult:GetNonChatStringForBroadcastAsync()
 		end)
 
-		if not broadcastOk or not broadcastStr then
+		if not broadcastOk or type(broadcastStr) ~= "string" or #broadcastStr == 0 then
 			return false, "Gagal memproses filter nama team. Silakan coba lagi nanti."
 		end
 
 		filteredTeamName = broadcastStr
 
-		-- Tolak jika teks hasil filter berbeda dari input asli (ada kata/karakter yang disensor)
+		-- Jangan pernah memakai nama mentah jika Roblox menyensor/mengubahnya.
 		if filteredTeamName ~= teamName then
 			return false, "Nama team tidak diizinkan atau mengandung kata yang disensor oleh Roblox!"
 		end
@@ -467,7 +466,6 @@ function CustomTeams.CreateTeam(invoker, teamName, colorName)
 
 	teamName = filteredTeamName
 
-	-- Periksa lagi duplikasi dengan nama hasil filter
 	if teamsByName[teamName:lower()] or hiddenTeams[teamName] then
 		return false, string.format("Team '%s' sudah ada!", teamName)
 	end

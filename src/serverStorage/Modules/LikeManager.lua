@@ -1,11 +1,13 @@
-local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local DataStoreEnv = require(script.Parent:WaitForChild("DataStoreEnv"))
 
 local LikeManager = {}
 
-local LikesStore = DataStoreService:GetDataStore("PlayerLikes_v1")
-local OrderedLikesStore = DataStoreService:GetOrderedDataStore("PlayerLikes_Ordered_v1")
-local CooldownsStore = DataStoreService:GetDataStore("LikeCooldowns_v1")
+-- Studio reads live data; writes are redirected to a sandbox by DataStoreEnv.
+local LikesStore, LikesWriteStore = DataStoreEnv.Get("PlayerLikes_v1")
+local OrderedLikesStore, OrderedLikesWriteStore = DataStoreEnv.GetOrdered("PlayerLikes_Ordered_v1")
+local CooldownsStore, CooldownsWriteStore = DataStoreEnv.Get("LikeCooldowns_v1")
 
 local COOLDOWN_DURATION = 86400 -- 24 jam (dalam detik)
 
@@ -38,6 +40,8 @@ end
 
 function LikeManager.SavePlayerCooldowns(player)
 	local userId = player.UserId
+	local saved = true
+
 	if cooldownDirtyFlags[userId] then
 		local data = playerCooldownsCache[userId]
 		if data then
@@ -48,18 +52,25 @@ function LikeManager.SavePlayerCooldowns(player)
 					cleanedData[tostring(targetId)] = expireTime
 				end
 			end
-			
+
 			local ok = pcall(function()
-				CooldownsStore:SetAsync(tostring(userId), cleanedData)
+				CooldownsWriteStore:SetAsync(tostring(userId), cleanedData)
 			end)
 			if ok then
 				cooldownDirtyFlags[userId] = nil
+			else
+				saved = false
 			end
 		else
 			cooldownDirtyFlags[userId] = nil
 		end
 	end
-	playerCooldownsCache[userId] = nil
+
+	-- Keep the snapshot on failure so the cleanup retry can write it.
+	if saved then
+		playerCooldownsCache[userId] = nil
+	end
+	return saved
 end
 
 -- ==========================================
@@ -90,20 +101,24 @@ function LikeManager.SaveTotalLikes(player)
 		local likesToSave = playerLikesCache[userId]
 		if likesToSave ~= nil then
 			local ok1 = pcall(function()
-				LikesStore:SetAsync(tostring(userId), likesToSave)
+				LikesWriteStore:SetAsync(tostring(userId), likesToSave)
 			end)
 			local ok2 = pcall(function()
-				OrderedLikesStore:SetAsync(tostring(userId), likesToSave)
+				OrderedLikesWriteStore:SetAsync(tostring(userId), likesToSave)
 			end)
-			if ok1 and ok2 then
-				playerDirtyFlags[userId] = nil -- Hanya reset dirty flag jika kedua SetAsync sukses
+			if not (ok1 and ok2) then
+				warn("[LikeManager] Gagal save likes untuk userId:", userId)
+				return false
 			end
+			playerDirtyFlags[userId] = nil
 		else
 			playerDirtyFlags[userId] = nil
 		end
 	end
+
 	playerLikesCache[userId] = nil
 	playerLoadedFlags[userId] = nil
+	return true
 end
 
 -- ==========================================
@@ -162,9 +177,9 @@ function LikeManager.ProcessLike(liker, targetPlayer)
 	-- Increment Daily Likes OrderedDataStore
 	task.spawn(function()
 		local dailyKey = "PlayerLikes_Daily_" .. os.date("!%Y_%m_%d")
-		local dailyStore = DataStoreService:GetOrderedDataStore(dailyKey)
+		local _, dailyWriteStore = DataStoreEnv.GetOrdered(dailyKey)
 		pcall(function()
-			dailyStore:IncrementAsync(targetId, 1)
+			dailyWriteStore:IncrementAsync(targetId, 1)
 		end)
 	end)
 	
@@ -204,11 +219,28 @@ end)
 Players.PlayerRemoving:Connect(function(player)
 	local userId = player.UserId
 	activeSaves[userId] = true
-	
-	LikeManager.SaveTotalLikes(player)
-	LikeManager.SavePlayerCooldowns(player)
-	
-	activeSaves[userId] = nil
+
+	local function cleanup(attempt)
+		local likesSaved = LikeManager.SaveTotalLikes(player)
+		local cooldownsSaved = LikeManager.SavePlayerCooldowns(player)
+		local ok = likesSaved and cooldownsSaved
+
+		if ok then
+			activeSaves[userId] = nil
+			return
+		end
+
+		if attempt < 5 then
+			task.delay(2, function()
+				cleanup(attempt + 1)
+			end)
+		else
+			warn("[LikeManager] Menyerah menyimpan likes untuk userId:", userId)
+			activeSaves[userId] = nil
+		end
+	end
+
+	cleanup(1)
 end)
 
 -- Auto Save setiap 300 detik (5 menit) agar DataStore limit tidak over
@@ -223,10 +255,10 @@ task.spawn(function()
 				local likesToSave = playerLikesCache[userId]
 				if likesToSave ~= nil then
 					local ok1 = pcall(function()
-						LikesStore:SetAsync(tostring(userId), likesToSave)
+						LikesWriteStore:SetAsync(tostring(userId), likesToSave)
 					end)
 					local ok2 = pcall(function()
-						OrderedLikesStore:SetAsync(tostring(userId), likesToSave)
+						OrderedLikesWriteStore:SetAsync(tostring(userId), likesToSave)
 					end)
 					if ok1 and ok2 then
 						playerDirtyFlags[userId] = nil
@@ -245,7 +277,7 @@ task.spawn(function()
 					end
 				end
 				local okCd = pcall(function()
-					CooldownsStore:SetAsync(tostring(userId), cleanedData)
+					CooldownsWriteStore:SetAsync(tostring(userId), cleanedData)
 				end)
 				if okCd then
 					cooldownDirtyFlags[userId] = nil

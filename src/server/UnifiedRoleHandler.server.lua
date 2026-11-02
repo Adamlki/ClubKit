@@ -1,7 +1,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
-local DataStoreService = game:GetService("DataStoreService")
+local DataStoreEnv = require(ServerStorage:WaitForChild("Modules"):WaitForChild("DataStoreEnv"))
 local HttpService = game:GetService("HttpService")
 local ServerScriptService = game:GetService("ServerScriptService")
 
@@ -51,7 +51,7 @@ end
 -- ====================================
 -- DATASTORES
 -- ====================================
-local transactionStore = DataStoreService:GetDataStore(CONFIG.DataStores.TRANSACTION_HISTORY)
+local _, transactionWriteStore = DataStoreEnv.Get(CONFIG.DataStores.TRANSACTION_HISTORY)
 
 -- ====================================
 -- REMOTE SETUP
@@ -144,7 +144,7 @@ local function saveTransaction(giverUserId, targetUserId, roleType, receiptInfo)
 	local uniqueId = string.sub(cleanGuid, 1, 16)
 	local key = string.format("txn_%d_%s", os.time(), uniqueId)
 	return datastoreRetry(function()
-		transactionStore:SetAsync(key, {
+		transactionWriteStore:SetAsync(key, {
 			giver       = giverUserId,
 			target      = targetUserId,
 			roleType    = roleType,

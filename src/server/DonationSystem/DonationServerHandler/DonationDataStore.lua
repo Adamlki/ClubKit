@@ -12,7 +12,8 @@ local dataStore = DataStoreService:GetDataStore(
 -- 🔥 ARCHITECT FIX: ORDERED DATA STORE (Khusus untuk Papan Leaderboard 3D)
 local orderedDataStore = DataStoreService:GetOrderedDataStore("DonationBoard_Ordered_V2", "global")
 
-local PlayerDataCache = {} 
+local PlayerDataCache = {}
+local pendingBoardWrites = 0
 
 local function debugLog(category, ...)
 	if not DonationConfig.DEBUG.ENABLED then return end
@@ -126,6 +127,7 @@ function DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
 			end
 
 			-- 2. Papan Peringkat 3D (All Time & Daily)
+			pendingBoardWrites += 1
 			task.spawn(function()
 				local safeAmount = math.floor(totalAmount)
 				for attempt = 1, 3 do
@@ -146,6 +148,7 @@ function DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
 					if ok then break end
 					task.wait(2)
 				end
+				pendingBoardWrites = math.max(0, pendingBoardWrites - 1)
 			end)
 		else
 			debugLog("DATASTORE", "Receipt sudah pernah diproses sebelumnya. Melewati penambahan Daily & Cache.")
@@ -153,6 +156,15 @@ function DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
 	end
 
 	return saveSuccess, isNewReceipt
+end
+
+function DonationDataStore:FlushBoardWrites(timeout)
+	local started = os.clock()
+	local limit = timeout or 8
+	while pendingBoardWrites > 0 and (os.clock() - started) < limit do
+		task.wait(0.1)
+	end
+	return pendingBoardWrites == 0
 end
 
 function DonationDataStore:CleanupPlayer(player)

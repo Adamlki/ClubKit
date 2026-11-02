@@ -3,7 +3,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local OverheadShared = ReplicatedStorage:WaitForChild("OverheadShared")
 local Config = require(OverheadShared:WaitForChild("Config"))
-local TitleEffects = require(OverheadShared:WaitForChild("TitleEffects"))
 
 local UI = ReplicatedStorage:WaitForChild("UI")
 local overheadTemplate = UI:WaitForChild("OverheadGui")
@@ -126,38 +125,14 @@ local function checkVIP(player, role)
 	return false
 end
 
-local EFFECT_METHOD_MAP = {
-	none      = "CreateNoneEffect",
-	wave      = "CreateWaveEffect",
-	pulse     = "CreatePulseEffect",
-	rainbow   = "CreateRainbowEffect",
-	shimmer   = "CreateShimmerEffect",
-	palette   = "CreatePaletteEffect",
-	sunset    = "CreateSunsetEffect",
-	ocean     = "CreateOceanEffect",
-	galaxy    = "CreateGalaxyEffect",
-	emerald   = "CreateEmeraldEffect",
-	pinkwhite = "CreatePinkWhiteEffect",
-}
-
-local function applyTitleEffect(titleFrame, titleLabel, player, character)
+local function applyTitleColor(titleFrame, titleLabel, player)
 	local r = player:GetAttribute("Overhead_TitleColorR") or 1
 	local g = player:GetAttribute("Overhead_TitleColorG") or 1
 	local b = player:GetAttribute("Overhead_TitleColorB") or 1
-	local base = Color3.new(r, g, b)
 
-	titleFrame.BackgroundColor3 = base
+	titleFrame.BackgroundColor3 = Color3.new(r, g, b)
 	if titleLabel then
 		titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	end
-	if player:GetAttribute("Overhead_TitleGradient") ~= true then return end
-
-	local effectType = player:GetAttribute("Overhead_TitleEffect") or "wave"
-	local effectConfig = Config.EFFECTS[effectType:upper()] or Config.EFFECTS.WAVE
-
-	local methodName = EFFECT_METHOD_MAP[effectType]
-	if methodName and TitleEffects[methodName] then
-		TitleEffects[methodName](TitleEffects, titleLabel, base, character, effectConfig, Config.TEXT_BRIGHTEN_FACTOR)
 	end
 end
 
@@ -198,8 +173,7 @@ local function updateOverhead(player, character, overhead)
 			local label = titleFrame:FindFirstChild("TitleLabel") or safeFind(titleFrame, "TitleLabel")
 			if label then
 				label.Text = titleText
-				label.TextColor3 = Color3.fromRGB(255, 255, 255)
-				task.spawn(function() applyTitleEffect(titleFrame, label, player, character) end)
+				applyTitleColor(titleFrame, label, player)
 			end
 		end
 	end

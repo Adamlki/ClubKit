@@ -1,8 +1,9 @@
-local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
+local ServerStorage = game:GetService("ServerStorage")
+local DataStoreEnv = require(ServerStorage:WaitForChild("Modules"):WaitForChild("DataStoreEnv"))
 
-local favoritedAnimationsStore = DataStoreService:GetDataStore("FavoritedAnimations")
+local favoritedAnimationsStore, favoritedAnimationsWriteStore = DataStoreEnv.Get("FavoritedAnimations")
 local replicatedStorage = game:GetService("ReplicatedStorage")
 local Events = replicatedStorage:WaitForChild("Remotes")
 local updateFavoritedAnimationsEvent = Events:WaitForChild("updateFavoritedAnimationsEvent")
@@ -34,18 +35,30 @@ local activeSaves = {}
 local function savePlayerData(player, snapshotData)
 	local userId = player.UserId
 	if not isDirty[userId] then return end
-	isDirty[userId] = nil
 
 	local savedData = snapshotData or getSavedData(player)
-	if savedData then
-		activeSaves[userId] = true
-		local success, errorMessage = pcall(function()
-			favoritedAnimationsStore:SetAsync("Player_" .. userId, savedData)
+	if not savedData then return end
+
+	activeSaves[userId] = true
+	local success = false
+	local errorMessage = nil
+
+	for attempt = 1, 3 do
+		success, errorMessage = pcall(function()
+			favoritedAnimationsWriteStore:UpdateAsync("Player_" .. userId, function()
+				return savedData
+			end)
 		end)
-		activeSaves[userId] = nil
-		if not success then
-			warn("[PersistentAnimations] Gagal save data untuk", player.Name, ":", errorMessage)
-		end
+		if success then break end
+		if attempt < 3 then task.wait(1) end
+	end
+
+	activeSaves[userId] = nil
+	if success then
+		isDirty[userId] = nil
+	else
+		-- Keep dirty so BindToClose / another save attempt can retry.
+		warn("[PersistentAnimations] Gagal save data untuk", player.Name, ":", errorMessage)
 	end
 end
 

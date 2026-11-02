@@ -20,6 +20,20 @@ local CONFIG = {
 
 local bannedSongCache = {}
 local temporaryCdnCooldown = {}
+local assetInfoCache = {}
+local ASSET_INFO_TTL = 600
+
+local function getCachedAssetInfo(numericId)
+	local now = os.clock()
+	local cached = assetInfoCache[numericId]
+	if cached and (now - cached.time) < ASSET_INFO_TTL then
+		return cached.ok, cached.info
+	end
+
+	local ok, info = pcall(MarketplaceService.GetProductInfo, MarketplaceService, numericId, Enum.InfoType.Asset)
+	assetInfoCache[numericId] = { ok = ok, info = info, time = now }
+	return ok, info
+end
 
 function MusicPlaybackManager.new(config)
 	local self = setmetatable({}, MusicPlaybackManager)
@@ -220,7 +234,13 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 	end
 
 	local baseDuration = songData.Duration or musicData.Duration or self.config.DEFAULT_SONG_DURATION
-	local playbackSpeed = math.clamp(musicData.PlaybackSpeed or CONFIG.DEFAULT_PLAYBACK_SPEED, 0.1, 2.0)
+	-- MusicModule menyimpan kecepatan sebagai `speed` (dan pitch sebagai `pitch`).
+	-- Sebelumnya field itu tidak pernah dibaca sehingga semua lagu diputar di 1.0x.
+	local playbackSpeed = math.clamp(
+		musicData.PlaybackSpeed or musicData.speed or CONFIG.DEFAULT_PLAYBACK_SPEED,
+		0.1,
+		2.0
+	)
 
 	if baseDuration <= 0 then
 		return false, "Invalid song duration"
@@ -249,7 +269,7 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 	self._playbackGeneration = (self._playbackGeneration or 0) + 1
 	local currentGeneration = self._playbackGeneration
 
-	local pitchOctave = musicData.PitchOctave or 1.0
+	local pitchOctave = musicData.PitchOctave or musicData.pitch or 1.0
 	local success = self.audioHandler:Play(musicData.id, 0, playbackSpeed, pitchOctave)
 
 	if not success then
@@ -266,7 +286,9 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 	self.isPlaying = true
 
 	self:ConnectEndedEvent()
-	self:StartWatchdog(self.adjustedDuration)
+	-- Jangan pasang watchdog dengan durasi default 180 detik sebelum
+	-- TimeLength diketahui; lagu yang lebih panjang bisa terpotong.
+	-- Watchdog dipasang lagi setelah durasi terdeteksi di bawah.
 	self:BroadcastSongUpdate(remotes, displayMusicData, uploaderName, self.adjustedDuration, playbackSpeed, false)
 
 	task.spawn(function()
@@ -327,7 +349,7 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 			local isTrulyBanned = false
 
 			if numericId then
-				local ok, assetInfo = pcall(MarketplaceService.GetProductInfo, MarketplaceService, numericId, Enum.InfoType.Asset)
+				local ok, assetInfo = getCachedAssetInfo(numericId)
 				if not ok then
 					local errStr = string.lower(tostring(assetInfo))
 					if errStr:find("not approved") or errStr:find("forbidden") or errStr:find("403") or errStr:find("404") then

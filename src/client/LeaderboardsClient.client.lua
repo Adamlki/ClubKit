@@ -7,8 +7,6 @@ local UserService = game:GetService("UserService")
 local AUTO_ROTATE_INTERVAL = 30
 local USER_INTERACTION_PAUSE = 30
 
--- Batasi baris yang benar-benar dibuat/di-update. Payload server tetap boleh
--- lebih besar, tetapi client tidak perlu membuat ratusan row sekaligus.
 local MAX_RENDER_ROWS = 25
 local MAX_USER_INFO_BATCH = 100
 
@@ -62,6 +60,7 @@ end
 
 local pendingUserInfoIds = {}
 local userInfoFetchAttempted = {}
+local userInfoRetryAt = {} -- [userId] = os.clock() minimal waktu retry berikutnya
 local userInfoBatchScheduled = false
 
 local function flushUserInfoBatch()
@@ -79,7 +78,8 @@ local function flushUserInfoBatch()
 		end
 
 		local ok, infoList = pcall(UserService.GetUserInfosByUserIdsAsync, UserService, batch)
-		if ok and infoList then
+		local requestSucceeded = ok and type(infoList) == "table"
+		if requestSucceeded then
 			for _, info in ipairs(infoList) do
 				local username = tostring(info.Username or "")
 				local cleanUser = username:gsub("^@", ""):gsub("%s+", "_")
@@ -93,7 +93,12 @@ local function flushUserInfoBatch()
 		end
 
 		for _, userId in ipairs(batch) do
-			userInfoFetchAttempted[userId] = true
+			if requestSucceeded then
+				userInfoFetchAttempted[userId] = true
+				userInfoRetryAt[userId] = nil
+			else
+				userInfoRetryAt[userId] = os.clock() + 30
+			end
 		end
 	end
 
@@ -104,10 +109,13 @@ local function queueUserInfoFetch(userId)
 	if userInfoCache[userId] or userInfoFetchAttempted[userId] then
 		return
 	end
+	local retryAt = userInfoRetryAt[userId]
+	if retryAt and os.clock() < retryAt then
+		return
+	end
 	pendingUserInfoIds[userId] = true
 	if userInfoBatchScheduled then return end
 	userInfoBatchScheduled = true
-	-- Kumpulkan beberapa row dulu supaya satu render tidak memicu puluhan request.
 	task.delay(0.05, flushUserInfoBatch)
 end
 

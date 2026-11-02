@@ -9,6 +9,7 @@ local camera    = workspace.CurrentCamera
 local CinematicRemote      = RS:WaitForChild("CinematicRemote")
 local RequestDonationState = RS:WaitForChild("RequestDonationState")
 local FormatUtils          = require(RS:WaitForChild("Utils"):WaitForChild("FormatUtils"))
+local CameraLease          = require(RS:WaitForChild("Modules"):WaitForChild("CameraLease"))
 
 local donationGUI = script.Parent
 
@@ -35,8 +36,13 @@ local isOrbiting      = false
 local orbitConnection = nil
 local skipRequested   = false
 local originalCamType = nil
+local leaseToken      = nil
 
 local SOUND_ID = "rbxassetid://122331425639589"
+
+local function donationNotifHidden()
+	return _G.HideDonationNotif == true
+end
 
 local function playSound()
 	local sound   = Instance.new("Sound")
@@ -165,8 +171,14 @@ skipButton.MouseLeave:Connect(function()
 end)
 
 local function stopOrbit()
+	local owned = CameraLease:IsOwner("Level4Donation", leaseToken)
 	if orbitConnection then orbitConnection:Disconnect(); orbitConnection = nil end
-	if originalCamType then camera.CameraType = originalCamType; originalCamType = nil end
+	CameraLease:Release("Level4Donation", leaseToken)
+	leaseToken = nil
+	if owned and originalCamType then
+		camera.CameraType = originalCamType
+	end
+	originalCamType = nil
 	isOrbiting = false
 end
 
@@ -174,6 +186,9 @@ local function startOrbitCamera(targetCharacter, duration, onDone)
 	stopOrbit()
 	local hrp = targetCharacter:FindFirstChild("HumanoidRootPart")
 	if not hrp then if onDone then onDone() end return end
+
+	leaseToken = CameraLease:Acquire("Level4Donation", 70)
+	if not leaseToken then return end
 
 	isOrbiting      = true
 	skipRequested   = false
@@ -189,6 +204,11 @@ local function startOrbitCamera(targetCharacter, duration, onDone)
 	local startAngle = math.atan2(diff.Z, diff.X)
 
 	orbitConnection = RunService.RenderStepped:Connect(function(dt)
+		if not CameraLease:IsOwner("Level4Donation", leaseToken) then
+			stopOrbit()
+			if onDone then task.spawn(onDone) end
+			return
+		end
 		if skipRequested or elapsed >= duration or not hrp or not hrp.Parent then
 			stopOrbit()
 			if onDone then task.spawn(onDone) end
@@ -204,6 +224,10 @@ local function startOrbitCamera(targetCharacter, duration, onDone)
 end
 
 local function showCinematic(donationData)
+	if donationNotifHidden() then
+		return
+	end
+
 	local color    = toColor3(donationData.cinematicColor)
 	local duration = donationData.cinematicDuration or 8
 
@@ -440,6 +464,11 @@ local cinematicQueue = {}
 
 local function processCinematicQueue()
 	if isPlayingCinematic or #cinematicQueue == 0 then return end
+	if donationNotifHidden() then
+		cinematicQueue = {}
+		resetCinematic()
+		return
+	end
 	isPlayingCinematic = true
 	skipRequested = false
 
@@ -473,7 +502,7 @@ local function processCinematicQueue()
 end
 
 CinematicRemote.OnClientEvent:Connect(function(donationData)
-	if not donationData or not donationData.donorName then return end
+	if not donationData or not donationData.donorName or donationNotifHidden() then return end
 
 	if donationData.useCinematic then
 		table.insert(cinematicQueue, donationData)

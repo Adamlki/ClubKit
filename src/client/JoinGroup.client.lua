@@ -2,7 +2,6 @@ local GroupService = game:GetService("GroupService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
-local AvatarEditorService = game:GetService("AvatarEditorService")
 
 local player = Players.LocalPlayer
 local GROUP_ID = 192828493 
@@ -58,13 +57,6 @@ local function handleJoinCommunityInteraction()
 		task.delay(2, function() promptDebounce = false end)
 		return
 	end
-
-	-- Prompt Favorite
-	task.spawn(function()
-		pcall(function()
-			AvatarEditorService:PromptSetFavorite(game.PlaceId, Enum.AvatarItemType.Asset, true)
-		end)
-	end)
 
 	-- Prompt Join Group
 	local success, result = pcall(function()
@@ -134,12 +126,6 @@ task.delay(60, function()
 		requestVIPRole()
 		return 
 	end
-
-	task.delay(3, function()
-		pcall(function()
-			AvatarEditorService:PromptSetFavorite(game.PlaceId, Enum.AvatarItemType.Asset, true)
-		end)
-	end)
 
 	local promptSuccess, result = pcall(function()
 		return GroupService:PromptJoinAsync(GROUP_ID)

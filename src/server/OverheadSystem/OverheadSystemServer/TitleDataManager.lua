@@ -1,13 +1,15 @@
-local DataStoreService = game:GetService("DataStoreService")
+local ServerStorage = game:GetService("ServerStorage")
+local DataStoreEnv = require(ServerStorage:WaitForChild("Modules"):WaitForChild("DataStoreEnv"))
 local TitleDataManager = {}
 
 local CONFIG = nil
 local TitleDataStore = nil
+local TitleWriteStore = nil
 local playerTitleCache = {}
 
 function TitleDataManager:Init(config)
 	CONFIG = config
-	TitleDataStore = DataStoreService:GetDataStore(CONFIG.TITLE_DATASTORE_NAME)
+	TitleDataStore, TitleWriteStore = DataStoreEnv.Get(CONFIG.TITLE_DATASTORE_NAME)
 end
 
 local function deserializeColor(colorData)
@@ -33,8 +35,6 @@ function TitleDataManager:LoadTitleData(userId)
 			local titleData = {
 				Title = data.Title or "",
 				Color = deserializeColor(data.Color),
-				GradientEnabled = data.GradientEnabled or false,
-				GradientEffect = data.GradientEffect or "wave"
 			}
 			playerTitleCache[userId] = titleData
 			return titleData
@@ -62,12 +62,10 @@ function TitleDataManager:SaveTitleData(userId, titleData)
 	local serializedData = {
 		Title = titleData.Title or "",
 		Color = serializeColor(titleData.Color),
-		GradientEnabled = titleData.GradientEnabled or false,
-		GradientEffect = titleData.GradientEffect or "wave"
 	}
 
 	local success, err = pcall(function()
-		TitleDataStore:SetAsync(CONFIG.TITLE_DATASTORE_PREFIX .. userId, serializedData)
+		TitleWriteStore:SetAsync(CONFIG.TITLE_DATASTORE_PREFIX .. userId, serializedData)
 	end)
 
 	if success then

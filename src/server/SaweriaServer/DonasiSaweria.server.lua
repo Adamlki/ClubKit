@@ -75,8 +75,8 @@ local function filterBroadcastText(rawText, contextUserId, defaultFallback)
 	return defaultFallback
 end
 
--- Di Studio cek setiap 15 detik agar tes cepat, di Live Server 30 detik
-local CHECK_INTERVAL = IS_STUDIO and 15 or 30 
+-- Di Studio cek setiap 30 detik; live 60 detik.
+local CHECK_INTERVAL = IS_STUDIO and 30 or 60
 local MAX_DONATIONS = 50
 
 -- DEDUPE LINTAS-SERVER (MemoryStore)

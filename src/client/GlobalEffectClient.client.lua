@@ -9,6 +9,7 @@ local StarterGui = game:GetService("StarterGui")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local CameraLease = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("CameraLease"))
 
 local Config = {
 	CameraDistance = 20,
@@ -217,12 +218,30 @@ end
 local Camera = Workspace.CurrentCamera
 local CameraConnection = nil
 local CameraAngle = 0
+local originalCameraType = nil
+local originalCameraMode = nil
+local originalCameraSubject = nil
+local originalFOV = nil
+local leaseToken = nil
 
 local function start360Camera()
 	if CameraConnection then return end
+	local cam = Workspace.CurrentCamera
+	if not cam then return end
+	leaseToken = CameraLease:Acquire("GlobalEffect", 60)
+	if not leaseToken then return end
+	Camera = cam
+	originalCameraType = cam.CameraType
+	originalCameraMode = LocalPlayer.CameraMode
+	originalCameraSubject = cam.CameraSubject
+	originalFOV = cam.FieldOfView
 	Camera.CameraType = Enum.CameraType.Scriptable
 
 	CameraConnection = RunService.RenderStepped:Connect(function(dt)
+		if not CameraLease:IsOwner("GlobalEffect", leaseToken) then
+			stop360Camera()
+			return
+		end
 		local character = LocalPlayer.Character
 		local head = character and character:FindFirstChild("Head")
 		if not head then return end
@@ -236,18 +255,27 @@ local function start360Camera()
 end
 
 local function stop360Camera()
-	if CameraConnection then
-		CameraConnection:Disconnect()
-		CameraConnection = nil
-	end
+	if not CameraConnection then return end
+	local owned = CameraLease:IsOwner("GlobalEffect", leaseToken)
+	CameraConnection:Disconnect()
+	CameraConnection = nil
+	CameraLease:Release("GlobalEffect", leaseToken)
+	leaseToken = nil
 
-	Camera.CameraType = Enum.CameraType.Custom
-	LocalPlayer.CameraMode = Enum.CameraMode.Classic
+	if not owned then return end
 
-	local char = LocalPlayer.Character
-	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		Camera.CameraSubject = humanoid
+	local cam = Workspace.CurrentCamera
+	if cam then
+		cam.FieldOfView = originalFOV or 70
+		LocalPlayer.CameraMode = originalCameraMode or Enum.CameraMode.Classic
+		if originalCameraSubject then
+			cam.CameraSubject = originalCameraSubject
+		else
+			local char = LocalPlayer.Character
+			local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+			if humanoid then cam.CameraSubject = humanoid end
+		end
+		cam.CameraType = originalCameraType or Enum.CameraType.Custom
 	end
 end
 

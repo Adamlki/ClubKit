@@ -1,4 +1,5 @@
-local DataStoreService = game:GetService("DataStoreService")
+local ServerStorage = game:GetService("ServerStorage")
+local DataStoreEnv = require(ServerStorage:WaitForChild("Modules"):WaitForChild("DataStoreEnv"))
 
 local DonaturRankSystem = {}
 
@@ -6,6 +7,7 @@ local DonaturRankSystem = {}
 -- STATE
 -- ====================================
 local dataStore  = nil
+local dataWriteStore = nil
 local rankCache  = {}
 local loadingLocks = {} -- 🟢 BARU: Mencegah request ganda di waktu bersamaan
 
@@ -24,8 +26,9 @@ end
 -- ====================================
 function DonaturRankSystem:Init(config)
 	DEBUG    = config.DEBUG_ENABLED or false
-	dataStore = DataStoreService:GetDataStore(config.DONATUR_RANK_DATASTORE_NAME)
-	log("Initialized - DataStore:", config.DONATUR_RANK_DATASTORE_NAME)
+	local storeName = config.DONATUR_RANK_DATASTORE_NAME
+	dataStore, dataWriteStore = DataStoreEnv.Get(storeName)
+	log("Initialized - DataStore:", storeName)
 end
 
 -- ====================================
@@ -40,9 +43,13 @@ function DonaturRankSystem:LoadRank(userId)
 
 	-- 2. 🟢 ANTI-SPAM LOCK: Jika script lain sedang mengambil data ini, tunggu!
 	if loadingLocks[userId] then
-		repeat task.wait(0.1) until loadingLocks[userId] == nil
+		local waited = 0
+		while loadingLocks[userId] and waited < 15 do
+			waited += task.wait(0.1)
+		end
 
-		-- Setelah kunci dibuka, ambil dari cache
+		-- Setelah kunci dibuka, ambil dari cache. Jika lock macet, jangan
+		-- menggantung thread overhead selamanya.
 		local reCheck = rankCache[userId]
 		return reCheck ~= false and reCheck or nil
 	end
@@ -91,9 +98,9 @@ end
 function DonaturRankSystem:AssignRank(userId, rank)
 	local success, err = pcall(function()
 		if rank then
-			dataStore:SetAsync(tostring(userId), rank)
+			dataWriteStore:SetAsync(tostring(userId), rank)
 		else
-			dataStore:RemoveAsync(tostring(userId))
+			dataWriteStore:RemoveAsync(tostring(userId))
 		end
 	end)
 

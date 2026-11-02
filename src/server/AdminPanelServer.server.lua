@@ -156,7 +156,11 @@ local function getSpotlightData()
 end
 
 GetSpotlightSettingsRemote.OnServerInvoke = function(sender)
-	if sender then isSpamming(sender, "GetSpotlight") end
+	-- Data ini non-sensitif (dipakai client untuk syarat donasi), jadi selalu
+	-- boleh dibaca; rate limit tetap dicek supaya perilakunya sama seperti remote lain.
+	if not sender or isSpamming(sender, "GetSpotlight") then
+		return getSpotlightData()
+	end
 	return getSpotlightData()
 end
 

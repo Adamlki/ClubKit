@@ -336,9 +336,15 @@ refreshBtn.MouseButton1Click:Connect(function()
 	fetchAndRenderServers()
 end)
 
--- Search Box Filtering (Realtime)
+-- Search Box Filtering (debounced; avoids rebuilding every card per keystroke)
+local searchDebounceId = 0
 searchBox:GetPropertyChangedSignal("Text"):Connect(function()
-	renderServerCards(searchBox.Text)
+	searchDebounceId += 1
+	local requestId = searchDebounceId
+	task.delay(0.25, function()
+		if requestId ~= searchDebounceId then return end
+		renderServerCards(searchBox.Text)
+	end)
 end)
 
 -- Initial Load

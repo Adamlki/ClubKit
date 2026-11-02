@@ -135,13 +135,29 @@ local clientBoardCooldown = {}
 
 updateTopBoardRemote.OnServerEvent:Connect(function(player)
 	if not player then return end
+
 	local now = os.clock()
 	if now - (clientBoardCooldown[player.UserId] or 0) < 15 then
+		-- Throttle the reply itself. Return the last known payload so the
+		-- StatueRenderer/LeaderboardsClient still gets data on a cache hit.
+		if cachedDonors and (#(cachedDonors.AllTime or {}) > 0 or #(cachedDonors.Daily or {}) > 0) then
+			pcall(function()
+				updateTopBoardRemote:FireClient(player, cachedDonors)
+			end)
+		end
 		return
 	end
 	clientBoardCooldown[player.UserId] = now
 
-	if cachedDonors and (cachedDonors.AllTime or #cachedDonors > 0) then
+	if cachedDonors and (#(cachedDonors.AllTime or {}) > 0 or #(cachedDonors.Daily or {}) > 0) then
+		pcall(function()
+			updateTopBoardRemote:FireClient(player, cachedDonors)
+		end)
+		return
+	end
+
+	pcall(updateLeaderboard)
+	if cachedDonors and cachedDonors.AllTime then
 		pcall(function()
 			updateTopBoardRemote:FireClient(player, cachedDonors)
 		end)

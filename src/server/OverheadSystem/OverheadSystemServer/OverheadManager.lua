@@ -139,8 +139,6 @@ function OverheadManager:UpdateAllAttributes(player)
 				safeSetAttr(player, "Overhead_TitleColorG", 1)
 				safeSetAttr(player, "Overhead_TitleColorB", 1)
 			end
-			safeSetAttr(player, "Overhead_TitleGradient", titleData.GradientEnabled or false)
-			safeSetAttr(player, "Overhead_TitleEffect", titleData.GradientEffect or "wave")
 		else
 			safeSetAttr(player, "Overhead_TitleText", "")
 		end

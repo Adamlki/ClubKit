@@ -266,8 +266,6 @@ getPlayerDataRemote.OnServerInvoke = function(sender, targetPlayer)
 	return {
 		Title           = titleData and titleData.Title or "",
 		Color           = colorData or { R = 255, G = 255, B = 255 },
-		GradientEnabled = titleData and titleData.GradientEnabled or false,
-		GradientEffect  = titleData and titleData.GradientEffect or "wave",
 		DonaturRank     = donaturRank,
 	}
 end
@@ -275,6 +273,12 @@ end
 -- ====================================
 -- UPDATE TITLE REMOTE
 -- ====================================
+local function markTitleUpdated(targetPlayer)
+	if not targetPlayer or not targetPlayer.Parent then return end
+	local revision = (targetPlayer:GetAttribute("TitleRevision") or 0) + 1
+	targetPlayer:SetAttribute("TitleRevision", revision)
+end
+
 updateTitleRemote.OnServerEvent:Connect(function(sender, targetPlayer, titleData)
 	-- 🔥 ARCHITECT FIX: Rate Limiting
 	if not RemoteEventManager.checkRateLimit(sender, "updateTitle") then return end
@@ -303,18 +307,15 @@ updateTitleRemote.OnServerEvent:Connect(function(sender, targetPlayer, titleData
 	local rawColor = titleData.Color
 	if typeof(rawColor) ~= "Color3" then rawColor = Color3.fromRGB(255, 255, 255) end
 
-	local isGradient = titleData.Gradient or titleData.GradientEnabled
-	if type(isGradient) ~= "boolean" then isGradient = false end
-
-	local gradEffect = titleData.GradientEffect
-	if type(gradEffect) ~= "string" then gradEffect = "wave" end
-
 	if rawTitle == "" then
 		local emptyData = {
 			Title = "", Color = Color3.fromRGB(255, 255, 255),
-			GradientEnabled = false, GradientEffect = "wave",
 		}
-		TitleDataManager:SaveTitleData(targetPlayer.UserId, emptyData)
+		local saved, saveErr = TitleDataManager:SaveTitleData(targetPlayer.UserId, emptyData)
+		if not saved then
+			DebugSystem:Warn("UpdateTitle: gagal menyimpan title kosong:", tostring(saveErr))
+			return
+		end
 		TitleDataManager:UpdateCache(targetPlayer.UserId, emptyData)
 		DebugSystem:Log("Title removed for", targetPlayer.Name)
 	else
@@ -332,10 +333,12 @@ updateTitleRemote.OnServerEvent:Connect(function(sender, targetPlayer, titleData
 		local newTitleData = {
 			Title           = filteredTitle,
 			Color           = rawColor,
-			GradientEnabled = isGradient,
-			GradientEffect  = gradEffect,
 		}
-		TitleDataManager:SaveTitleData(targetPlayer.UserId, newTitleData)
+		local saved, saveErr = TitleDataManager:SaveTitleData(targetPlayer.UserId, newTitleData)
+		if not saved then
+			DebugSystem:Warn("UpdateTitle: gagal menyimpan title:", tostring(saveErr))
+			return
+		end
 		TitleDataManager:UpdateCache(targetPlayer.UserId, newTitleData)
 		DebugSystem:Log("Title updated & saved for", targetPlayer.Name, "->", filteredTitle)
 	end
@@ -344,6 +347,7 @@ updateTitleRemote.OnServerEvent:Connect(function(sender, targetPlayer, titleData
 	if targetPlayer.Character and targetPlayer.Character.Parent then
 		OverheadManager:CreateOverhead(targetPlayer, targetPlayer.Character)
 	end
+	markTitleUpdated(targetPlayer)
 end)
 
 -- ====================================

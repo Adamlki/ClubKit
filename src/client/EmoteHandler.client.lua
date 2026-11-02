@@ -40,6 +40,8 @@ local scriptConnections = {}
 local fakeStartTimes = setmetatable({}, { __mode = "k" }) -- 🔥 THE HIVE MIND: Weak table cache waktu mulai dinamis (Anti-Memory Leak)
 local characterConnections = {} -- [char] = { conn1, conn2, ... }
 local playerConnections = {} -- [Player] = { conn1, conn2, ... }
+-- Harus dideklarasikan sebelum cleanupCharacterConnections (dipakai di dalamnya)
+local globalSyncListeners = setmetatable({}, { __mode = "k" })
 local leaderCharAddedConn = nil
 local leaderDanceConn = nil
 
@@ -91,7 +93,6 @@ preloadLabel.Font = Enum.Font.Montserrat
 preloadLabel.Visible = false
 preloadLabel.Parent = mainframe
 
--- 📱🖥️ PENYESUAIAN UKURAN RESPONSIF (HP NYAMAN DITEKAN JARI, PC PAS TIDAK KEGEDEAN)
 local function updateResponsiveScale()
 	local camera = workspace.CurrentCamera
 	local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
@@ -102,11 +103,9 @@ local function updateResponsiveScale()
 	uiScale.Parent = mainframe
 
 	if isMobile then
-		-- Di HP/Tablet: perbesar agar nyaman ditekan jari (touch target ~48px) dan proporsional dengan tinggi layar
 		local scaleByHeight = (viewport.Y - 20) / 430
 		uiScale.Scale = math.clamp(scaleByHeight, 0.95, 1.25)
 	else
-		-- Di PC: 0.85 agar tidak terlalu besar di monitor desktop
 		uiScale.Scale = 0.85
 	end
 end
@@ -144,7 +143,6 @@ local SPEED_MIN = 0.1
 local SPEED_MAX = 3.0
 local SPEED_DEFAULT = 1.0
 
--- 🔥 Transisi mulus & natural (0.5s crossfade)
 local FADE_TIME = 0.5
 local DANCE_SWITCH_FADE = 0.5
 
@@ -194,7 +192,7 @@ local localAnimTrack = nil
 local syncUpdateConnection = nil
 
 local savedLocalEmoteData = nil
-local animationStarted -- Forward Declaration
+local animationStarted
 
 local lastEmoteClickTime = 0 
 local lastDanceSwitchTime = 0 
@@ -223,7 +221,6 @@ local function killGhostAnimation(animator, fade, excludeTrack, excludeTrack2)
 		for _, t in ipairs(animator:GetPlayingAnimationTracks()) do
 			if t ~= excludeTrack and t ~= excludeTrack2 then
 				local animId = t.Animation and t.Animation.AnimationId
-				-- 🔥 Hanya hentikan jika ini adalah track club dance atau Action4 priority!
 				if (animId and isClubDanceId(animId)) or t.Priority == Enum.AnimationPriority.Action4 then
 					pcall(function()
 						t:AdjustSpeed(1)
@@ -236,7 +233,6 @@ local function killGhostAnimation(animator, fade, excludeTrack, excludeTrack2)
 end
 
 local function suppressNativeAnimations(animator, fade)
-	-- Fungsi ini sengaja dikosongkan
 end
 
 local function freezeHumanoidForPose(character, freeze)
@@ -244,7 +240,6 @@ local function freezeHumanoidForPose(character, freeze)
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then return end
 
-	-- Pose hanya membatasi kecepatan berjalan, TIDAK merusak state physics humanoid
 	if freeze then
 		humanoid.WalkSpeed = 0
 	else
@@ -270,7 +265,6 @@ local function restoreCharacterAnimations(character)
 			local hasNonClubPlaying = false
 			for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
 				local animId = track.Animation and track.Animation.AnimationId
-				-- Kembalikan weight dan speed normal untuk animasi native (idle/walk/avatar emote)
 				if not isClubDanceId(animId) then
 					hasNonClubPlaying = true
 					track:AdjustSpeed(1)
@@ -278,8 +272,6 @@ local function restoreCharacterAnimations(character)
 				end
 			end
 
-			-- Jika sama sekali tidak ada track idle/walk/avatar emote yang aktif (misal idle sempat terhenti),
-			-- bangunkan script Animate Roblox agar karakter langsung bernapas normal dan tidak kaku
 			if not hasNonClubPlaying then
 				local animScript = character:FindFirstChild("Animate")
 				if animScript and animScript:IsA("LocalScript") and animScript.Enabled then
@@ -408,8 +400,6 @@ end
 -- ============================================
 -- THE UNIVERSAL HIVE MIND (Observer Tunggal)
 -- ============================================
-local globalSyncListeners = setmetatable({}, { __mode = "k" })
-
 local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
 	if char ~= player.Character then return end 
 
@@ -423,7 +413,6 @@ local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
 
 	local normDanceId = normalizeId(danceId)
 
-	-- ⚡ JIKA DANCE INI SUDAH SEDANG DIMAINKAN: Cukup update Speed tanpa stop/replay atau snap TimePosition!
 	if localSyncTrack and localSyncTrack.Animation and normalizeId(localSyncTrack.Animation.AnimationId) == normDanceId and localSyncTrack.IsPlaying then
 		if isSpam then
 			pcall(function() localSyncTrack.TimePosition = 0 end)
@@ -476,7 +465,6 @@ local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
 	local targetAnim = findAnimById(danceId)
 	if not targetAnim then return end
 
-	-- Matikan default animate Roblox agar pose berdiri tidak menyusup
 	setAnimateEnabled(char, false)
 
 	local oldSyncTrack = localSyncTrack or localAnimTrack
@@ -491,7 +479,6 @@ local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
 	localSyncTrack = track
 	track.Priority = Enum.AnimationPriority.Action4
 
-	-- 🔥 0ms TRUE SYNC: Baca langsung posisi real-time leader dari client jika ada!
 	local exactPos = nil
 	if leaderName and leaderName ~= "" then
 		local leaderPlayer = Players:FindFirstChild(leaderName)
@@ -508,12 +495,10 @@ local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
 		end
 	end
 
-	-- Fallback ke kalkulasi waktu server
 	if not exactPos and startTime and track.Length > 0 then
 		exactPos = ((workspace:GetServerTimeNow() - startTime) * speed) % track.Length
 	end
 
-	-- Mulai putar animasi baru secara instan
 	track:Play(actualFade, 1, speed)
 	local initialPosApplied = false
 	if exactPos and track.Length > 0 then
@@ -521,7 +506,6 @@ local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
 		initialPosApplied = true
 	end
 
-	-- Handover instan: Hentikan track lama & ghost langsung agar TIDAK bertumpuk / nekuk
 	if oldSyncTrack and oldSyncTrack ~= track then
 		pcall(function()
 			oldSyncTrack:AdjustSpeed(1)
@@ -535,7 +519,6 @@ local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
 		if not isScriptActive then return end
 		if char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
 
-		-- Hanya set TimePosition jika saat Play awal Length masih 0 (belum termuat di memori)
 		if not initialPosApplied and track and track.Length > 0 then
 			local targetPos = nil
 			if leaderName and leaderName ~= "" then
@@ -644,7 +627,6 @@ local function monitorPlayerCharacter(targetPlayer)
 			local currentDanceId = char:GetAttribute("CurrentDanceID")
 			local syncingTo = char:GetAttribute("Syncing")
 
-			-- Skenario 1: Karakter ini sync ke SAYA (Local Player adalah Leader) -> 0ms Direct Match!
 			if syncingTo == player.Name then
 				local myRef = localSyncTrack or localAnimTrack
 				if myRef and myRef.IsPlaying and myRef.Animation and track.Animation then
@@ -660,7 +642,6 @@ local function monitorPlayerCharacter(targetPlayer)
 				return
 			end
 
-			-- Skenario 2: Karakter ini sync ke LEADER LAIN -> 0ms Direct Match ke Leader tersebut!
 			if syncingTo and syncingTo ~= "" then
 				local leader = Players:FindFirstChild(syncingTo)
 				local leaderChar = leader and leader.Character
@@ -688,7 +669,6 @@ local function monitorPlayerCharacter(targetPlayer)
 				return
 			end
 
-			-- Skenario 3: Solo / Fallback ke waktu server (hanya jika bukan leader yang sedang aktif)
 			if not char:GetAttribute("IsLeader") and startTime and track.Length > 0 then
 				local elapsed = workspace:GetServerTimeNow() - startTime
 				local exactPos = (elapsed * speed) % track.Length
@@ -700,7 +680,6 @@ local function monitorPlayerCharacter(targetPlayer)
 			pcall(function() track:AdjustSpeed(speed) end)
 		end
 
-		-- Event-driven snap tanpa polling while loop
 		trackCharConn(animator.AnimationPlayed:Connect(function(track)
 			if char ~= player.Character and track and track.Animation then
 				if track.Length > 0 then
@@ -830,7 +809,6 @@ local function monitorPlayerCharacter(targetPlayer)
 					end
 				end
 			end
-			-- O(N) loop across 100 players is COMPLETELY REMOVED!
 		end))
 
 		task.spawn(function()
@@ -882,7 +860,7 @@ trackConnection(Players.PlayerAdded:Connect(monitorPlayerCharacter))
 trackConnection(Players.PlayerRemoving:Connect(onPlayerRemoving))
 
 -- ============================================
--- GUI & SYNC MANAGEMENT (FULL BLACK BLOCKING OVERLAY)
+-- GUI & SYNC MANAGEMENT
 -- ============================================
 
 local function getDanceNameFromId(danceId)
@@ -905,7 +883,6 @@ local function getDanceNameFromId(danceId)
 	return nil
 end
 
--- 🛡️ KONFIGURASI OVERLAY BLOK FULL HITAM
 unsyncframe.Size = UDim2.new(1, 0, 1, 0)
 unsyncframe.Position = UDim2.new(0, 0, 0, 0)
 unsyncframe.AnchorPoint = Vector2.new(0, 0)
@@ -920,7 +897,6 @@ local overlayCorner = unsyncframe:FindFirstChildOfClass("UICorner") or Instance.
 overlayCorner.CornerRadius = UDim.new(0, 12)
 overlayCorner.Parent = unsyncframe
 
--- TULISAN SYNC TO SIAPA
 local syncTitleLabel = unsyncframe:FindFirstChild("SyncTitle") or Instance.new("TextLabel")
 syncTitleLabel.Name = "SyncTitle"
 syncTitleLabel.Size = UDim2.new(1, -40, 0, 32)
@@ -947,7 +923,6 @@ syncSubtitleLabel.Text = "@..."
 syncSubtitleLabel.ZIndex = 102
 syncSubtitleLabel.Parent = unsyncframe
 
--- KARTU INDIKATOR DANCE YANG LEAD PAKE
 local danceCard = unsyncframe:FindFirstChild("DanceCard") or Instance.new("Frame")
 danceCard.Name = "DanceCard"
 danceCard.Size = UDim2.new(0.85, 0, 0, 95)
@@ -992,7 +967,6 @@ dancelabel.TextScaled = true
 dancelabel.ZIndex = 102
 dancelabel.Parent = danceCard
 
--- TOMBOL UNSYNC (STOP SYNC)
 unsyncBtn.Size = UDim2.new(0.75, 0, 0, 42)
 unsyncBtn.Position = UDim2.new(0.5, 0, 0.82, 0)
 unsyncBtn.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -1016,7 +990,6 @@ btnStroke.Color = Color3.fromRGB(140, 140, 140)
 btnStroke.Thickness = 1
 btnStroke.Parent = unsyncBtn
 
--- TOMBOL CLOSE OVERLAY AGAR PLAYER TETAP BISA MENUTUP MENU DANCE
 local overlayCloseBtn = unsyncframe:FindFirstChild("OverlayCloseBtn") or Instance.new("TextButton")
 overlayCloseBtn.Name = "OverlayCloseBtn"
 overlayCloseBtn.Size = UDim2.new(0, 32, 0, 32)
@@ -1100,14 +1073,12 @@ local function updateUnsyncFrame()
 		bindLeaderDanceListener(leaderPlayer)
 		updateLeaderDanceIndicator()
 
-		-- 🔥 BLOKIR SELURUH MENU DANCE: SEMBUNYIKAN MENU & TAMPILKAN OVERLAY HITAM
 		setMenuElementsBlocked(true)
 		unsyncframe.Visible = true
 	else
 		if leaderDanceConn then leaderDanceConn:Disconnect() leaderDanceConn = nil end
 		if leaderCharAddedConn then leaderCharAddedConn:Disconnect() leaderCharAddedConn = nil end
 		
-		-- 🔥 KEMBALIKAN MENU DANCE SEPERTI SEMULA
 		unsyncframe.Visible = false
 		setMenuElementsBlocked(false)
 
@@ -1123,7 +1094,6 @@ local function updateUnsyncFrame()
 	end
 end
 
--- Polling background untuk jaminan 100% update live
 task.spawn(function()
 	while isScriptActive do
 		task.wait(0.25)
@@ -1184,7 +1154,7 @@ setupSyncMonitoring()
 trackConnection(player.CharacterAdded:Connect(function() task.wait(1) if isScriptActive then setupSyncMonitoring() end end))
 
 -- ============================================
--- ANIMATION STARTED (Leader / Solo)
+-- ANIMATION STARTED 
 -- ============================================
 function animationStarted(animation, button)
 	if inputLock or pendingRequest then return end
@@ -1196,7 +1166,6 @@ function animationStarted(animation, button)
 	local character = player.Character
 	local animator = character and character:FindFirstChild("Humanoid") and character.Humanoid:FindFirstChild("Animator")
 
-	-- Jika sebelumnya sedang syncing ke orang lain, batalkan sync secara mulus
 	if isSyncing then
 		isSyncing = false
 		local prevLeader = currentLeaderName
@@ -1265,7 +1234,6 @@ function animationStarted(animation, button)
 			animationStartRE:FireServer(animation.AnimationId, false, currentSpeed, 0, false, workspace:GetServerTimeNow())
 		end
 	else
-		-- 🔥 GANTI DANCE KE PILIHAN BARU (Smooth 0.25s crossfade tanpa jeda "diem dulu")
 		savedLocalEmoteData = nil
 		currentAnimation = button
 		lastEmoteClickTime = os.clock()
@@ -1408,7 +1376,7 @@ favoriteBtn.MouseButton1Click:Connect(function() setActiveCategory("Favorite") e
 searchBox:GetPropertyChangedSignal("Text"):Connect(function() searchQuery = searchBox.Text updateDisplay() end)
 
 -- ============================================
--- SPEED SLIDER (MOBILE & MULTI-TOUCH FIX)
+-- SPEED SLIDER 
 -- ============================================
 if speedSlider and speedBar and speedtext and speedButton then
 	local isDraggingSpeed = false
@@ -1526,9 +1494,11 @@ task.spawn(function()
 	repeat task.wait(0.1) until favoritesLoaded or not isScriptActive
 	if not isScriptActive then return end
 
+	local createdButtons = 0
 	for _, anim in ipairs(emotesFolder:GetChildren()) do
 		if anim:IsA("Animation") then
 			createEmoteButton(anim, "Dance")
+			createdButtons += 1
 			local aId = anim.AnimationId
 			local norm = normalizeId(aId)
 			emoteIdCache[aId] = anim.Name
@@ -1536,6 +1506,7 @@ task.spawn(function()
 				emoteIdCache[norm] = anim.Name
 				emoteIdCache["rbxassetid://" .. norm] = anim.Name
 			end
+			if createdButtons % 20 == 0 then task.wait() end
 		end
 	end
 	local poseFolder = emotesFolder:FindFirstChild("Pose")
@@ -1543,6 +1514,7 @@ task.spawn(function()
 		for _, anim in ipairs(poseFolder:GetChildren()) do
 			if anim:IsA("Animation") then
 				createEmoteButton(anim, "Pose")
+				createdButtons += 1
 				local aId = anim.AnimationId
 				local norm = normalizeId(aId)
 				emoteIdCache[aId] = anim.Name
@@ -1550,6 +1522,7 @@ task.spawn(function()
 					emoteIdCache[norm] = anim.Name
 					emoteIdCache["rbxassetid://" .. norm] = anim.Name
 				end
+				if createdButtons % 20 == 0 then task.wait() end
 			end
 		end
 	end
@@ -1559,10 +1532,10 @@ task.spawn(function()
 end)
 
 -- ============================================
--- ANTI-DRIFT BACKGROUND SYNC (OPTIMIZED — 200ms INTERVAL, 60 STUD CULL)
+-- ANTI-DRIFT BACKGROUND SYNC 
 -- ============================================
 task.spawn(function()
-	local ANTI_DRIFT_INTERVAL = 0.2
+	local ANTI_DRIFT_INTERVAL = 0.35
 	local CULL_DISTANCE = 60
 
 	local function wrapDiff(diff, len)
@@ -1802,18 +1775,15 @@ end)
 -- ============================================
 local toggleBtn = gui:WaitForChild("DanceToggleButton", 5) or gui:FindFirstChild("DanceToggleButton")
 
--- Hapus UIDragDetector lama dari MainFrame agar klik di area menu tidak memicu drag
 local oldDragDetector = mainframe:FindFirstChildOfClass("UIDragDetector")
 if oldDragDetector then
 	oldDragDetector:Destroy()
 end
 
--- 📏 DIMENSIONS & POSITIONS
 local OPEN_POS = UDim2.new(0, 16, 0.5, 0)
 local CLOSED_POS = UDim2.new(0, -360, 0.5, 0)
 local BTN_CLOSED_POS = UDim2.new(0, 16, 0.5, 0)
 
--- Hitung posisi tombol saat terbuka agar mepet dan pas di samping menu (gap 8px)
 local function getEffectiveWidth()
 	local scale = 1
 	local scaleObj = mainframe:FindFirstChild("ResponsiveScale") or mainframe:FindFirstChild("PCScale")
@@ -1824,17 +1794,15 @@ local function getEffectiveWidth()
 end
 
 local function getBtnOpenPos()
-	local gap = 8 -- 🔥 Jarak pas dan rapat di samping menu
+	local gap = 8 
 	return UDim2.new(0, math.round(OPEN_POS.X.Offset + getEffectiveWidth() + gap), 0.5, 0)
 end
 
--- AnchorPoint alignment (vertical center)
 mainframe.AnchorPoint = Vector2.new(0, 0.5)
 if toggleBtn then
 	toggleBtn.AnchorPoint = Vector2.new(0, 0.5)
 end
 
--- 🏷️ GARIS DRAG DI ATAS MENU (TOP DRAG HANDLE)
 local topDragBar = mainframe:FindFirstChild("TopDragBar")
 if not topDragBar then
 	topDragBar = Instance.new("Frame")
@@ -1865,7 +1833,6 @@ if not dragPill then
 	pillCorner.Parent = dragPill
 end
 
--- Sesuaikan posisi Control agar rapi di bawah garis drag
 local controlFrameObj = mainframe:FindFirstChild("Control")
 if controlFrameObj then
 	controlFrameObj.Position = UDim2.new(0, 12, 0, 18)
@@ -1885,7 +1852,7 @@ setDrawer = function(targetOpen)
 
 	if targetOpen then
 		isDrawerOpen = true
-		isCustomPosition = false -- 🔥 RESET SELALU KE POSISI AWAL
+		isCustomPosition = false 
 		mainframe.Visible = true
 
 		currentTweenMain = TweenService:Create(mainframe, TWEEN_INFO_OPEN, { Position = OPEN_POS })
@@ -1896,7 +1863,7 @@ setDrawer = function(targetOpen)
 		currentTweenMain:Play()
 	else
 		isDrawerOpen = false
-		isCustomPosition = false -- 🔥 RESET POSISI KETIKA DITUTUP
+		isCustomPosition = false
 
 		currentTweenMain = TweenService:Create(mainframe, TWEEN_INFO_CLOSE, { Position = CLOSED_POS })
 		if toggleBtn then
@@ -1913,7 +1880,6 @@ setDrawer = function(targetOpen)
 	end
 end
 
--- 🖱️ LOGIKA DRAG HANYA PADA GARIS DRAG DI ATAS MENU
 local isDraggingMenu = false
 local dragStartMouse = nil
 local dragStartFramePos = nil
@@ -1983,7 +1949,6 @@ trackConnection(UserInputService.InputEnded:Connect(function(input)
 	end
 end))
 
--- 🔘 TOGGLE BUTTON HANDLER
 if toggleBtn then
 	toggleBtn.Position = BTN_CLOSED_POS
 	toggleBtn.Visible = true
@@ -1993,11 +1958,9 @@ if toggleBtn then
 	end)
 end
 
--- Initial state
 mainframe.Position = CLOSED_POS
 mainframe.Visible = false
 
--- BindableEvent for external scripts (TopbarPlus, etc.)
 local toggleDrawerEvent = gui:FindFirstChild("ToggleDrawer")
 if not toggleDrawerEvent then
 	toggleDrawerEvent = Instance.new("BindableEvent")

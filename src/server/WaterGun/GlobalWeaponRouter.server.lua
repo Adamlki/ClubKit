@@ -5,43 +5,66 @@ local ServerScriptService = game:GetService("ServerScriptService")
 
 local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 
--- 🔥 ARCHITECT FIX: Gunakan RemoteEvent yang sudah Anda buat manual di Explorer
 local globalEvent = ReplicatedStorage:WaitForChild("GlobalWeaponEvent")
 
+local BATCH_INTERVAL = 0.2
+local activeShooters = {}
+local lastBatchCount = 0
+
+local function clearShooter(userId)
+	activeShooters[userId] = nil
+end
+
 globalEvent.OnServerEvent:Connect(function(player, toolName, isShooting)
-	-- 🔥 SECURITY FIX: Cegah Type Spoofing & Serangan Bandwidth (Payload Size Exploitation)
-	if type(toolName) ~= "string" then return end
-	if string.len(toolName) > 50 then return end
+	if type(toolName) ~= "string" or #toolName > 50 then return end
 	if type(isShooting) ~= "boolean" then return end
 
-	-- 🔥 ARCHITECT FIX: Rate limit berlaku untuk true maupun false agar tidak bisa dipakai broadcast DoS
+	-- Stop must always be accepted even after the tool was unequipped
+	-- or the player exhausted the start-rate limit.
+	if not isShooting then
+		clearShooter(player.UserId)
+		return
+	end
+
 	if not RemoteEventManager.checkRateLimit(player, "waterGunShoot") then return end
 
-	-- KEAMANAN: Pastikan pemain benar-benar memegang Tool tersebut
 	local tool = player.Character and player.Character:FindFirstChild(toolName)
 	if not tool or not tool:IsA("Tool") then return end
 
-	-- ROUTING: Proximity-based multicast broadcast (Optimasi 100+ Player: cegah spam paket ke seluruh server)
-	local char = player.Character
-	local rootPart = char and char:FindFirstChild("HumanoidRootPart")
-	if not rootPart then return end
+	activeShooters[player.UserId] = {
+		player = player,
+		toolName = toolName,
+	}
+end)
 
-	local shooterPos = rootPart.Position
-	-- Radius pandang ~100 studs saat menembak, kelonggaran 120 studs saat stop agar efek tidak nyangkut
-	local maxRadius = isShooting and 100 or 120
-	local maxRadiusSq = maxRadius * maxRadius
+Players.PlayerRemoving:Connect(function(player)
+	clearShooter(player.UserId)
+end)
 
-	for _, targetPlayer in ipairs(Players:GetPlayers()) do
-		if targetPlayer ~= player then
-			local targetChar = targetPlayer.Character
-			local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
-			if targetRoot then
-				local diff = targetRoot.Position - shooterPos
-				local distSq = diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z
-				if distSq <= maxRadiusSq then
-					globalEvent:FireClient(targetPlayer, player, toolName, isShooting)
-				end
+-- One broadcast per batch instead of one FireClient per shooter per target.
+-- Clients receive the active shooter list and cull by distance locally.
+task.spawn(function()
+	while true do
+		task.wait(BATCH_INTERVAL)
+
+		local entries = {}
+		for userId, data in pairs(activeShooters) do
+			local player = data.player
+			local character = player and player.Parent and player.Character
+			local tool = character and character:FindFirstChild(data.toolName)
+			if not (tool and tool:IsA("Tool")) then
+				activeShooters[userId] = nil
+			else
+				table.insert(entries, {
+					userId = userId,
+					toolName = data.toolName,
+				})
 			end
+		end
+
+		if #entries > 0 or lastBatchCount > 0 then
+			globalEvent:FireAllClients(entries)
+			lastBatchCount = #entries
 		end
 	end
 end)

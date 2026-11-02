@@ -51,6 +51,11 @@ local closeBtn = topBar:WaitForChild("CloseBtn")
 
 local scroll = mainframe:WaitForChild("ScrollContainer")
 
+-- The action buttons sit below the profile section. Keep the canvas height
+-- in sync with the actual content so Whisper/Hide are reachable on mobile.
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+
 local profileSection   = scroll:WaitForChild("ProfileSection")
 local avatarDisplay    = profileSection:WaitForChild("AvatarDisplay")
 local bottomInfo       = profileSection:WaitForChild("BottomInfoFrame")
@@ -168,15 +173,20 @@ friendBtn.MouseButton1Click:Connect(function()
 	closeMenu()
 end)
 
+whisperBtn.Visible = true
 whisperBtn.MouseButton1Click:Connect(function()
 	if not currentTargetPlayer then return end
+
+	-- Use Roblox's native /w command. It creates RBXWhisper channel and
+	-- respects the player's chat/privacy settings.
 	local textChannels = TextChatService:FindFirstChild("TextChannels")
 	local generalChannel = textChannels and textChannels:FindFirstChild("RBXGeneral")
 	if generalChannel then
 		pcall(function()
-			generalChannel:SendAsync("/w " .. currentTargetPlayer.DisplayName .. " ")
+			generalChannel:SendAsync("/w @" .. currentTargetPlayer.Name .. " ")
 		end)
 	end
+
 	playClickSound()
 	closeMenu()
 end)
@@ -242,12 +252,16 @@ likeBtn.MouseButton1Click:Connect(function()
 	end)
 
 	if LikePlayerRemote then
-		local success, result = pcall(function()
+		-- RemoteFunction mengembalikan DUA nilai: success, cooldownEnd.
+		-- pcall harus menangkap keduanya; sebelumnya `result` berisi boolean
+		-- `true`, lalu Heartbeat menghitung `true - os.time()` dan error.
+		local ok, liked, cooldownEnd = pcall(function()
 			return LikePlayerRemote:InvokeServer(currentTargetPlayer.UserId)
 		end)
-		if success and result and currentTargetPlayer then
-			currentCooldownEnd = result
-			cooldownLabel.Visible = true
+		if ok and liked and currentTargetPlayer then
+			currentCooldownEnd = tonumber(cooldownEnd) or 0
+			cooldownLabel.Visible = (currentCooldownEnd > os.time())
+			likeCountLabel.Text = formatNumber(currentTargetPlayer:GetAttribute("TotalLikes") or 0) .. " Likes"
 		end
 	end
 	isLiking = false
@@ -255,7 +269,8 @@ end)
 
 RunService.Heartbeat:Connect(function()
 	if currentTargetPlayer and cooldownLabel.Visible then
-		local remaining = currentCooldownEnd - os.time()
+		local endTime = tonumber(currentCooldownEnd) or 0
+		local remaining = endTime - os.time()
 		if remaining > 0 then
 			cooldownLabel.Text = formatTime(remaining)
 		else

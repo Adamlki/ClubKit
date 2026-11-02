@@ -23,7 +23,6 @@ if not gui then
 	warn("[SaweriaDonationHandler] SaweriaDonationGui tidak ditemukan di PlayerGui dalam 30 detik!")
 	return
 end
-local backdrop = gui:WaitForChild("Backdrop", 15)
 local mainCard = gui:WaitForChild("MainCard")
 
 local headerBar = mainCard:WaitForChild("HeaderBar")
@@ -51,7 +50,8 @@ local usernameHighlight = rightCol:WaitForChild("UsernameHighlight")
 -- STATE & FORMATTING
 -- ==============================================================================
 local isOpen = false
-local saweriaIcon = nil
+local saweriaIcon
+local TopbarPanelRegistry = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("TopbarPanelRegistry"))
 
 local function formatNumber(num)
 	return FormatUtils.formatNumber(num, ".")
@@ -108,8 +108,6 @@ local function openSaweria()
 
 	updateStats()
 
-	backdrop.BackgroundTransparency = 0.5
-	backdrop.Visible = true
 	mainCard.BackgroundTransparency = 0
 	mainCard.Size = UDim2.new(0, 760, 0, 480)
 	mainCard.Visible = true
@@ -123,7 +121,6 @@ local function closeSaweria()
 	if not isOpen then return end
 	isOpen = false
 
-	backdrop.Visible = false
 	mainCard.Visible = false
 
 	if saweriaIcon and saweriaIcon.isSelected then
@@ -138,7 +135,6 @@ _G.CloseSaweria = closeSaweria
 -- EVENT BINDINGS
 -- ==============================================================================
 -- Inisialisasi awal: pastikan tertutup saat pertama join
-backdrop.Visible = false
 mainCard.Visible = false
 
 local lastCloseSaweriaClick = 0
@@ -150,7 +146,6 @@ local function debouncedCloseSaweria()
 end
 
 closeBtn.MouseButton1Click:Connect(debouncedCloseSaweria)
-backdrop.MouseButton1Click:Connect(debouncedCloseSaweria)
 
 -- Animasi Tombol Close
 closeBtn.MouseEnter:Connect(function()
@@ -210,7 +205,13 @@ pcall(function()
 		:setLabel("")
 		:setOrder(3) -- Berdampingan di sebelah Robux Donate (Order 2)
 
+	TopbarPanelRegistry:Register("Saweria", function()
+		if saweriaIcon then pcall(function() saweriaIcon:deselect() end) end
+		closeSaweria()
+	end)
+
 	saweriaIcon.selected:Connect(function()
+		TopbarPanelRegistry:CloseOthers("Saweria")
 		openSaweria()
 	end)
 

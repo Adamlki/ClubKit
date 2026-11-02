@@ -1,6 +1,6 @@
 local RoleSystem = {}
 
-local DataStoreService = game:GetService("DataStoreService")
+local DataStoreEnv = require(script.Parent:WaitForChild("DataStoreEnv"))
 local MarketplaceService = game:GetService("MarketplaceService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -26,9 +26,9 @@ local featureConfig = PrivateConfig.Features or {}
 
 RoleSystem.Config = {
 	Features = {
-		VIPShopEnabled = featureConfig.VIPShopEnabled ~= false, -- default ON
-		VIPGiftEnabled = featureConfig.VIPGiftEnabled == true,  -- default OFF
-		CommunityVIPEnabled = featureConfig.CommunityVIPEnabled ~= false, -- default ON
+		VIPShopEnabled = featureConfig.VIPShopEnabled ~= false, 
+		VIPGiftEnabled = featureConfig.VIPGiftEnabled == true,  
+		CommunityVIPEnabled = featureConfig.CommunityVIPEnabled ~= false,
 	},
 	GamePasses = PrivateConfig.GamePasses,
 	GiftProducts = PrivateConfig.GiftProducts,
@@ -47,21 +47,23 @@ RoleSystem.Config = {
 
 	GroupId = PrivateConfig.GroupId,
 
-	DATASTORE_NAME = RunService:IsStudio() and "PlayerGiveGamePasses_Studio_v1" or "PlayerGiveGamePasses_v1",
+	DATASTORE_NAME = "PlayerGiveGamePasses_v1",
 	DATASTORE_RETRY_ATTEMPTS = 3,
 	DATASTORE_RETRY_DELAY = 1,
 	GAMEPASS_CHECK_TIMEOUT = 15,
 	GAMEPASS_CHECK_RETRIES = 2,
 }
 
-local giveGamePassStore = DataStoreService:GetDataStore(RoleSystem.Config.DATASTORE_NAME)
+local giveGamePassStore, giveGamePassWriteStore = DataStoreEnv.Get(RoleSystem.Config.DATASTORE_NAME)
 local VALID_PASS_TYPES = { VIP = true, Moderator = true, Admin = true }
-local GROUP_CHECK_TTL = 60 -- detik; hindari IsInGroup berulang di setiap GetPlayerRole
+local GROUP_CHECK_TTL = 60 
 
 local playerOwnershipCache = {}
 local ownershipLoadingLocks = {}
 local groupCheckCooldown = {}
 local preservedVIPStatus = {}
+local gamepassResultCache = {}
+local GAMEPASS_RESULT_TTL = 300
 
 local roleChangedEvent = Instance.new("BindableEvent")
 roleChangedEvent.Name = "RoleChanged"
@@ -92,7 +94,7 @@ end
 
 local function datastoreSetAsync(key, value)
 	for attempt = 1, RoleSystem.Config.DATASTORE_RETRY_ATTEMPTS do
-		if pcall(giveGamePassStore.SetAsync, giveGamePassStore, key, value) then return true end
+		if pcall(giveGamePassWriteStore.SetAsync, giveGamePassWriteStore, key, value) then return true end
 		if attempt < RoleSystem.Config.DATASTORE_RETRY_ATTEMPTS then
 			task.wait(RoleSystem.Config.DATASTORE_RETRY_DELAY)
 		end
@@ -102,7 +104,7 @@ end
 
 local function datastoreRemoveAsync(key)
 	for attempt = 1, RoleSystem.Config.DATASTORE_RETRY_ATTEMPTS do
-		if pcall(giveGamePassStore.RemoveAsync, giveGamePassStore, key) then return true end
+		if pcall(giveGamePassWriteStore.RemoveAsync, giveGamePassWriteStore, key) then return true end
 		if attempt < RoleSystem.Config.DATASTORE_RETRY_ATTEMPTS then
 			task.wait(RoleSystem.Config.DATASTORE_RETRY_DELAY)
 		end
@@ -114,8 +116,17 @@ local function checkSingleGamepass(player, gamepassId, retryCount)
 	retryCount = retryCount or 0
 	if not player or not gamepassId or gamepassId == 0 then return false end
 
+	local cacheKey = tostring(player.UserId) .. ":" .. tostring(gamepassId)
+	local cached = gamepassResultCache[cacheKey]
+	if cached and (os.clock() - cached.time) < GAMEPASS_RESULT_TTL then
+		return cached.value
+	end
+
 	local success, hasPass = pcall(MarketplaceService.UserOwnsGamePassAsync, MarketplaceService, player.UserId, gamepassId)
-	if success then return hasPass end
+	if success then
+		gamepassResultCache[cacheKey] = { value = hasPass == true, time = os.clock() }
+		return hasPass
+	end
 
 	if retryCount < RoleSystem.Config.GAMEPASS_CHECK_RETRIES then
 		task.wait(2 ^ (retryCount + 1))
@@ -257,6 +268,13 @@ function RoleSystem:InvalidateOwnershipCache(userId)
 		preservedVIPStatus[userId] = true
 	end
 	playerOwnershipCache[userId] = nil
+
+	local prefix = tostring(userId) .. ":"
+	for key in pairs(gamepassResultCache) do
+		if string.sub(key, 1, #prefix) == prefix then
+			gamepassResultCache[key] = nil
+		end
+	end
 end
 
 function RoleSystem:HandlePlayerRemoving(userId)
@@ -298,7 +316,9 @@ function RoleSystem:GetPlayerRole(player)
 	local ok, inGroup = pcall(player.IsInGroup, player, targetGroupId)
 	ownership.GroupCheckedAt = now
 	if ok and inGroup then
-		ownership.VIP = true
+		-- Jangan set ownership.VIP di sini: itu bikin status VIP nempel permanen
+		-- (tetap VIP walau sudah keluar grup) dan dianggap memiliki gamepass VIP.
+		-- Cukup GroupVIP; RoleSystem sudah menganggap GroupVIP sebagai VIP.
 		ownership.GroupVIP = true
 		return "VIP"
 	end

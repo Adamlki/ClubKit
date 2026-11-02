@@ -2,6 +2,7 @@ local DataStoreService = game:GetService("DataStoreService")
 local UserService = game:GetService("UserService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local LeaderboardRegistry = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("LeaderboardRegistry"))
@@ -216,15 +217,27 @@ local REQUEST_COOLDOWN = 5
 
 updateLikeBoardRemote.OnServerEvent:Connect(function(player)
 	if not player or not player.Parent then return end
+
 	local now = os.clock()
 	if now - (requestCooldowns[player.UserId] or 0) < REQUEST_COOLDOWN then
+		-- Throttle the reply itself, not only the DataStore fetch.
+		if cachedTopLikes and cachedTopLikes.AllTime and #cachedTopLikes.AllTime > 0 then
+			pcall(function()
+				updateLikeBoardRemote:FireClient(player, cachedTopLikes)
+			end)
+		end
 		return
 	end
 	requestCooldowns[player.UserId] = now
 
-	if not cachedTopLikes or not cachedTopLikes.AllTime or #cachedTopLikes.AllTime == 0 then
-		pcall(updateLeaderboardBoard)
+	if cachedTopLikes and cachedTopLikes.AllTime and #cachedTopLikes.AllTime > 0 then
+		pcall(function()
+			updateLikeBoardRemote:FireClient(player, cachedTopLikes)
+		end)
+		return
 	end
+
+	pcall(updateLeaderboardBoard)
 	if cachedTopLikes and cachedTopLikes.AllTime and #cachedTopLikes.AllTime > 0 then
 		pcall(function()
 			updateLikeBoardRemote:FireClient(player, cachedTopLikes)

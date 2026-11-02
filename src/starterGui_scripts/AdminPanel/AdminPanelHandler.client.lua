@@ -119,8 +119,9 @@ local roleconfirmBtn     = roleBtnFrame:WaitForChild("RoleConfirmBtn")
 local rolecancelBtn      = roleBtnFrame:WaitForChild("RoleCancelBtn")
 
 local titleframe             = actionframe:WaitForChild("TitleFrame")
-local effectframe            = titleframe:WaitForChild("EffectFrame")
-local titleeffecttemplateBtn = effectframe:WaitForChild("TitleEffectTemplate")
+-- Instance GUI lama masih bernama EffectFrame; isinya sekarang hanya preset warna.
+local colorPresetFrame       = titleframe:WaitForChild("EffectFrame")
+local colorPresetTemplateBtn = colorPresetFrame:WaitForChild("TitleEffectTemplate")
 local colorpickframe         = titleframe:WaitForChild("ColorPickFrame")
 local colorresult            = colorpickframe:WaitForChild("ColorResult")
 local bluebox                = colorpickframe:WaitForChild("Blue")
@@ -168,7 +169,7 @@ local playerButtons   = {}
 local selectedUserId  = nil
 local selectedRole = nil
 local roleButtonsPool = {}
-local effectBtnsPool = {}
+local colorPresetBtnsPool = {}
 local teamBtnsPool       = {}
 local selectedTeamName   = nil
 local selectedColorName  = nil
@@ -187,11 +188,12 @@ notificationframe.Visible     = false
 playertemplateBtn.Visible     = false
 roletemplateBtn.Visible       = false
 teamtemplateBtn.Visible       = false
-titleeffecttemplateBtn.Visible= false
+colorPresetTemplateBtn.Visible = false
 colortemplateBtn.Visible      = false
 if donateframe then donateframe.Visible = false end 
 
 local Icon = require(ReplicatedStorage:WaitForChild("Icon"))
+local TopbarPanelRegistry = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("TopbarPanelRegistry"))
 
 local gradientRotation    = 0
 local registeredGradients = {}
@@ -478,15 +480,15 @@ local function updateColorPreview()
 		validateRGB(redbox.Text), validateRGB(greenbox.Text), validateRGB(bluebox.Text))
 end
 
-local function buildEffectButtons()
-	for _, btn in pairs(effectBtnsPool) do btn.Visible = false end
+local function buildColorPresetButtons()
+	for _, btn in pairs(colorPresetBtnsPool) do btn.Visible = false end
 
 	for i, preset in ipairs(CONFIG.COLOR_PRESETS) do
-		local btn = effectBtnsPool[i]
+		local btn = colorPresetBtnsPool[i]
 		if not btn then
-			btn = titleeffecttemplateBtn:Clone()
+			btn = colorPresetTemplateBtn:Clone()
 			btn.Name = "Preset_" .. i
-			btn.Parent = effectframe
+			btn.Parent = colorPresetFrame
 
 			btn.MouseButton1Click:Connect(function()
 				redbox.Text   = tostring(math.floor(preset.color.R * 255))
@@ -494,7 +496,7 @@ local function buildEffectButtons()
 				bluebox.Text  = tostring(math.floor(preset.color.B * 255))
 				updateColorPreview()
 			end)
-			effectBtnsPool[i] = btn
+			colorPresetBtnsPool[i] = btn
 		end
 
 		btn.Text = preset.name
@@ -558,18 +560,36 @@ titleconfirmBtn.MouseButton1Click:Connect(function()
 	if not targetPlayer then showNotification("Player tidak ditemukan!", false); return end
 
 	isProcessingTitle = true
+	local previousRevision = targetPlayer:GetAttribute("TitleRevision") or 0
 	UpdateTitleRemote:FireServer(targetPlayer, {
 		Title = titleText,
 		Color = Color3.fromRGB(validateRGB(redbox.Text), validateRGB(greenbox.Text), validateRGB(bluebox.Text)),
 	})
 
 	titleconfirmBtn.Text = "Menyimpan..."
-	task.wait(0.5)
-	titleconfirmBtn.Text = "✓ Simpan Title"
-	isProcessingTitle = false
+	task.spawn(function()
+		local deadline = os.clock() + 2
+		local updated = false
+		while os.clock() < deadline do
+			if (targetPlayer:GetAttribute("TitleRevision") or 0) ~= previousRevision then
+				updated = true
+				break
+			end
+			task.wait(0.1)
+		end
 
-	showNotification("Title berhasil diupdate!", true)
-	titlelabel.Text = "Title: " .. (titleText ~= "" and titleText or "-")
+		titleconfirmBtn.Text = "✓ Simpan Title"
+		isProcessingTitle = false
+
+		if updated then
+			-- Tampilkan judul yang benar-benar lolos filter server, bukan teks mentah client.
+			local appliedTitle = targetPlayer:GetAttribute("Overhead_TitleText") or titleText
+			showNotification("Title berhasil diupdate!", true)
+			titlelabel.Text = "Title: " .. ((appliedTitle ~= "" and appliedTitle) or "-")
+		else
+			showNotification("Gagal menyimpan title. Cek akses/filter lalu coba lagi.", false)
+		end
+	end)
 end)
 
 titlecancelBtn.MouseButton1Click:Connect(resetTitleForm)
@@ -734,7 +754,7 @@ local function checkAccess()
 		hasAccess = true
 		adminIcon:setEnabled(true)
 		buildRoleButtons()
-		buildEffectButtons()
+		buildColorPresetButtons()
 	else
 		hasAccess = false
 		adminIcon:setEnabled(false)
@@ -759,8 +779,13 @@ local function openPanel()
 	selectedUserId    = nil
 end
 
+TopbarPanelRegistry:Register("Admin", function()
+	if adminIcon then adminIcon:deselect() end
+end)
+
 adminIcon:bindEvent("selected", function()
 	if not hasAccess then adminIcon:deselect(); return end
+	TopbarPanelRegistry:CloseOthers("Admin")
 	openPanel()
 end)
 

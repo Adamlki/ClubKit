@@ -85,6 +85,10 @@ local function startCarry(carrier: Player, target: Player, style: string): (bool
 		return false, "Character not found"
 	end
 
+	if cHum.Health <= 0 or tHum.Health <= 0 then
+		return false, "Cannot carry a dead player"
+	end
+
 	if (cHRP.Position - tHRP.Position).Magnitude > CarryConfig.MAX_DISTANCE then
 		return false, "Too far"
 	end
@@ -120,6 +124,25 @@ local function startCarry(carrier: Player, target: Player, style: string): (bool
 		if tAsk then tAsk.Value = true end
 
 		CarryState.setActiveCarry(carrier.UserId, target.UserId)
+
+		-- Network ownership is given to the carrier for smooth carrying.
+		-- Re-check distance/alive so a malicious client cannot drag the victim
+		-- far beyond the allowed range.
+		task.spawn(function()
+			while CarryState.getActivePartner(carrier.UserId) == target.UserId do
+				task.wait(0.2)
+				if CarryState.getActivePartner(carrier.UserId) ~= target.UserId then break end
+
+				local cc, cRoot, cH = CarryPhysics.getCharHRP(carrier)
+				local tc, tRoot, tH = CarryPhysics.getCharHRP(target)
+				if not (cc and cRoot and cH and tc and tRoot and tH)
+					or cH.Health <= 0 or tH.Health <= 0
+					or (cRoot.Position - tRoot.Position).Magnitude > CarryConfig.MAX_DISTANCE * 1.25 then
+					endCarry(carrier, target)
+					break
+				end
+			end
+		end)
 
 		local cleanupDone = false
 		local function cleanup()
@@ -245,7 +268,7 @@ RequestRemote.OnServerEvent:Connect(function(carrier, data)
 
 	local targetId = data.targetId
 	local style = data.style
-	if not targetId or not style then return end
+	if type(targetId) ~= "number" or targetId <= 0 or type(style) ~= "string" then return end
 
 	local function failRequest(reason: string)
 		RequestRemote:FireClient(carrier, { cmd = "RequestFailed", reason = reason })

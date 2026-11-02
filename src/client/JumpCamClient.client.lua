@@ -2,12 +2,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
-local cam = Workspace.CurrentCamera or Workspace:WaitForChild("Camera", 5)
-local event = ReplicatedStorage:WaitForChild("TrampoCam", 10)
-if not event then
-	warn("[JumpCamClient] ⚠️ TrampoCam RemoteEvent tidak ditemukan di ReplicatedStorage setelah 10s!")
-	return
-end
+local cam = Workspace.CurrentCamera or Workspace:WaitForChild("Camera")
+local event = ReplicatedStorage:WaitForChild("TrampoCam")
 local tween = TweenService
 
 local normalFov = 70

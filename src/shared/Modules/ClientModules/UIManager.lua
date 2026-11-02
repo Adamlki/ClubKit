@@ -274,7 +274,7 @@ function UIManager:SetupResponsiveScale()
 			finalScale = baseScale * 0.85
 		end
 
-		uiScale.Scale = math.clamp(finalScale, 0.65, 1.4)
+		uiScale.Scale = math.clamp(finalScale, 0.5, 1.0)
 	end
 
 	updateScale()

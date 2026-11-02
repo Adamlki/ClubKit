@@ -13,6 +13,8 @@ end
 local MusicDispatcher = {}
 MusicDispatcher.__index = MusicDispatcher
 
+local QUEUE_SYNC_DEBOUNCE = 0.5
+
 function MusicDispatcher.new(remotes, config, managers)
 	local self = setmetatable({}, MusicDispatcher)
 
@@ -23,6 +25,7 @@ function MusicDispatcher.new(remotes, config, managers)
 	self.favoriteManager = managers.favoriteManager
 	self.systemState = managers.systemState
 	self.playlistManager = managers.playlistManager
+	self._queueSyncScheduled = false
 
 	return self
 end
@@ -71,10 +74,18 @@ end
 -- QUEUE SYNC (DIRECT - NO BATCHING)
 -- ====================================
 function MusicDispatcher:SyncQueueOnly()
-	self:SendToAll("QUEUE_UPDATE", {
-		queue = self.queueManager:GetQueue(),
-		totalCount = self.queueManager:GetSize()
-	})
+	-- Coalesce queue mutations. Before this, every add/remove serialized the
+	-- full queue and broadcast it to every player.
+	if self._queueSyncScheduled then return end
+	self._queueSyncScheduled = true
+
+	task.delay(QUEUE_SYNC_DEBOUNCE, function()
+		self._queueSyncScheduled = false
+		self:SendToAll("QUEUE_UPDATE", {
+			queue = self.queueManager:GetQueue(),
+			totalCount = self.queueManager:GetSize()
+		})
+	end)
 end
 
 -- ====================================

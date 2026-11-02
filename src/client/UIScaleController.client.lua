@@ -1,10 +1,5 @@
 --!optimize 2
 --!native
--- ============================================
--- CENTRALIZED UI SCALE CONTROLLER
--- Menggantikan 20 script AutoResize individual menjadi 1 controller terpusat.
--- Mengatur skala semua ScreenGui di PlayerGui saat resolusi/viewport berubah.
--- ============================================
 if _G.__UIScaleControllerLoaded then
 	return
 end
@@ -12,58 +7,147 @@ _G.__UIScaleControllerLoaded = true
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
+local StarterGui = game:GetService("StarterGui")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Resolusi referensi desain dasar
+
 local BASE_X = 1366
 local BASE_Y = 768
+local MIN_SCALE = 0.6
+local MAX_SCALE = 1
+local HARD_MIN_SCALE = 0.4
+local FIT_MARGIN = 0.95
 
--- Batas clamp per-ScreenGui (sesuai konfigurasi asli masing-masing UI)
-local CUSTOM_LIMITS = {
-	["EmoteGui"] = { min = 0.6, max = 0.9 },
-	["PlayerMenuHandler"] = { min = 0.5, max = 1.0 },
-}
-local DEFAULT_LIMITS = { min = 0.35, max = 1.0 }
 
-local trackedGuis = {} -- [ScreenGui] = UIScale
-local cameraConnection = nil
-
-local function getLimits(guiName)
-	return CUSTOM_LIMITS[guiName] or DEFAULT_LIMITS
+local GAME_GUI_NAMES = {}
+for _, child in ipairs(StarterGui:GetChildren()) do
+	if child:IsA("ScreenGui") then
+		GAME_GUI_NAMES[child.Name] = true
+	end
 end
 
-local function applyScaleToGui(screenGui, uiScale, baseScale)
-	if not screenGui or not uiScale or not uiScale.Parent then return end
-	local limits = getLimits(screenGui.Name)
-	uiScale.Scale = math.clamp(baseScale, limits.min, limits.max)
+local EXTERNALLY_SCALED = {
+	MusicPlayer = true,
+}
+
+local trackedGuis = {} 
+local pendingRefresh = {} 
+local cameraConnection = nil
+local fullscreenSizes = setmetatable({}, { __mode = "k" })
+
+
+local function getDesignSize(screenGui, viewport, currentScale)
+	local maxW, maxH = 0, 0
+	for _, child in ipairs(screenGui:GetChildren()) do
+		if child:IsA("GuiObject") then
+			local size = child.Size
+			-- Container fullscreen (backdrop) selalu muat, jangan dihitung
+			local fullscreen = size.X.Scale >= 0.98 and size.Y.Scale >= 0.98
+			if not fullscreen then
+				local designW, designH
+				if size.X.Scale == 0 and size.Y.Scale == 0 then
+					local abs = child.AbsoluteSize / currentScale
+					designW, designH = abs.X, abs.Y
+				else
+					designW = size.X.Scale * viewport.X + size.X.Offset
+					designH = size.Y.Scale * viewport.Y + size.Y.Offset
+				end
+				if designW > maxW then maxW = designW end
+				if designH > maxH then maxH = designH end
+			end
+		end
+	end
+	return maxW, maxH
+end
+
+local function getGlobalScale(viewport)
+	local scale = math.min(viewport.X / BASE_X, viewport.Y / BASE_Y)
+	return math.clamp(scale, MIN_SCALE, MAX_SCALE)
+end
+
+local function updateFullscreenChildren(screenGui, scale)
+	-- UIScale under a ScreenGui also scales fullscreen backdrops/effects.
+	-- Counter-scale only direct fullscreen children so they still cover the
+	-- viewport; normal windows keep their responsive scale.
+	for _, child in ipairs(screenGui:GetChildren()) do
+		if child:IsA("GuiObject") and child.Size.X.Scale >= 0.98 and child.Size.Y.Scale >= 0.98 then
+			local original = fullscreenSizes[child]
+			if not original then
+				original = child.Size
+				fullscreenSizes[child] = original
+			end
+			if scale ~= 1 then
+				child.Size = UDim2.new(
+					original.X.Scale / scale,
+					original.X.Offset / scale,
+					original.Y.Scale / scale,
+					original.Y.Offset / scale
+				)
+			else
+				child.Size = original
+			end
+		end
+	end
+end
+
+local function updateGui(screenGui)
+	local uiScale = trackedGuis[screenGui]
+	if not uiScale or uiScale.Parent ~= screenGui then
+		trackedGuis[screenGui] = nil
+		return
+	end
+
+	local camera = Workspace.CurrentCamera
+	if not camera then return end
+	local viewport = camera.ViewportSize
+	if viewport.X <= 0 or viewport.Y <= 0 then return end
+
+	local currentScale = uiScale.Scale
+	if currentScale <= 0 then currentScale = 1 end
+
+	local scale = getGlobalScale(viewport)
+
+
+	local designW, designH = getDesignSize(screenGui, viewport, currentScale)
+	if designW > 0 and designH > 0 then
+		local fitScale = math.min(
+			(viewport.X * FIT_MARGIN) / designW,
+			(viewport.Y * FIT_MARGIN) / designH
+		)
+		if fitScale < scale then
+			scale = fitScale
+		end
+	end
+
+	uiScale.Scale = math.clamp(scale, HARD_MIN_SCALE, MAX_SCALE)
+	updateFullscreenChildren(screenGui, uiScale.Scale)
 end
 
 local function updateAllScales()
-	local camera = Workspace.CurrentCamera
-	if not camera then return end
-
-	local screenSize = camera.ViewportSize
-	if screenSize.X <= 0 or screenSize.Y <= 0 then return end
-
-	local scaleX = screenSize.X / BASE_X
-	local scaleY = screenSize.Y / BASE_Y
-	local baseScale = math.min(scaleX, scaleY)
-
-	for screenGui, uiScale in pairs(trackedGuis) do
-		if screenGui.Parent == playerGui and uiScale.Parent == screenGui then
-			applyScaleToGui(screenGui, uiScale, baseScale)
-		else
-			trackedGuis[screenGui] = nil
-		end
+	for screenGui in pairs(trackedGuis) do
+		updateGui(screenGui)
 	end
+end
+
+local function scheduleRefresh(screenGui)
+	if pendingRefresh[screenGui] then return end
+	pendingRefresh[screenGui] = true
+	task.defer(function()
+		pendingRefresh[screenGui] = nil
+		updateGui(screenGui)
+	end)
 end
 
 local function registerScreenGui(child)
 	if not child:IsA("ScreenGui") then return end
 
-	-- Cari UIScale yang sudah ada atau buat baru
+
+	if not GAME_GUI_NAMES[child.Name] then return end
+	if EXTERNALLY_SCALED[child.Name] then return end
+
+	-- Pakai UIScale yang sudah ada atau buat baru
 	local uiScale = child:FindFirstChildOfClass("UIScale")
 	if not uiScale then
 		uiScale = Instance.new("UIScale")
@@ -72,30 +156,33 @@ local function registerScreenGui(child)
 	end
 
 	trackedGuis[child] = uiScale
+	updateGui(child)
 
-	-- Update langsung skala gui ini
-	local camera = Workspace.CurrentCamera
-	if camera and camera.ViewportSize.X > 0 and camera.ViewportSize.Y > 0 then
-		local scaleX = camera.ViewportSize.X / BASE_X
-		local scaleY = camera.ViewportSize.Y / BASE_Y
-		local baseScale = math.min(scaleX, scaleY)
-		applyScaleToGui(child, uiScale, baseScale)
-	end
+	child.ChildAdded:Connect(function(grandChild)
+		if not grandChild:IsA("UIScale") then
+			scheduleRefresh(child)
+		end
+	end)
+	child.ChildRemoved:Connect(function(grandChild)
+		if not grandChild:IsA("UIScale") then
+			scheduleRefresh(child)
+		end
+	end)
+	child:GetPropertyChangedSignal("Enabled"):Connect(function()
+		scheduleRefresh(child)
+	end)
 end
 
-local function unregisterScreenGui(child)
-	trackedGuis[child] = nil
-end
-
--- Daftarkan semua ScreenGui yang sudah ada di PlayerGui
 for _, child in ipairs(playerGui:GetChildren()) do
 	registerScreenGui(child)
 end
 
 playerGui.ChildAdded:Connect(registerScreenGui)
-playerGui.ChildRemoved:Connect(unregisterScreenGui)
+playerGui.ChildRemoved:Connect(function(child)
+	trackedGuis[child] = nil
+	pendingRefresh[child] = nil
+end)
 
--- Ikat listener ViewportSize ke kamera saat ini
 local function bindCameraListener()
 	if cameraConnection then
 		cameraConnection:Disconnect()

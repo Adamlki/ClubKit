@@ -1,13 +1,15 @@
 local LevelSystem = {}
 
-local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
 local ServerStorage = game:GetService("ServerStorage")
 local RunService = game:GetService("RunService")
+local DataStoreService = game:GetService("DataStoreService")
 
+local DataStoreEnv = require(ServerStorage:WaitForChild("Modules"):WaitForChild("DataStoreEnv"))
 local RoleSystem = require(ServerStorage:WaitForChild("Modules"):WaitForChild("RoleSystem"))
 
 LevelSystem.Config = {
+	-- Studio reads live data; writes are redirected to a sandbox by DataStoreEnv.
 	DATASTORE_NAME = "PlayerLevel_v1",
 	DATASTORE_PREFIX = "Level_",
 	DATASTORE_RETRY_ATTEMPTS = 5,
@@ -27,8 +29,8 @@ LevelSystem.Config = {
 	DEBUG_ENABLED = false,
 }
 
-local LevelDataStore = DataStoreService:GetDataStore(LevelSystem.Config.DATASTORE_NAME)
-local LeaderboardStore = DataStoreService:GetOrderedDataStore(LevelSystem.Config.LEADERBOARD_STORE_NAME)
+local LevelDataStore, LevelWriteStore = DataStoreEnv.Get(LevelSystem.Config.DATASTORE_NAME)
+local LeaderboardStore, LeaderboardWriteStore = DataStoreEnv.GetOrdered(LevelSystem.Config.LEADERBOARD_STORE_NAME)
 
 local playerLevelCache = {}
 local playerTimers = {}
@@ -50,9 +52,40 @@ local function debugWarn(...)
 	if LevelSystem.Config.DEBUG_ENABLED then warn("[LevelSystem]", ...) end
 end
 
+local MAX_CONCURRENT_LOADS = 2
+local activeLoads = 0
+
+local function waitForLoadSlot()
+	while activeLoads >= MAX_CONCURRENT_LOADS do
+		task.wait(0.05)
+	end
+	activeLoads += 1
+end
+
+local function releaseLoadSlot()
+	activeLoads = math.max(0, activeLoads - 1)
+end
+
+local function hasGetBudget()
+	local ok, budget = pcall(function()
+		return DataStoreService:GetRequestBudgetForRequestType(Enum.DataStoreRequestType.GetAsync)
+	end)
+	return not ok or budget > 0
+end
+
 local function datastoreGetAsync(key)
 	for attempt = 1, LevelSystem.Config.DATASTORE_RETRY_ATTEMPTS do
+		waitForLoadSlot()
+
+		-- Avoid adding more requests when Roblox's DataStore budget is empty.
+		local budgetWait = os.clock()
+		while not hasGetBudget() and (os.clock() - budgetWait) < 4 do
+			task.wait(0.25)
+		end
+
 		local success, result = pcall(LevelDataStore.GetAsync, LevelDataStore, key)
+		releaseLoadSlot()
+
 		if success then return true, result end
 		if attempt < LevelSystem.Config.DATASTORE_RETRY_ATTEMPTS then
 			task.wait(LevelSystem.Config.DATASTORE_RETRY_DELAY * attempt)
@@ -62,9 +95,26 @@ local function datastoreGetAsync(key)
 	return false, nil
 end
 
+local MAX_CONCURRENT_WRITES = 2
+local activeWrites = 0
+
+local function waitForWriteSlot()
+	while activeWrites >= MAX_CONCURRENT_WRITES do
+		task.wait(0.05)
+	end
+	activeWrites += 1
+end
+
+local function releaseWriteSlot()
+	activeWrites = math.max(0, activeWrites - 1)
+end
+
 local function datastoreSetAsync(key, value)
 	for attempt = 1, LevelSystem.Config.DATASTORE_RETRY_ATTEMPTS do
-		if pcall(LevelDataStore.SetAsync, LevelDataStore, key, value) then return true end
+		waitForWriteSlot()
+		local success = pcall(LevelWriteStore.SetAsync, LevelWriteStore, key, value)
+		releaseWriteSlot()
+		if success then return true end
 		if attempt < LevelSystem.Config.DATASTORE_RETRY_ATTEMPTS then
 			task.wait(LevelSystem.Config.DATASTORE_RETRY_DELAY * attempt)
 		end
@@ -80,7 +130,7 @@ local function syncLeaderboard(player, level)
 	local role = RoleSystem:GetPlayerRole(player)
 	if LevelSystem.Config.EXCLUDED_ROLES[role] then
 		lastSyncedLevel[userId] = level
-		pcall(LeaderboardStore.RemoveAsync, LeaderboardStore, tostring(userId))
+		pcall(LeaderboardWriteStore.RemoveAsync, LeaderboardWriteStore, tostring(userId))
 		return
 	end
 
@@ -88,7 +138,7 @@ local function syncLeaderboard(player, level)
 
 	task.spawn(function()
 		for attempt = 1, LevelSystem.Config.DATASTORE_RETRY_ATTEMPTS do
-			if pcall(LeaderboardStore.SetAsync, LeaderboardStore, tostring(userId), level) then
+			if pcall(LeaderboardWriteStore.SetAsync, LeaderboardWriteStore, tostring(userId), level) then
 				debug("Leaderboard synced: User", userId, "Level", level)
 				return
 			end
@@ -208,7 +258,10 @@ function LevelSystem:SavePlayerLevel(player, forceSave, snapshotCache)
 
 	if datastoreSetAsync(key, data) then
 		saveCooldowns[userId] = os.clock()
-		syncLeaderboard(player, cache.Level)
+		-- Jangan anggap save gagal hanya karena update leaderboard error.
+		pcall(function()
+			syncLeaderboard(player, cache.Level)
+		end)
 		return true
 	end
 	return false
@@ -265,6 +318,7 @@ end
 function LevelSystem:InitializePlayer(player)
 	local level = self:LoadPlayerLevel(player)
 	if not player or not player.Parent then return level end
+	local userId = player.UserId
 
 	local leaderstats = player:FindFirstChild("leaderstats")
 	if not leaderstats then
@@ -281,7 +335,12 @@ function LevelSystem:InitializePlayer(player)
 	end
 	levelValue.Value = level
 
-	startLevelTimer(player)
+	-- InitializePlayer dipanggil beberapa sistem (Overhead, RankItem, Music,
+	-- LevelBoard). Jangan buat timer baru jika sudah ada; thread lama akan
+	-- menunggu 15 menit sebelum menyadari token-nya sudah tidak dipakai.
+	if not playerTimers[userId] then
+		startLevelTimer(player)
+	end
 	return level
 end
 
@@ -298,13 +357,12 @@ local COMMAND_HANDLERS = {
 }
 
 local textCommandsRegistered = false
-local lastLevelCommand = {} -- [userId] = { text = string, timestamp = number }
+local lastLevelCommand = {}
 
 local function executeLevelCommand(player, message, roleSystem)
 	if not player or not player.Parent then return end
-	if roleSystem and roleSystem:GetPlayerRole(player) ~= "Owner" then return end
+	if not roleSystem or roleSystem:GetPlayerRole(player) ~= "Owner" then return end
 
-	-- Deduplikasi perintah dalam 0.5s agar tidak tereksekusi 2x jika dipicu Chatted + TextChatCommand bersamaan
 	local now = os.clock()
 	local last = lastLevelCommand[player.UserId]
 	if last and last.text == message and (now - last.timestamp) < 0.5 then
@@ -321,7 +379,7 @@ local function executeLevelCommand(player, message, roleSystem)
 		handler(targetPlayer, tonumber(args[3]))
 	elseif command == "/hideboard" then
 		local targetId = tonumber(args[2]) or player.UserId
-		pcall(LeaderboardStore.RemoveAsync, LeaderboardStore, tostring(targetId))
+		pcall(LeaderboardWriteStore.RemoveAsync, LeaderboardWriteStore, tostring(targetId))
 		print("[LevelSystem] Berhasil menghapus UserId " .. targetId .. " dari Leaderboard!")
 	end
 end
@@ -393,7 +451,6 @@ function LevelSystem:CleanupPlayer(player)
 	local snapshot = playerLevelCache[userId]
 	if not snapshot then return end
 
-	playerLevelCache[userId] = nil
 	saveCooldowns[userId] = nil
 	loadingLocks[userId] = nil
 	stopLevelTimer(player)
@@ -406,10 +463,29 @@ function LevelSystem:CleanupPlayer(player)
 	end
 
 	activeSaves[userId] = true
-	self:SavePlayerLevel(player, true, snapshot)
-	lastSyncedLevel[userId] = nil
-	saveCooldowns[userId] = nil
-	activeSaves[userId] = nil
+
+	-- Jangan buang cache sebelum save sukses. Retry beberapa kali jika
+	-- DataStore sedang sibuk; snapshot terbaru tetap dipakai saat rejoin.
+	local function finalize(attempt)
+		if self:SavePlayerLevel(player, true, snapshot) then
+			playerLevelCache[userId] = nil
+			lastSyncedLevel[userId] = nil
+			saveCooldowns[userId] = nil
+			activeSaves[userId] = nil
+			return
+		end
+
+		if attempt < 5 then
+			task.delay(2, function()
+				finalize(attempt + 1)
+			end)
+		else
+			warn("[LevelSystem] Gagal menyimpan level untuk userId:", userId)
+			activeSaves[userId] = nil
+		end
+	end
+
+	finalize(1)
 end
 
 Players.PlayerRemoving:Connect(function(player)

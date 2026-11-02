@@ -9,6 +9,7 @@ local tan   = math.tan
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
@@ -21,6 +22,9 @@ if not LocalPlayer then
 	LocalPlayer = Players.LocalPlayer
 end
 
+local CameraLease = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("CameraLease"))
+
+local leaseToken = nil
 local Camera = Workspace.CurrentCamera
 Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
 	local newCamera = Workspace.CurrentCamera
@@ -331,6 +335,7 @@ local function GetFocusDistance(cameraFrame)
 end
 
 local function StepFreecam(dt)
+	if not CameraLease:IsOwner("Freecam", leaseToken) then return end
 	local vel = velSpring:Update(dt, Input.Vel(dt))
 	local pan = panSpring:Update(dt, Input.Pan(dt))
 	local fov = fovSpring:Update(dt, Input.Fov(dt))
@@ -432,6 +437,10 @@ do
 end
 
 local function StartFreecam()
+	local token = CameraLease:Acquire("Freecam", 100)
+	if not token then return false end
+	leaseToken = token
+
 	local cframe = Camera.CFrame
 	cameraRot = Vector2.new(cframe:toEulerAnglesYXZ())
 	cameraPos = cframe.Position
@@ -444,12 +453,18 @@ local function StartFreecam()
 	PlayerState.Push()
 	RunService:BindToRenderStep("Freecam", Enum.RenderPriority.Camera.Value, StepFreecam)
 	Input.StartCapture()
+	return true
 end
 
 local function StopFreecam()
+	local owned = CameraLease:IsOwner("Freecam", leaseToken)
 	Input.StopCapture()
 	RunService:UnbindFromRenderStep("Freecam")
-	PlayerState.Pop()
+	if owned then
+		PlayerState.Pop()
+	end
+	CameraLease:Release("Freecam", leaseToken)
+	leaseToken = nil
 end
 
 local enabled = false
@@ -473,8 +488,7 @@ local function TurnOffFreecam()
 end
 
 _G.__Freecam_Enable = function()
-	if not enabled then
-		StartFreecam()
+	if not enabled and StartFreecam() then
 		enabled = true
 		Controls:Disable()
 		closeBtn.Visible = true

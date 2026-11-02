@@ -20,7 +20,12 @@ local ANIMATION_PRIORITY = Enum.AnimationPriority.Action4
 
 local processingRequests = setmetatable({}, { __mode = "k" })
 local lastRequestTime = setmetatable({}, { __mode = "k" })
+local spamNonceCooldown = {}
 local MIN_REQUEST_INTERVAL = 0.05 -- 50ms (Agar spam dance dari leader langsung tersinkron ke followers 0 delay)
+
+Players.PlayerRemoving:Connect(function(player)
+	spamNonceCooldown[player.UserId] = nil
+end)
 
 -- ============================================
 -- 🔥 NETWORK FIX: Dirty-Checked SetAttribute
@@ -122,20 +127,36 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 		
 		safeSetAttr(character, "Syncing", nil)
 
-		if animation then
+		local currentDanceId = character:GetAttribute("CurrentDanceID")
+		local sameDance = animation ~= nil and currentDanceId == animation.AnimationId
+		local spamOnSameDance = isSpam == true and sameDance
+
+		if animation and not sameDance then
 			safeSetAttr(character, "CurrentDanceID", animation.AnimationId)
 		end
 
-		local validStartTime = workspace:GetServerTimeNow()
-		if type(clientStartTime) == "number" and clientStartTime == clientStartTime and math.abs(validStartTime - clientStartTime) <= 10 then
-			validStartTime = clientStartTime
+		-- Spam on the same dance must not rewrite the start time every click.
+		-- That was replicating 3-4 attributes to every client per request.
+		if not spamOnSameDance then
+			local validStartTime = workspace:GetServerTimeNow()
+			if type(clientStartTime) == "number" and clientStartTime == clientStartTime and math.abs(validStartTime - clientStartTime) <= 10 then
+				validStartTime = clientStartTime
+			end
+			character:SetAttribute("DanceStartTime", validStartTime)
 		end
-		character:SetAttribute("DanceStartTime", validStartTime)
-		safeSetAttr(character, "DanceSpeed", speed)
 
-		if isSpam then
-			local currentNonce = character:GetAttribute("SpamNonce") or 0
-			character:SetAttribute("SpamNonce", currentNonce + 1)
+		if character:GetAttribute("DanceSpeed") ~= speed then
+			safeSetAttr(character, "DanceSpeed", speed)
+		end
+
+		if spamOnSameDance then
+			local now = os.clock()
+			local lastSpam = spamNonceCooldown[player.UserId] or 0
+			if now - lastSpam >= 0.25 then
+				spamNonceCooldown[player.UserId] = now
+				local currentNonce = character:GetAttribute("SpamNonce") or 0
+				character:SetAttribute("SpamNonce", currentNonce + 1)
+			end
 		end
 	end
 

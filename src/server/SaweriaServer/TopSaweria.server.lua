@@ -15,7 +15,7 @@ local LeaderboardRegistry = require(ServerScriptService:WaitForChild("Modules"):
 local ServerConfig = require(ServerScriptService:WaitForChild("Config"):WaitForChild("ServerConfig"))
 
 local IS_STUDIO = RunService:IsStudio()
-local UPDATE_INTERVAL = IS_STUDIO and 30 or 60 -- Interval aman 60s untuk mencegah lonjakan ping (network spike) & micro-freeze
+local UPDATE_INTERVAL = IS_STUDIO and 60 or 90 -- Hindari lonjakan HTTP/network dan micro-freeze
 local TOP_COUNT = 10
 
 -- BoardSaweria dirender oleh LeaderboardsClient. Jangan render ulang dari server;
@@ -106,7 +106,7 @@ end
 local cachedTopDonators = {}
 local cachedSaweriaPayload = { AllTime = {}, Daily = {} }
 local lastCacheUpdate = 0
-local CACHE_DURATION = IS_STUDIO and 10 or 60
+local CACHE_DURATION = IS_STUDIO and 60 or 120
 
 GetTopSaweriaFunc.OnInvoke = function()
 	local now = os.time()
@@ -406,16 +406,28 @@ local clientRequestCooldown = {}
 
 UpdateSaweriaEvent.OnServerEvent:Connect(function(plr)
 	if not plr then return end
+
 	local now = os.clock()
 	if now - (clientRequestCooldown[plr.UserId] or 0) < 15 then
+		-- Throttle the reply itself, not only the fetch.
+		if cachedSaweriaPayload and cachedSaweriaPayload.AllTime and #cachedSaweriaPayload.AllTime > 0 then
+			pcall(function()
+				UpdateSaweriaEvent:FireClient(plr, cachedSaweriaPayload)
+			end)
+		end
 		return
 	end
 	clientRequestCooldown[plr.UserId] = now
 
-	if not cachedSaweriaPayload or not cachedSaweriaPayload.AllTime or #cachedSaweriaPayload.AllTime == 0 then
-		pcall(updateUIs)
+	if cachedSaweriaPayload and cachedSaweriaPayload.AllTime and #cachedSaweriaPayload.AllTime > 0 then
+		pcall(function()
+			UpdateSaweriaEvent:FireClient(plr, cachedSaweriaPayload)
+		end)
+		return
 	end
-	if cachedSaweriaPayload and (cachedSaweriaPayload.AllTime or #cachedSaweriaPayload > 0) then
+
+	pcall(updateUIs)
+	if cachedSaweriaPayload and cachedSaweriaPayload.AllTime then
 		pcall(function()
 			UpdateSaweriaEvent:FireClient(plr, cachedSaweriaPayload)
 		end)

@@ -1,11 +1,6 @@
 local module = {}
 
--- ============================================
--- 🔐 ANIMATION ID REGISTRY
--- ============================================
--- Format: [AnimationName] = "rbxassetid://ID"
 
--- DANCE ANIMATIONS (349 Animations)
 module.Dances = {
 	["12 TO 12"] = "rbxassetid://114945156874482",
 	["2PA2"] = "rbxassetid://120654441026135",
@@ -25,7 +20,6 @@ module.Dances = {
 	["BACHATA"] = "rbxassetid://127145101549106",
 	["BACHATA 1"] = "rbxassetid://76928543689120",
 	["BACK DANCE"] = "rbxassetid://128419794400000",
-	["BADDIE"] = "rbxassetid://101590345778817",
 	["BAILE LOQUERA"] = "rbxassetid://128191631746241",
 	["BANANA SHAKE"] = "rbxassetid://80632531310415",
 	["BEAUTIFUL STRANGERS"] = "rbxassetid://90999633154115",
@@ -361,7 +355,6 @@ module.Dances = {
 	["ZAYA SHUFFLE"] = "rbxassetid://126683872120207",
 }
 
--- POSE / EMOTE ANIMATIONS (172 Animations)
 module.Poses = {
 	["ANGRY IDLE"] = "rbxassetid://138815926313261",
 	["AURA IDLE"] = "rbxassetid://109979406375718",
@@ -532,16 +525,12 @@ module.Poses = {
 	["TENNA KICK"] = "rbxassetid://117239648331619",
 	["VOGUE CROP"] = "rbxassetid://127504081485962",
 	["WARM UP"] = "rbxassetid://124421838154348",
+	["BADDIE"] = "rbxassetid://101590345778817",
 }
 
--- Alias agar kompatibel baik dipanggil sebagai Poses maupun Emotes
 module.Emotes = module.Poses
 
--- ============================================
--- 🔧 HELPER FUNCTIONS
--- ============================================
 
--- Get animation ID by name
 function module.getAnimationId(animName, category)
 	if category == "Pose" or category == "Emote" then
 		return module.Poses[animName]
@@ -550,7 +539,7 @@ function module.getAnimationId(animName, category)
 	end
 end
 
--- Get category for animation name
+
 function module.getCategory(animName)
 	if module.Poses[animName] then
 		return "Pose"
@@ -560,7 +549,6 @@ function module.getCategory(animName)
 	return nil
 end
 
--- Get all animation names by category
 function module.getNamesByCategory(category)
 	local names = {}
 
@@ -578,7 +566,7 @@ function module.getNamesByCategory(category)
 	return names
 end
 
--- Get all animation names (both categories)
+
 function module.getAllNames()
 	local names = {}
 
@@ -594,12 +582,12 @@ function module.getAllNames()
 	return names
 end
 
--- Validate if animation exists
+
 function module.exists(animName)
 	return module.Dances[animName] ~= nil or module.Poses[animName] ~= nil
 end
 
--- Get total count
+
 function module.getCount()
 	local count = 0
 

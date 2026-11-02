@@ -9,9 +9,9 @@ local CONFIG = {
 	-- window = periode waktu dalam detik
 
 	-- Animation & Emotes
-	animationStart = { count = 20, window = 1 },     -- 20 animasi per detik (mendukung spam dance)
-	changeSpeed = { count = 20, window = 1 },        -- 20 speed change per detik
-	changeAnimationSpeed = { count = 20, window = 1 },
+	animationStart = { count = 8, window = 1 },      -- 8 animasi per detik; cukup untuk dance, jauh lebih ringan untuk 100 player
+	changeSpeed = { count = 8, window = 1 },         -- 8 speed change per detik
+	changeAnimationSpeed = { count = 8, window = 1 },
 	startSync = { count = 3, window = 2 },           -- 3 sync per 2 detik
 	updateFavoritedAnimations = { count = 3, window = 5 },
 
@@ -46,7 +46,7 @@ local CONFIG = {
 	-- Accessory & Weapons
 	toggleAccessory = { count = 5, window = 2 },
 	accessoryHatToggle = { count = 5, window = 2 },
-	waterGunShoot = { count = 12, window = 1 },
+	waterGunShoot = { count = 6, window = 1 },
 
 	-- Profile & Likes
 	getPlayerInfo = { count = 3, window = 5 },

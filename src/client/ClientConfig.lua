@@ -23,7 +23,7 @@ ClientConfig.UI = {
 -- MESSAGE SETTINGS
 -- ============================================
 ClientConfig.MESSAGE = {
-	MIN_DONATION    = 13,
+	MIN_DONATION    = 11,
 	MAX_LENGTH      = 200,
 	COOLDOWN        = 10,
 	DEFAULT_MESSAGE = "Welcome to RASA NADA",
@@ -34,7 +34,7 @@ ClientConfig.MESSAGE = {
 -- ============================================
 ClientConfig.NOTIFICATION = {
 	ENABLED          = true,
-	MIN_DONATION     = 13,
+	MIN_DONATION     = 11,
 	SOUND_ID         = "rbxassetid://79392333090964",
 	SOUND_VOLUME     = 0.5,
 	SLIDE_TIME       = 0.4,

@@ -8,7 +8,6 @@ local RunService = game:GetService("RunService")
 local ServerScriptService = game:GetService("ServerScriptService")
 local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 
--- Ensure Remotes folder exists
 local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
 if not remotesFolder then
 	remotesFolder = Instance.new("Folder")
@@ -16,7 +15,6 @@ if not remotesFolder then
 	remotesFolder.Parent = ReplicatedStorage
 end
 
--- Ensure AntiAFKRejoin RemoteEvent exists
 local antiAFKRejoinEvent = remotesFolder:FindFirstChild("AntiAFKRejoin")
 if not antiAFKRejoinEvent then
 	antiAFKRejoinEvent = Instance.new("RemoteEvent")
@@ -29,10 +27,10 @@ end
 -- ============================================================
 local afkPositionsMap = nil
 local isMemoryStoreAvailable = false
-local AFK_POSITION_TTL = 180 -- 3 menit
-local MAX_MAP_BOUND = 10000 -- Batas horizontal radius map (stud)
-local MIN_Y_BOUND = -50     -- Batas bawah (mencegah void / jatuh di bawah map)
-local MAX_Y_BOUND = 2000    -- Batas atas (mencegah skybox / di atas map)
+local AFK_POSITION_TTL = 180 
+local MAX_MAP_BOUND = 10000 
+local MIN_Y_BOUND = -50  
+local MAX_Y_BOUND = 2000  
 
 local function initMemoryStore()
 	local ok, map = pcall(function()
@@ -60,16 +58,15 @@ local function popServerPosition(userId: number): {number}?
 	if not isMemoryStoreAvailable or not afkPositionsMap then return nil end
 	local key = string.format("pos_%d", userId)
 	local ok, data = pcall(function()
-		local val = afkPositionsMap:GetAsync(key)
-		if val then
-			afkPositionsMap:RemoveAsync(key)
-		end
-		return val
+		return afkPositionsMap:GetAsync(key)
 	end)
-	if ok and type(data) == "table" and #data == 12 then
-		return data
+	if not ok or type(data) ~= "table" or #data ~= 12 then
+		return nil
 	end
-	return nil
+	pcall(function()
+		afkPositionsMap:RemoveAsync(key)
+	end)
+	return data
 end
 
 local function validateCFrameComponents(comp: any): CFrame?
@@ -95,29 +92,26 @@ local function handlePlayerJoin(player: Player)
 	local joinData = player:GetJoinData()
 	local teleportData = joinData and joinData.TeleportData
 
-	-- Flag murni untuk keperluan diagnostik/logging, TIDAK MEMBERI HAK/AKSES APAPUN
 	if teleportData and type(teleportData) == "table" and teleportData.isAfkRejoin then
 		player:SetAttribute("IsAfkRejoin", true)
 	end
 
-	-- EKSKLUSIF: Koordinat HANYA boleh berasal dari MemoryStore server!
-	-- Jika MemoryStore tidak ada/gagal/expired, karakter TIDAK DIPINDAHKAN (spawn normal)
-	local savedComponents = popServerPosition(player.UserId)
 	local targetCFrame: CFrame? = nil
-
-	if savedComponents then
-		targetCFrame = validateCFrameComponents(savedComponents)
+	if teleportData and type(teleportData) == "table" and teleportData.isAfkRejoin then
+		local savedComponents = popServerPosition(player.UserId)
+		if savedComponents then
+			targetCFrame = validateCFrameComponents(savedComponents)
+		end
 	end
 
 	if targetCFrame then
-		-- Connect to CharacterAdded to restore position ONCE on rejoin
 		local connection: RBXScriptConnection?
 		connection = player.CharacterAdded:Connect(function(character)
 			if connection then
 				connection:Disconnect()
 				connection = nil
 			end
-			task.wait(0.5) -- Allow humanoid and ragdoll/physics to settle
+			task.wait(0.5)
 			local rootPart = character:WaitForChild("HumanoidRootPart", 8)
 			if rootPart and character.Parent then
 				character:PivotTo(targetCFrame)
@@ -130,7 +124,6 @@ local function handlePlayerJoin(player: Player)
 			end
 		end)
 
-		-- Cleanup connection if player leaves
 		player.AncestryChanged:Connect(function(_, parent)
 			if not parent and connection then
 				connection:Disconnect()
@@ -138,7 +131,6 @@ local function handlePlayerJoin(player: Player)
 			end
 		end)
 
-		-- Failsafe: if character is already spawned when join handler runs
 		if player.Character then
 			task.spawn(function()
 				task.wait(0.5)
@@ -168,7 +160,6 @@ antiAFKRejoinEvent.OnServerEvent:Connect(function(player: Player)
 		return
 	end
 
-	-- Extract current CFrame components (12 primitive numbers) directly on server
 	local cframeComponents: {number}? = nil
 	local character = player.Character
 	if character then
@@ -178,12 +169,10 @@ antiAFKRejoinEvent.OnServerEvent:Connect(function(player: Player)
 		end
 	end
 
-	-- Simpan posisi ke MemoryStore server sebelum teleportasi
 	if cframeComponents then
 		saveServerPosition(player.UserId, cframeComponents)
 	end
 
-	-- TeleportData TIDAK memuat koordinat agar tidak bisa dispoof dari client!
 	local teleportData = {
 		isAfkRejoin = true,
 		rejoinTimestamp = os.time(),
@@ -193,20 +182,16 @@ antiAFKRejoinEvent.OnServerEvent:Connect(function(player: Player)
 	local teleportOptions = Instance.new("TeleportOptions")
 	teleportOptions:SetTeleportData(teleportData)
 
-	-- If there are other players in this server, teleport back to this exact server instance!
-	-- If this player is alone, omit ServerInstanceId so Roblox routes them to an active public server.
 	if #Players:GetPlayers() > 1 and game.JobId ~= "" then
 		teleportOptions.ServerInstanceId = game.JobId
 	end
 
-	-- Modern TeleportAsync
 	local success, err = pcall(function()
 		TeleportService:TeleportAsync(game.PlaceId, { player }, teleportOptions)
 	end)
 
 	if not success then
 		warn(string.format("[AntiAFKServer] TeleportAsync gagal untuk %s: %s. Mencoba fallback...", player.Name, tostring(err)))
-		-- Fallback to legacy teleport API if TeleportAsync encounters issue
 		pcall(function()
 			if #Players:GetPlayers() > 1 and game.JobId ~= "" then
 				TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, player, nil, teleportData)

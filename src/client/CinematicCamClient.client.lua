@@ -6,9 +6,12 @@
 -- ============================================================
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
+
+local CameraLease = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("CameraLease"))
 
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
@@ -23,6 +26,10 @@ local currentDirection = 1
 local isRunning = false
 local startTime = 0
 local initialFOV = 70
+local originalCameraType = nil
+local originalCameraMode = nil
+local originalCameraSubject = nil
+local leaseToken = nil
 local isFirstFrame = true
 
 local presetButtons = {}
@@ -213,28 +220,31 @@ end
 -- ============================================================
 local function stopCinematicSystem()
 	if not isRunning then return end
+	local owned = CameraLease:IsOwner("CinematicCam", leaseToken)
 	isRunning = false
 	currentMode = nil
 
 	RunService:UnbindFromRenderStep("CinematicCameraMovement")
+	CameraLease:Release("CinematicCam", leaseToken)
+	leaseToken = nil
+
+	if not owned then
+		updatePresetVisuals(nil)
+		return
+	end
 
 	local cam = Workspace.CurrentCamera
 	if cam then
-		local char = player.Character
-		local hrp = char and char:FindFirstChild("HumanoidRootPart")
-		local hum = char and char:FindFirstChildOfClass("Humanoid")
-		cam.FieldOfView = 70
-		if hum then
-			cam.CameraSubject = hum
+		cam.FieldOfView = initialFOV
+		if originalCameraSubject then
+			cam.CameraSubject = originalCameraSubject
+		else
+			local char = player.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			if hum then cam.CameraSubject = hum end
 		end
-		if hrp then
-			local headPos = hrp.Position + Vector3.new(0, 1.5, 0)
-			local look = hrp.CFrame.LookVector
-			local defaultCamPos = headPos - (look * 12) + Vector3.new(0, 2.5, 0)
-			cam.CFrame = CFrame.new(defaultCamPos, headPos)
-			cam.Focus = CFrame.new(headPos)
-		end
-		cam.CameraType = Enum.CameraType.Custom
+		player.CameraMode = originalCameraMode or Enum.CameraMode.Classic
+		cam.CameraType = originalCameraType or Enum.CameraType.Custom
 	end
 
 	updatePresetVisuals(nil)
@@ -322,22 +332,41 @@ end
 local function startCinematicMode(presetName)
 	if currentMode == presetName and isRunning then return end
 
+	local wasRunning = isRunning
+	if not wasRunning or not CameraLease:IsOwner("CinematicCam", leaseToken) then
+		local token = CameraLease:Acquire("CinematicCam", 80)
+		if not token then return end
+		leaseToken = token
+	end
+
 	currentMode = presetName
 	isRunning = true
 	startTime = os.clock()
 	isFirstFrame = true
-	initialFOV = camera.FieldOfView
 
 	updatePresetVisuals(presetName)
 
 	local cam = Workspace.CurrentCamera
 	if cam then
+		-- Only snapshot the player's real camera on the first activation.
+		-- Switching preset while already running must not snapshot a
+		-- Scriptable camera and then restore Scriptable forever.
+		if not wasRunning then
+			initialFOV = cam.FieldOfView
+			originalCameraType = cam.CameraType
+			originalCameraMode = player.CameraMode
+			originalCameraSubject = cam.CameraSubject
+		end
 		cam.CameraType = Enum.CameraType.Scriptable
 	end
 
 	RunService:UnbindFromRenderStep("CinematicCameraMovement")
 	RunService:BindToRenderStep("CinematicCameraMovement", Enum.RenderPriority.Camera.Value + 1, function(dt)
 		if not isRunning then return end
+		if not CameraLease:IsOwner("CinematicCam", leaseToken) then
+			stopCinematicSystem()
+			return
+		end
 
 		local currentCam = Workspace.CurrentCamera
 		if not currentCam then return end

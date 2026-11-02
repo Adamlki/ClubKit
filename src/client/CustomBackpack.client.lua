@@ -400,6 +400,16 @@ local function updateVisuals()
 	end
 end
 
+local visualRefreshQueued = false
+local function requestVisualRefresh()
+	if visualRefreshQueued then return end
+	visualRefreshQueued = true
+	task.delay(0.1, function()
+		visualRefreshQueued = false
+		updateVisuals()
+	end)
+end
+
 UserInputService.InputBegan:Connect(function(input, processed)
 	if processed or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
 
@@ -430,12 +440,15 @@ local function hookEvents()
 		if not container then return end
 		table.insert(eventConnections, container.ChildAdded:Connect(function(child)
 			if child:IsA("Tool") then
-				task.defer(function() cleanSlots() autoBindTool(child) updateVisuals() end)
+				task.defer(function()
+					autoBindTool(child)
+					requestVisualRefresh()
+				end)
 			end
 		end))
 		table.insert(eventConnections, container.ChildRemoved:Connect(function(child)
 			if child:IsA("Tool") then
-				task.defer(function() cleanSlots() updateVisuals() end)
+				task.defer(requestVisualRefresh)
 			end
 		end))
 	end

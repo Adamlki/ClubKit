@@ -21,10 +21,13 @@ local warnedNotConfigured = false
 local cachedData = nil
 local lastFetchTime = 0
 local isFetching = false
-local FETCH_COOLDOWN = IS_STUDIO and 15 or 60
+-- Apps Script already caches GET for 45s. Poll less often; this cuts
+-- redirects/HTTP work dramatically during a session.
+local FETCH_COOLDOWN = IS_STUDIO and 30 or 60
 
 -- Anti-429: backoff eksponensial saat rate limit + jitter boot per server
 local BACKOFF_STEPS = { 30, 60, 120, 300 }
+local FAILURE_BACKOFF = 30
 local backoffUntil = 0
 local backoffIndex = 0
 local bootJitterDone = false
@@ -127,6 +130,9 @@ function SaweriaAPI:GetDonationData()
 			BACKOFF_STEPS[backoffIndex]
 		))
 	elseif not configBroken then
+		-- Also back off after a normal timeout/5xx, otherwise every caller
+		-- immediately retries three times again and floods the queue.
+		backoffUntil = os.clock() + FAILURE_BACKOFF
 		warn("[SaweriaAPI] ❌ Gagal mengambil data terbaru dari Google API setelah 3 kali percobaan.")
 	end
 

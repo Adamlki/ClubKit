@@ -35,33 +35,34 @@ local MegaEffectsConfig = {
 	-- ============================================================
 	-- 4. PENGATURAN TIER ROBUX (R$)
 	-- Nominal batas bawah dan batas atas untuk memicu tiap efek
-	-- Support 6 (500 R$)  -> Nuke
-	-- Support 7 (1000 R$) -> Smite
-	-- Support 8 (2500 R$) -> BlackHole
-	-- Support 9 (5000 R$) -> Starfall
+	-- Harga produk Robux aktual (Creator Hub):
+	-- Support 6 (400 R$)  -> Nuke
+	-- Support 7 (800 R$)  -> Smite
+	-- Support 8 (2000 R$) -> BlackHole
+	-- Support 9 (4000 R$) -> Starfall
 	-- ============================================================
 	ROBUX_TIERS = {
 		Nuke = {
 			Enabled  = true,
-			MinPrice = 500,
-			MaxPrice = 999,
+			MinPrice = 400,
+			MaxPrice = 799,
 			WaitTime = 40, -- Jeda antrean (detik) sesuai durasi efek panggung
 		},
 		Smite = {
 			Enabled  = true,
-			MinPrice = 1000,
-			MaxPrice = 2499,
+			MinPrice = 800,
+			MaxPrice = 1999,
 			WaitTime = 45,
 		},
 		BlackHole = {
 			Enabled  = true,
-			MinPrice = 2500,
-			MaxPrice = 4999,
+			MinPrice = 2000,
+			MaxPrice = 3999,
 			WaitTime = 45,
 		},
 		Starfall = {
 			Enabled  = true,
-			MinPrice = 5000,
+			MinPrice = 4000,
 			MaxPrice = 999999999,
 			WaitTime = 50,
 		},

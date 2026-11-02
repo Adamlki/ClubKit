@@ -1,23 +1,14 @@
 -- ============================================================
 -- CUSTOM TITLE SERVER (PLAYER SELF-CUSTOMIZATION)
 -- ============================================================
--- Allows any player to customize their overhead title with
--- text, colors, and gradient effects.
--- Features:
---   - 3x chance quota per player (DataStore saved)
---   - 5-second live preview ("Cek Dulu") without consuming quota
---   - TextService filtering for Roblox safety compliance
---   - Real-time overhead updates
--- ============================================================
 
 local Players           = game:GetService("Players")
-local DataStoreService  = game:GetService("DataStoreService")
 local TextService       = game:GetService("TextService")
 local ServerScriptService = game:GetService("ServerScriptService")
 local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage     = game:GetService("ServerStorage")
-local RunService        = game:GetService("RunService")
+local DataStoreEnv      = require(ServerStorage:WaitForChild("Modules"):WaitForChild("DataStoreEnv"))
 
 -- Module references
 local TitleDataManager = require(script.Parent.OverheadSystemServer.TitleDataManager)
@@ -66,7 +57,7 @@ end
 -- ====================================
 -- DATASTORE & CACHE
 -- ====================================
-local chancesStore = DataStoreService:GetDataStore(CONFIG.CHANCES_DATASTORE)
+local chancesStore, chancesWriteStore = DataStoreEnv.Get(CONFIG.CHANCES_DATASTORE)
 local playerChancesCache = {}
 local activePreviews = {} -- [userId] = previewToken
 
@@ -79,30 +70,72 @@ local function getPlayerChances(userId)
 		return chancesStore:GetAsync(CONFIG.CHANCES_PREFIX .. tostring(userId))
 	end)
 
-	if success and val ~= nil then
-		local chances = math.clamp(tonumber(val) or CONFIG.MAX_CHANCES, 0, CONFIG.MAX_CHANCES)
-		playerChancesCache[userId] = chances
-		return chances
+	if success then
+		if val ~= nil then
+			local chances = math.clamp(tonumber(val) or CONFIG.MAX_CHANCES, 0, CONFIG.MAX_CHANCES)
+			playerChancesCache[userId] = chances
+			return chances
+		end
+
+		-- Pemain baru / belum pernah memakai title.
+		playerChancesCache[userId] = CONFIG.MAX_CHANCES
+		return CONFIG.MAX_CHANCES
 	end
 
-	-- Default for new players
-	playerChancesCache[userId] = CONFIG.MAX_CHANCES
-	return CONFIG.MAX_CHANCES
+
+	warn("[CustomTitle] Gagal memuat kesempatan untuk", userId, ":", val)
+	return nil
 end
 
 local function setPlayerChances(userId, newChances)
 	newChances = math.clamp(math.floor(newChances), 0, CONFIG.MAX_CHANCES)
 	playerChancesCache[userId] = newChances
 
-	local success, err = pcall(function()
-		chancesStore:SetAsync(CONFIG.CHANCES_PREFIX .. tostring(userId), newChances)
-	end)
-
-	if not success then
-		warn("[CustomTitle] Failed to save chances for", userId, ":", err)
+	local key = CONFIG.CHANCES_PREFIX .. tostring(userId)
+	local saved = false
+	for attempt = 1, 3 do
+		local success, err = pcall(function()
+			chancesWriteStore:SetAsync(key, newChances)
+		end)
+		if success then
+			saved = true
+			break
+		end
+		if attempt < 3 then task.wait(1) end
+		if not saved then
+			warn("[CustomTitle] Failed to save chances for", userId, ":", err)
+		end
 	end
 
-	return newChances
+	return saved, newChances
+end
+
+local function consumePlayerChance(userId, expectedChances)
+	local key = CONFIG.CHANCES_PREFIX .. tostring(userId)
+	local consumed = false
+
+	for attempt = 1, 3 do
+		local success = pcall(function()
+			chancesWriteStore:UpdateAsync(key, function(value)
+				local current = tonumber(value)
+				if current == nil then current = CONFIG.MAX_CHANCES end
+				if current ~= expectedChances or current <= 0 then
+					return value
+				end
+				consumed = true
+				return current - 1
+			end)
+		end)
+
+		if success and consumed then
+			local remaining = expectedChances - 1
+			playerChancesCache[userId] = remaining
+			return true, remaining
+		end
+		if attempt < 3 then task.wait(1) end
+	end
+
+	return false, nil
 end
 
 -- ====================================
@@ -144,7 +177,8 @@ getCustomTitleDataRemote.OnServerInvoke = function(player)
 	local currentLevel = getPlayerLevel(player)
 
 	return {
-		Chances = chances,
+		Chances = chances or 0,
+		LoadFailed = chances == nil,
 		MaxChances = CONFIG.MAX_CHANCES,
 		IsUnlimited = isUnlimited,
 		Level = currentLevel,
@@ -152,8 +186,6 @@ getCustomTitleDataRemote.OnServerInvoke = function(player)
 		CurrentTitle = currentTitle or {
 			Title = "",
 			Color = Color3.fromRGB(255, 255, 255),
-			GradientEnabled = false,
-			GradientEffect = "wave",
 		}
 	}
 end
@@ -190,8 +222,6 @@ previewCustomTitleRemote.OnServerEvent:Connect(function(player, titleData)
 	local previewData = {
 		Title           = filteredTitle,
 		Color           = rawColor,
-		GradientEnabled = false,
-		GradientEffect  = "none",
 	}
 
 	-- Save original title before previewing so we can accurately revert
@@ -204,8 +234,6 @@ previewCustomTitleRemote.OnServerEvent:Connect(function(player, titleData)
 		revertTitle = {
 			Title           = originalTitle.Title or "",
 			Color           = originalTitle.Color or Color3.fromRGB(255, 255, 255),
-			GradientEnabled = originalTitle.GradientEnabled or false,
-			GradientEffect  = originalTitle.GradientEffect or "none",
 		}
 	end
 
@@ -228,8 +256,6 @@ previewCustomTitleRemote.OnServerEvent:Connect(function(player, titleData)
 				TitleDataManager:UpdateCache(player.UserId, revertTitle or {
 					Title           = "",
 					Color           = Color3.fromRGB(255, 255, 255),
-					GradientEnabled = false,
-					GradientEffect  = "none",
 				})
 
 				if player.Character and player.Character.Parent then
@@ -261,6 +287,10 @@ applyCustomTitleRemote.OnServerInvoke = function(player, titleData)
 	local chances = getPlayerChances(userId)
 	local isUnlimited = hasUnlimitedTitle(player)
 	local currentLvl = getPlayerLevel(player)
+
+	if chances == nil and not isUnlimited then
+		return false, "Gagal memuat data kesempatan custom title. Coba lagi sebentar lagi.", 0, false
+	end
 
 	if not isUnlimited and chances <= 0 then
 		return false, string.format("Kesempatan custom title kamu sudah habis (0/%d)! Capai Level %d untuk Custom Title Unlimited!", CONFIG.MAX_CHANCES, CONFIG.UNLIMITED_LEVEL_THRESHOLD), 0, false
@@ -297,18 +327,30 @@ applyCustomTitleRemote.OnServerInvoke = function(player, titleData)
 	local finalTitleData = {
 		Title           = filteredTitle,
 		Color           = rawColor,
-		GradientEnabled = false,
-		GradientEffect  = "none",
 	}
 
-	-- Deduct 1 chance only if player is not unlimited (level < 50)
+	-- Consume the chance atomically before writing the title. This prevents
+	-- two simultaneous applies from using the same last chance.
 	local remaining = chances
 	if not isUnlimited then
-		remaining = setPlayerChances(userId, chances - 1)
+		local consumed, newRemaining = consumePlayerChance(userId, chances)
+		if not consumed then
+			return false, "Gagal menyimpan kesempatan title. Coba lagi sebentar lagi.", chances, false
+		end
+		remaining = newRemaining
 	end
 
-	-- Save permanently to DataStore
-	TitleDataManager:SaveTitleData(userId, finalTitleData)
+	local saveOk, saveErr = TitleDataManager:SaveTitleData(userId, finalTitleData)
+	if not saveOk then
+		warn("[CustomTitle] Gagal menyimpan title untuk", player.Name, ":", tostring(saveErr))
+		if not isUnlimited then
+			local refunded = setPlayerChances(userId, chances)
+			if not refunded then
+				warn("[CustomTitle] Gagal mengembalikan kesempatan untuk", player.UserId)
+			end
+		end
+		return false, "Gagal menyimpan title. Kesempatan dikembalikan, silakan coba lagi.", chances, isUnlimited
+	end
 	TitleDataManager:UpdateCache(userId, finalTitleData)
 
 	-- Rebuild overhead in real-time

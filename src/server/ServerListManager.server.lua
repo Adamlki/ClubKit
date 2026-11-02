@@ -254,7 +254,9 @@ getServerListRF.OnServerInvoke = function(player)
 	if not player then return {} end
 	local now = os.clock()
 	if now - (serverListCooldown[player.UserId] or 0) < 5 then
-		return {}
+		-- Throttle the reply itself; serve the last known list rather than
+		-- an empty array during the cooldown window.
+		return cachedDiscoveryList or {}
 	end
 	serverListCooldown[player.UserId] = now
 	return getDiscoveryServers()

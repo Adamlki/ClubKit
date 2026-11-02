@@ -107,8 +107,8 @@ local function handleCoinCommand(player, args)
 	lastCoinTime[player.UserId] = now
 
 	if #args < 2 then
-		print("Penggunaan: /coin <amount> <nama> [pesan]\nContoh: /coin 500 " .. player.Name .. " Semangat!\nTier Efek Robux:\n• 500 - 999: Nuke (Roket Nuklir)\n• 1000 - 2499: Palu Raksasa & Clone Avatar (Smite)\n• 2500 - 4999: Black Hole Kosmik\n• >= 5000: Starfall (Winged Giant)")
-		sendFeedback(player, "Coin Test", "Gunakan: /coin <amount> <nama> (500: Nuke, 1k: Palu, 2.5k: BlackHole, 5k: Starfall)")
+		print("Penggunaan: /coin <amount> <nama> [pesan]\nContoh: /coin 400 " .. player.Name .. " Semangat!\nTier Efek Robux:\n• 400 - 799: Nuke (Roket Nuklir)\n• 800 - 1999: Palu Raksasa & Clone Avatar (Smite)\n• 2000 - 3999: Black Hole Kosmik\n• >= 4000: Starfall (Winged Giant)")
+		sendFeedback(player, "Coin Test", "Gunakan: /coin <amount> <nama> (400: Nuke, 800: Palu, 2k: BlackHole, 4k: Starfall)")
 		return
 	end
 
@@ -126,13 +126,13 @@ local function handleCoinCommand(player, args)
 	if _G.TriggerTestDonation then
 		_G.TriggerTestDonation(donatorName, amount, message)
 		local extraInfo = ""
-		if amount >= 5000 then
+		if amount >= 4000 then
 			extraInfo = " ✨⭐ (Efek Starfall Winged Giant)"
-		elseif amount >= 2500 then
+		elseif amount >= 2000 then
 			extraInfo = " 🕳️🌌 (Efek Black Hole Kosmik)"
-		elseif amount >= 1000 then
+		elseif amount >= 800 then
 			extraInfo = " ⚡🔨 (Efek Palu Raksasa & Ava Clone)"
-		elseif amount >= 500 then
+		elseif amount >= 400 then
 			extraInfo = " 🚀💥 (Efek Nuke Nuklir)"
 		end
 		sendFeedback(player, "Coin Test", "Memicu Robux donate: " .. donatorName .. " R$" .. tostring(amount) .. extraInfo)
@@ -171,8 +171,8 @@ local function handleSaweriaCommand(player, args)
 	local amount = 50000
 	local messageStartIndex = 2
 
-	local arg1Num = tonumber(tostring(args[1]):gsub("[^%d]", ""))
-	local arg2Num = args[2] and tonumber(tostring(args[2]):gsub("[^%d]", ""))
+	local arg1Num = tonumber((tostring(args[1]):gsub("[^%d]", "")))
+	local arg2Num = args[2] and tonumber((tostring(args[2]):gsub("[^%d]", "")))
 
 	if arg1Num and not arg2Num then
 		amount = arg1Num

@@ -8,22 +8,13 @@ local RunService = game:GetService("RunService")
 local RoleSystem = require(ServerStorage.Modules.RoleSystem)
 
 local GiftManager = {}
-
--- Rate limit ringan agar tombol Gift VIP tidak bisa di-spam.
 local lastPromptAt = {}
+local recentReceipt = {}
 
--- ==============================================================================
--- KONFIGURASI KEBIJAKAN, RETENSI, & DATASTORE
--- ==============================================================================
--- Batas umur maksimal entri intent antrean (30 hari dalam detik)
 local INTENT_MAX_AGE = 30 * 24 * 3600
 
--- Kebijakan fallback saat target gift tidak ditemukan dan intent kedaluwarsa:
--- "GRANT_TO_BUYER": Berikan pass kepada pembeli sendiri agar Robux tidak hangus dan receipt tidak menggantung selamanya.
--- "DISCARD_AND_LOG": Catat log warning dan selesaikan receipt tanpa reward untuk mencegah loop NotProcessedYet.
 local POLICY_TARGET_MISSING = "GRANT_TO_BUYER"
 
--- Pemisahan DataStore produksi vs studio agar Studio tidak menulis ke database produksi
 local INTENT_STORE_NAME = RunService:IsStudio() and "PendingGiftIntents_Studio_v1" or "PendingGiftIntents_v2"
 local RECEIPT_MAP_STORE_NAME = RunService:IsStudio() and "GiftReceiptMap_Studio_v1" or "GiftReceiptMap_v2"
 
@@ -31,9 +22,8 @@ local intentStore = nil
 local receiptMapStore = nil
 local isDataStoreAvailable = false
 
--- Fallback RAM jika DataStore offline / di Studio tanpa API requests
-local localMemoryQueue = {} -- [queueKey] = { {TargetId, GiftType, ProductId, Timestamp}, ... }
-local localReceiptMap = {}  -- [purchaseId] = targetId
+local localMemoryQueue = {} 
+local localReceiptMap = {}
 
 local function initDataStore()
 	local ok1, s1 = pcall(function()
@@ -78,18 +68,15 @@ end
 -- OPERASI ATOMIK FIFO QUEUE & IDEMPOTENSI RECEIPT
 -- ==============================================================================
 
--- 1. Tambah intent ke antrean FIFO secara atomik
 local function pushIntentAtomic(giverUserId, productId, intentData)
 	local qKey = getQueueKey(giverUserId, productId)
 	local now = os.time()
 
-	-- Simpan di RAM lokal
 	if not localMemoryQueue[qKey] then
 		localMemoryQueue[qKey] = {}
 	end
 	table.insert(localMemoryQueue[qKey], intentData)
 
-	-- Simpan atomik di DataStore
 	if isDataStoreAvailable and intentStore then
 		pcall(function()
 			intentStore:UpdateAsync(qKey, function(oldQueue)
@@ -107,16 +94,12 @@ local function pushIntentAtomic(giverUserId, productId, intentData)
 	end
 end
 
--- 2. Hapus intent saat prompt dibatalkan oleh pembeli (isPurchased == false)
 local function cancelLatestIntentAtomic(giverUserId, productId)
 	local qKey = getQueueKey(giverUserId, productId)
 
-	-- Hapus dari RAM lokal (elemen paling belakang / terbaru)
 	if localMemoryQueue[qKey] and #localMemoryQueue[qKey] > 0 then
 		table.remove(localMemoryQueue[qKey])
 	end
-
-	-- Hapus dari DataStore secara atomik
 	if isDataStoreAvailable and intentStore then
 		pcall(function()
 			intentStore:UpdateAsync(qKey, function(oldQueue)
@@ -129,17 +112,13 @@ local function cancelLatestIntentAtomic(giverUserId, productId)
 	print(string.format("[GiftManager] ℹ️ Intent gift untuk giver %d produk %d dibatalkan karena prompt ditutup.", giverUserId, productId))
 end
 
--- 3. Ambil target secara atomik dengan pemetaan Idempotensi PurchaseId
 local function claimTargetForReceipt(giverUserId, productId, purchaseId, matchedGiftType)
 	local qKey = getQueueKey(giverUserId, productId)
 	local rKey = getReceiptKey(purchaseId)
 	local now = os.time()
-
-	-- LANGKAH A: Cek apakah PurchaseId ini sudah pernah memetakan target sebelumnya (IDEMPOTENSI RETRY)
 	if localReceiptMap[rKey] then
 		return localReceiptMap[rKey]
 	end
-
 	if isDataStoreAvailable and receiptMapStore then
 		local okMap, mappedTarget = pcall(function()
 			return receiptMapStore:GetAsync(rKey)
@@ -150,7 +129,6 @@ local function claimTargetForReceipt(giverUserId, productId, purchaseId, matched
 		end
 	end
 
-	-- LANGKAH B: Ambil intent terdepan dari antrean FIFO secara atomik
 	local claimedIntent = nil
 
 	if isDataStoreAvailable and intentStore then
@@ -169,7 +147,22 @@ local function claimTargetForReceipt(giverUserId, productId, purchaseId, matched
 		end)
 	end
 
-	-- Fallback ke RAM lokal jika DataStore kosong atau offline
+	if claimedIntent then
+		local ramQueue = localMemoryQueue[qKey]
+		if ramQueue then
+			for i = #ramQueue, 1, -1 do
+				local item = ramQueue[i]
+				local sameIntent = type(item) == "table"
+					and item.Timestamp == claimedIntent.Timestamp
+					and item.TargetId == claimedIntent.TargetId
+				if sameIntent then
+					table.remove(ramQueue, i)
+					break
+				end
+			end
+		end
+	end
+
 	if not claimedIntent and localMemoryQueue[qKey] and #localMemoryQueue[qKey] > 0 then
 		while #localMemoryQueue[qKey] > 0 do
 			local cand = table.remove(localMemoryQueue[qKey], 1)
@@ -180,7 +173,6 @@ local function claimTargetForReceipt(giverUserId, productId, purchaseId, matched
 		end
 	end
 
-	-- LANGKAH C: Jika target ditemukan, simpan pemetaan PurchaseId -> TargetId secara permanen
 	if claimedIntent and claimedIntent.TargetId then
 		local targetId = claimedIntent.TargetId
 		localReceiptMap[rKey] = targetId
@@ -201,7 +193,6 @@ function GiftManager:Init(ProcessReceiptHandler)
 	promptGiftEvent.Name = "PromptGift"
 	promptGiftEvent.Parent = remotesFolder
 
-	-- Listener permintaan gift dari client
 	promptGiftEvent.OnServerEvent:Connect(function(giver, targetPlayer, giftType)
 		if not giver or not giver.Parent then return end
 		local features = RoleSystem.Config.Features or {}
@@ -226,20 +217,23 @@ function GiftManager:Init(ProcessReceiptHandler)
 			Timestamp = os.time(),
 		}
 
-		-- Simpan intent atomik ke antrean FIFO
 		pushIntentAtomic(giver.UserId, productId, intentData)
 
 		MarketplaceService:PromptProductPurchase(giver, productId)
 	end)
 
-	-- Deteksi pembatalan prompt oleh pembeli (mencegah intent basi di antrean)
 	MarketplaceService.PromptProductPurchaseFinished:Connect(function(userId, productId, isPurchased)
-		if not isPurchased then
+		if isPurchased then return end
+		local receiptKey = tostring(userId) .. ":" .. tostring(productId)
+		task.delay(15, function()
+			local lastReceipt = recentReceipt[receiptKey]
+			if lastReceipt and (os.clock() - lastReceipt) < 15 then
+				return
+			end
 			cancelLatestIntentAtomic(userId, productId)
-		end
+		end)
 	end)
 
-	-- Callback saat transaksi berhasil diproses oleh Roblox
 	ProcessReceiptHandler:RegisterCallback("GiftSystem", function(player, productId, amount, receiptInfo)
 		local matchedGiftType = findGiftTypeForProduct(productId)
 		if not matchedGiftType then
@@ -247,6 +241,7 @@ function GiftManager:Init(ProcessReceiptHandler)
 		end
 
 		local purchaseId = receiptInfo and receiptInfo.PurchaseId or "unknown"
+		recentReceipt[tostring(player.UserId) .. ":" .. tostring(productId)] = os.clock()
 		local targetId = claimTargetForReceipt(player.UserId, productId, purchaseId, matchedGiftType)
 
 		if targetId then
@@ -254,10 +249,9 @@ function GiftManager:Init(ProcessReceiptHandler)
 			if success then
 				return true
 			end
-			return false -- DataStore pemberian gagal — biarkan Roblox retry
+			return false 
 		end
 
-		-- Kasus target tidak ditemukan (intent sudah basi / dibatalkan tapi receipt tetap masuk)
 		warn(string.format(
 			"[GiftManager] ⚠️ Gift target tidak ditemukan untuk userId: %d | productId: %d | purchaseId: %s.",
 			player.UserId, productId, tostring(purchaseId)
@@ -272,7 +266,7 @@ function GiftManager:Init(ProcessReceiptHandler)
 			if success then
 				return true
 			end
-			return false -- DataStore gagal, biarkan Roblox retry
+			return false
 		else
 			warn("[GiftManager] ℹ️ Receipt diselesaikan tanpa reward untuk mencegah loop NotProcessedYet.")
 			return true
@@ -281,7 +275,6 @@ function GiftManager:Init(ProcessReceiptHandler)
 
 	Players.PlayerRemoving:Connect(function(player)
 		lastPromptAt[player.UserId] = nil
-		-- Data antrean di DataStore tetap utuh dan bertahan lintas sesi/server
 	end)
 end
 

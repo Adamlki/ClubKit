@@ -43,6 +43,7 @@ local playerCooldowns   = {}
 local verifiedPurchases = {}
 local canChatCache      = {}
 local statsCooldown     = {}
+local statsCache        = {}
 
 local addToQueue
 local processQueue
@@ -141,6 +142,7 @@ local function cleanupPlayerSecurity(userId)
 	playerCooldowns[userId]   = nil
 	canChatCache[userId]      = nil
 	statsCooldown[userId]     = nil
+	statsCache[userId]        = nil
 end
 
 local function getCooldownRemaining(userId)
@@ -294,11 +296,15 @@ end
 getPlayerStatsRemote.OnServerInvoke = function(clientPlayer)
 	if not clientPlayer then return { robux = 0, rupiah = 0 } end
 
+	local userId = clientPlayer.UserId
 	local now = os.clock()
-	if now - (statsCooldown[clientPlayer.UserId] or 0) < 3 then
-		return { robux = 0, rupiah = 0 }
+	local cached = statsCache[userId]
+	if now - (statsCooldown[userId] or 0) < 3 and cached then
+		-- Remote ini read-only. Saat cooldown, kembalikan hasil terakhir;
+		-- jangan kirim 0 karena UI akan menimpanya dengan "0 CASH".
+		return cached
 	end
-	statsCooldown[clientPlayer.UserId] = now
+	statsCooldown[userId] = now
 
 	local robuxData = DonationDataStore:GetPlayerDonation(clientPlayer.UserId)
 	local totalRobux = 0
@@ -324,10 +330,12 @@ getPlayerStatsRemote.OnServerInvoke = function(clientPlayer)
 		end
 	end
 
-	return {
+	local result = {
 		robux = totalRobux,
 		rupiah = totalRupiah,
 	}
+	statsCache[userId] = result
+	return result
 end
 
 broadcastRemote.OnServerInvoke = function(player, message)
@@ -375,8 +383,13 @@ ProcessReceiptHandler:RegisterCallback("AutoBroadcastAll", function(player, prod
 	return true
 end)
 
+game:BindToClose(function()
+	DonationDataStore:FlushBoardWrites(8)
+end)
+
 Players.PlayerRemoving:Connect(function(player)
 	DonationDataStore:CleanupPlayer(player)
 	cleanupPlayerSecurity(player.UserId)
 	statsCooldown[player.UserId] = nil
+	statsCache[player.UserId] = nil
 end)

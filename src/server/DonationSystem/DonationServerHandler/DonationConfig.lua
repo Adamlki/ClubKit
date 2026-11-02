@@ -28,16 +28,19 @@ DonationConfig.DATASTORE = {
 -- ============================================
 -- PRODUCT CONFIGURATION
 -- ============================================
+-- Harga di bawah HARUS sama dengan harga Developer Product di Creator Hub.
+-- Nilai ini diverifikasi lewat MarketplaceService:GetProductInfo (2026-11-01):
+-- 11, 20, 40, 80, 200, 400, 800, 2000, 4000 Robux.
 DonationConfig.PRODUCTS = {
-	{id = 3578052958, name = "Support 1", price = 13},
-	{id = 3578052957, name = "Support 2", price = 25},
-	{id = 3578052956, name = "Support 3", price = 50},
-	{id = 3578052954, name = "Support 4", price = 100},
-	{id = 3578052955, name = "Support 5", price = 250},
-	{id = 3578052953, name = "Support 6", price = 500},
-	{id = 3578052952, name = "Support 7", price = 1000},
-	{id = 3578052948, name = "Support 8", price = 2500},
-	{id = 3578052949, name = "Support 9", price = 5000},
+	{id = 3578052958, name = "Support 1", price = 11},
+	{id = 3578052957, name = "Support 2", price = 20},
+	{id = 3578052956, name = "Support 3", price = 40},
+	{id = 3578052954, name = "Support 4", price = 80},
+	{id = 3578052955, name = "Support 5", price = 200},
+	{id = 3578052953, name = "Support 6", price = 400},
+	{id = 3578052952, name = "Support 7", price = 800},
+	{id = 3578052948, name = "Support 8", price = 2000},
+	{id = 3578052949, name = "Support 9", price = 4000},
 }
 
 -- Quick-lookup: ProductId -> Price
@@ -51,7 +54,7 @@ end
 -- ============================================
 DonationConfig.BROADCAST = {
 	ENABLED              = true,
-	MIN_DONATION         = 13,   -- minimum untuk broadcast dengan custom message
+	MIN_DONATION         = 11,   -- minimum untuk broadcast dengan custom message
 	DISPLAY_DURATION     = 5,    -- detik per notifikasi
 	QUEUE_DELAY          = 0.5,
 	MAX_MESSAGE_LENGTH   = 200,
@@ -77,7 +80,7 @@ DonationConfig.DEFAULT_SMALL_DONATION_MESSAGE = "Welcome to the game! Thank you 
 -- ============================================
 DonationConfig.SCREEN_BOARD = {
 	ENABLED         = true,
-	MIN_DONATION    = 13,    -- donasi minimal untuk tampil di screen board
+	MIN_DONATION    = 11,    -- donasi minimal untuk tampil di screen board
 	NAME_FORMAT     = "%s  |  %d Robux",  -- %s = DisplayName, %d = amount
 	DEFAULT_NAME    = "RASA NADA",
 	DEFAULT_MESSAGE = "KATA KATA HARI INI KING!!!",

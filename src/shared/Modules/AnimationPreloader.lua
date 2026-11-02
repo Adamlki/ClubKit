@@ -12,6 +12,7 @@ local CONFIG = {
 	DEBUG_ENABLED = false,
 	PRELOAD_ON_SPAWN = false,
 	PRELOAD_DELAY = 2, -- Delay before starting preload (let character fully load)
+	MAX_PRELOAD = 180, -- Remaining tracks are loaded lazily on first use
 }
 
 -- ============================================
@@ -64,6 +65,12 @@ function module.preloadAnimations(animationFolder)
 		for _, anim in ipairs(animationFolder:GetDescendants()) do
 			if anim:IsA("Animation") then
 				table.insert(animationsToPreload, anim)
+			end
+		end
+
+		if #animationsToPreload > CONFIG.MAX_PRELOAD then
+			for i = #animationsToPreload, CONFIG.MAX_PRELOAD + 1, -1 do
+				table.remove(animationsToPreload, i)
 			end
 		end
 

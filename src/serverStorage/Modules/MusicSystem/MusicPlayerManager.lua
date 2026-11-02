@@ -36,11 +36,25 @@ end
 function MusicPlayerManager:OnPlayerAdded(player)
 	RoleSystem:InitializePlayer(player)
 
-	-- FIX MASUK BARENGAN 100 PEMAIN: Stagger load MusicFavorites (jeda 5-12 detik) agar detik pertama join fokus ke Role & Level
+	-- Load favorites SEBELUM SyncToPlayer. Sebelumnya load ditunda 5-12 detik
+	-- sehingga sync pertama selalu mengirim daftar kosong; jika pemain menekan
+	-- Favorite sebelum load selesai, daftar lama bisa tertimpa.
+	self.favoriteManager:LoadPlayerFavorites(player.UserId)
+
+	-- Jika load gagal, coba ulang di background dan kirim hasilnya setelah sukses.
 	task.spawn(function()
-		task.wait(math.random(50, 120) / 10)
-		if validatePlayer(player) then
-			self.favoriteManager:LoadPlayerFavorites(player.UserId)
+		for _ = 1, 3 do
+			if self.favoriteManager:IsLoaded(player.UserId) then break end
+			task.wait(5)
+			if validatePlayer(player) then
+				self.favoriteManager:LoadPlayerFavorites(player.UserId)
+			end
+		end
+
+		if validatePlayer(player) and self.favoriteManager:IsLoaded(player.UserId) then
+			self.dispatcher:SendToClient(player, "FAVORITES_UPDATE", {
+				favoriteSongs = self.favoriteManager:GetPlayerFavorites(player.UserId),
+			})
 		end
 	end)
 

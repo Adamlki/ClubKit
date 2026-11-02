@@ -36,12 +36,12 @@ local CONFIG = {
 }
 
 local PRICE_RANGES = {
-	{ name = "Level 1", minPrice = 1,   maxPrice = 89,      templateName = "Level1", useCinematic = false },
-	{ name = "Level 2", minPrice = 90,  maxPrice = 449,     templateName = "Level2", useCinematic = false },
-	{ name = "Level 3", minPrice = 450, maxPrice = 899,     templateName = "Level3", useCinematic = false },
+	{ name = "Level 1", minPrice = 1,   maxPrice = 399,     templateName = "Level1", useCinematic = false },
+	{ name = "Level 2", minPrice = 400, maxPrice = 799,     templateName = "Level2", useCinematic = false },
+	{ name = "Level 3", minPrice = 800, maxPrice = 1999,    templateName = "Level3", useCinematic = false },
 	{
 		name              = "Level 4",
-		minPrice          = 900,
+		minPrice          = 2000,
 		maxPrice          = 9999999,
 		templateName      = "Level4",
 		useCinematic      = false,
@@ -243,7 +243,7 @@ local function grantDonationEffect(player, price, shouldSpotlight)
 	local range = findRange(PRICE_RANGES, price)
 	if not range then return false end
 
-	if price >= 500 then
+	if price >= 400 then
 		local robuxEffectEvent = SS:FindFirstChild("RobuxEffectEvent")
 		if not robuxEffectEvent then
 			robuxEffectEvent = Instance.new("BindableEvent")
@@ -303,7 +303,7 @@ RobuxDonationEffectEvent.Event:Connect(function(playerOrName, robuxAmount, shoul
 		if not ok then warn("[DonationEffect] Error:", err) end
 	else
 		task.spawn(function() triggerStageEffects(CONFIG.STAGE_FX_DURATION) end)
-		if robuxAmount and robuxAmount >= 500 then
+		if robuxAmount and robuxAmount >= 400 then
 			local robuxEffectEvent = SS:FindFirstChild("RobuxEffectEvent")
 			if robuxEffectEvent then robuxEffectEvent:Fire(playerOrName, robuxAmount) end
 		end
@@ -359,7 +359,7 @@ _G.TriggerTestDonation = function(donatorName, amount, message)
 		local range = findRange(PRICE_RANGES, amount)
 		task.spawn(function() triggerStageEffects(CONFIG.STAGE_FX_DURATION) end)
 
-		if amount >= 500 then
+		if amount >= 400 then
 			local robuxEffectEvent = SS:FindFirstChild("RobuxEffectEvent")
 			if not robuxEffectEvent then
 				robuxEffectEvent = Instance.new("BindableEvent")

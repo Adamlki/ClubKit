@@ -10,6 +10,7 @@ local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local localPlayer = Players.LocalPlayer
+local CameraLease = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("CameraLease"))
 local DonorSpotlightRemote = ReplicatedStorage:WaitForChild("DonorSpotlightRemote", 20)
 
 if not DonorSpotlightRemote then
@@ -21,6 +22,7 @@ end
 local currentSessionId = 0
 local activeTween = nil
 local activeConnections = {}
+local leaseToken = nil
 
 -- Raycast params untuk deteksi dinding (mencegah kamera tembus tembok saat orbit)
 local wallRayParams = RaycastParams.new()
@@ -49,8 +51,14 @@ end
 local originalFOV = 70
 
 local function forceRestoreCamera(originalCamType)
+	local owned = CameraLease:IsOwner("DonorSpotlight", leaseToken)
+	CameraLease:Release("DonorSpotlight", leaseToken)
+	leaseToken = nil
+
 	cancelActiveTween()
 	cleanupConnections()
+
+	if not owned then return end
 
 	local cam = Workspace.CurrentCamera
 	if not cam then return end
@@ -67,6 +75,12 @@ end
 
 -- Transisi halus kembali ke POV pemain sendiri (ZOOM OUT & PULL BACK)
 local function returnToPlayerPOV(originalCamType, onDone)
+	if not CameraLease:IsOwner("DonorSpotlight", leaseToken) then
+		forceRestoreCamera(originalCamType)
+		if onDone then onDone() end
+		return
+	end
+
 	local cam = Workspace.CurrentCamera
 	if not cam then
 		forceRestoreCamera(originalCamType)
@@ -232,6 +246,9 @@ local function playDonorSpotlight(donorUserId, donorDisplayName, duration)
 		end
 	end
 
+	leaseToken = CameraLease:Acquire("DonorSpotlight", 50)
+	if not leaseToken then return end
+
 	-- Alihkan kamera ke mode Scriptable
 	cam.CameraType = Enum.CameraType.Scriptable
 
@@ -320,6 +337,7 @@ local function playDonorSpotlight(donorUserId, donorDisplayName, duration)
 	local basePos = closeTargetPos
 
 	while isRunning and (elapsed < remainingDuration) and (sessionId == currentSessionId) do
+		if not CameraLease:IsOwner("DonorSpotlight", leaseToken) then break end
 		local dt = RunService.RenderStepped:Wait()
 		dt = math.min(dt, 0.05) -- Clamp jika HP drop FPS
 		elapsed += dt

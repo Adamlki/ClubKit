@@ -186,24 +186,30 @@ function MusicPlayer.new()
 			local targetSpeed = self.expectedPlaybackSpeed or 1.0
 			local expectedTimePos = realTimeElapsed * targetSpeed
 
-			local maxDuration = serverSound.TimeLength > 0 and serverSound.TimeLength or (self.expectedDuration or 180)
+			-- `TimeLength` adalah durasi audio mentah. Saat PlaybackSpeed != 1,
+			-- durasi tampilan adalah TimeLength / speed. Jangan memakai
+			-- panjang mentah untuk progress bar karena lagu 0.43x jadi terlihat
+			-- selesai di 43% durasi sebenarnya.
+			local rawLength = serverSound.TimeLength
+			local maxSeek = rawLength > 0 and rawLength or ((self.expectedDuration or 180) * targetSpeed)
+			local displayDuration = self.expectedDuration or (maxSeek / targetSpeed)
 
-			if maxDuration > 0 and expectedTimePos < maxDuration then
-				if serverSound.TimeLength > 0 and serverSound.IsLoaded then
+			if maxSeek > 0 and expectedTimePos < maxSeek then
+				if rawLength > 0 and serverSound.IsLoaded then
 					local currentPos = serverSound.TimePosition
 					local diff = expectedTimePos - currentPos
 					local absDiff = math.abs(diff)
 
 					if not self._hasSnappedCurrentSong or not serverSound.IsPlaying then
 						pcall(function()
-							serverSound.TimePosition = math.clamp(expectedTimePos, 0, maxDuration - 0.1)
+							serverSound.TimePosition = math.clamp(expectedTimePos, 0, maxSeek - 0.1)
 							serverSound.PlaybackSpeed = targetSpeed
 							if not serverSound.IsPlaying then serverSound:Play() end
 							self._hasSnappedCurrentSong = true
 						end)
 					elseif absDiff > 0.35 then
 						pcall(function()
-							serverSound.TimePosition = math.clamp(expectedTimePos, 0, maxDuration - 0.1)
+							serverSound.TimePosition = math.clamp(expectedTimePos, 0, maxSeek - 0.1)
 							serverSound.PlaybackSpeed = targetSpeed
 						end)
 					elseif absDiff > 0.04 then
@@ -216,9 +222,9 @@ function MusicPlayer.new()
 				end
 			end
 
-			if maxDuration > 0 then
-				local progress = math.clamp(expectedTimePos / maxDuration, 0, 1)
-				self.uiManager:UpdateProgress(progress, expectedTimePos, maxDuration)
+			if displayDuration > 0 then
+				local progress = math.clamp(realTimeElapsed / displayDuration, 0, 1)
+				self.uiManager:UpdateProgress(progress, realTimeElapsed, displayDuration)
 			end
 		elseif serverSound.IsPlaying then
 			serverSound:Stop()
@@ -647,10 +653,13 @@ function MusicPlayer:ForceAudioSync(payload)
 		local realTimeElapsed = currentServerTime - payload.ServerTime
 		local targetSpeed = self.expectedPlaybackSpeed or serverSound.PlaybackSpeed or 1.0
 		local expectedTimePos = realTimeElapsed * targetSpeed
-		local maxDuration = payload.Duration or serverSound.TimeLength
-		if maxDuration <= 0 then maxDuration = 9999 end
+		-- `payload.Duration` adalah durasi tampilan (sudah dibagi speed).
+		-- TimePosition memakai timeline audio mentah, jadi clamp ke TimeLength.
+		local rawLength = serverSound.TimeLength
+		local maxSeek = rawLength > 0 and rawLength or ((payload.Duration or 180) * targetSpeed)
+		if maxSeek <= 0 then maxSeek = 9999 end
 
-		if expectedTimePos >= 0 and expectedTimePos < maxDuration then
+		if expectedTimePos >= 0 and expectedTimePos < maxSeek then
 			pcall(function()
 				local currentPos = serverSound.TimePosition
 				local diff = math.abs(currentPos - expectedTimePos)
@@ -659,7 +668,7 @@ function MusicPlayer:ForceAudioSync(payload)
 					return
 				end
 
-				serverSound.TimePosition = math.clamp(expectedTimePos, 0, maxDuration - 0.1)
+				serverSound.TimePosition = math.clamp(expectedTimePos, 0, maxSeek - 0.1)
 				serverSound.PlaybackSpeed = targetSpeed
 				if not serverSound.IsPlaying then serverSound:Play() end
 				self._hasSnappedCurrentSong = true
@@ -686,7 +695,9 @@ function MusicPlayer:SyncState(state)
 	end
 
 	if state.currentSong then
-		self.expectedDuration = state.currentSong.Duration or state.duration or 180
+		-- state.duration = durasi playback yang sudah disesuaikan dengan speed;
+		-- currentSong.Duration masih metadata mentah.
+		self.expectedDuration = state.duration or state.currentSong.Duration or 180
 		self.uiManager:UpdateNowPlaying(state.currentSong, state.currentUploader, false)
 		self.uiManager:UpdateSongDuration(state.duration or 0, state.currentSong.Duration, false)
 
@@ -707,7 +718,7 @@ function MusicPlayer:SyncState(state)
 				self._hasSnappedCurrentSong = false
 				self:ForceAudioSync({
 					ServerTime = self.absoluteStartTime,
-					Duration = state.currentSong.Duration,
+					Duration = state.duration or self.expectedDuration,
 				})
 			end
 		end

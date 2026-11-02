@@ -325,7 +325,9 @@ function MusicSystem:Start()
 		for _, player in ipairs(Players:GetPlayers()) do
 			self.playerManager:OnPlayerRemoving(player)
 		end
-		task.wait(3) -- Beri waktu 3 detik agar proses save async (Datastore) selesai sebelum mati
+		-- FavoriteManager melakukan retry saat save gagal; beri waktu lebih
+		-- agar perubahan terakhir tidak hilang saat shutdown.
+		task.wait(10)
 	end)
 
 	-- Handle existing players

@@ -166,6 +166,11 @@ end
 -- GUI CREATION
 -- ====================================
 local function showIconForPlayer(player, shouldShow)
+	if player and player.Parent then
+		-- Attribute adalah sumber kebenaran; event ShowIcon bisa terlewat
+		-- jika client selesai inisialisasi setelah event dikirim.
+		player:SetAttribute("CanUseHat", shouldShow == true)
+	end
 	ShowIconEvent:FireClient(player, shouldShow)
 	debugPrint(player.Name .. " icon visibility: " .. tostring(shouldShow), true)
 end

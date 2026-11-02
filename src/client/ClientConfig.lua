@@ -1,3 +1,9 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local ConfigFolder = ReplicatedStorage:WaitForChild("Config")
+local GameConfig = require(ConfigFolder:WaitForChild("GameConfig"))
+local AssetConfig = require(ConfigFolder:WaitForChild("AssetConfig"))
+
 local ClientConfig = {}
 
 -- ============================================
@@ -26,7 +32,7 @@ ClientConfig.MESSAGE = {
 	MIN_DONATION    = 11,
 	MAX_LENGTH      = 200,
 	COOLDOWN        = 10,
-	DEFAULT_MESSAGE = "Welcome to RASA NADA",
+	DEFAULT_MESSAGE = GameConfig.Branding.WelcomeMessage,
 }
 
 -- ============================================
@@ -35,7 +41,7 @@ ClientConfig.MESSAGE = {
 ClientConfig.NOTIFICATION = {
 	ENABLED          = true,
 	MIN_DONATION     = 11,
-	SOUND_ID         = "rbxassetid://79392333090964",
+	SOUND_ID         = AssetConfig.Sounds.Notification,
 	SOUND_VOLUME     = 0.5,
 	SLIDE_TIME       = 0.4,
 	FADE_TIME        = 0.3,

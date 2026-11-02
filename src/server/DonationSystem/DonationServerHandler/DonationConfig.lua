@@ -1,4 +1,6 @@
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local GameConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("GameConfig"))
 
 local DonationConfig = {}
 
@@ -64,7 +66,7 @@ DonationConfig.BROADCAST = {
 }
 
 -- Pesan default untuk donasi kecil (di bawah MIN_DONATION)
-DonationConfig.DEFAULT_SMALL_DONATION_MESSAGE = "Welcome to the game! Thank you for your donation!"
+DonationConfig.DEFAULT_SMALL_DONATION_MESSAGE = GameConfig.Branding.DonationWelcome
 
 -- ============================================
 -- SCREEN BOARD CONFIGURATION  (FITUR BARU)
@@ -82,8 +84,8 @@ DonationConfig.SCREEN_BOARD = {
 	ENABLED         = true,
 	MIN_DONATION    = 11,    -- donasi minimal untuk tampil di screen board
 	NAME_FORMAT     = "%s  |  %d Robux",  -- %s = DisplayName, %d = amount
-	DEFAULT_NAME    = "RASA NADA",
-	DEFAULT_MESSAGE = "KATA KATA HARI INI KING!!!",
+	DEFAULT_NAME    = GameConfig.Branding.ScreenBoardName,
+	DEFAULT_MESSAGE = GameConfig.Branding.ScreenBoardMessage,
 }
 
 -- ============================================

@@ -5,6 +5,7 @@ local MarketplaceService = game:GetService("MarketplaceService")
 
 local RoleSystem = require(ServerStorage.Modules.RoleSystem)
 local MusicModule = require(ReplicatedStorage.Modules:WaitForChild("MusicModule"))
+local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 
 local MusicActionHandler = {}
 MusicActionHandler.__index = MusicActionHandler
@@ -147,7 +148,7 @@ function MusicActionHandler:HandleAddToQueue(player, data)
 				musicData = {
 					id = musicId,
 					judul = "Custom Music",
-					sampul = "rbxassetid://88574818940840",
+					sampul = AssetConfig.Music.DefaultCover,
 					Duration = self.config.DEFAULT_SONG_DURATION,
 					PlaybackSpeed = 1.0,
 				}

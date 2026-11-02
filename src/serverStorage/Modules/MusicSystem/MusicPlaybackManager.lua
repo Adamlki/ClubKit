@@ -5,6 +5,7 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local ServerMusicAudioHandler = require(script.Parent.ServerMusicAudioHandler)
 local BridgeNet = require(ReplicatedStorage:WaitForChild("BridgeNet"))
 local MusicModule = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("MusicModule"))
+local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 
 local musicBroadcastBridge = BridgeNet.CreateBridge("MusicBroadcast")
 
@@ -13,7 +14,7 @@ MusicPlaybackManager.__index = MusicPlaybackManager
 
 local CONFIG = {
 	PROGRESS_BROADCAST_INTERVAL = 2,
-	DEFAULT_COVER = "rbxassetid://88574818940840",
+	DEFAULT_COVER = AssetConfig.Music.DefaultCover,
 	DEFAULT_PLAYBACK_SPEED = 1.0,
 	AUTO_DURATION_TIMEOUT = 12,
 }

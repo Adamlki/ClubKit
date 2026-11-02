@@ -18,6 +18,9 @@
 -- * Durasi lagu otomatis dideteksi saat diputar.
 -- ==============================================================================
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
+
 local MusicModule = {}
 
 -- ==============================================================================
@@ -636,7 +639,7 @@ function MusicModule:GetAlbumCover(albumName)
 	if albumName and self.ALBUM_COVERS and self.ALBUM_COVERS[albumName] then
 		return self.ALBUM_COVERS[albumName]
 	end
-	return self.ALBUM_COVERS["All Songs"] or "rbxassetid://100874885625675"
+	return self.ALBUM_COVERS["All Songs"] or AssetConfig.Music.DefaultCover
 end
 
 -- ==============================================================================

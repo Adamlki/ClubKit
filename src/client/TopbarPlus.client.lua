@@ -12,6 +12,8 @@ local playerGui = player:WaitForChild("PlayerGui")
 local Icon      = require(ReplicatedStorage:WaitForChild("Icon"))
 local UIAnimator = require(ReplicatedStorage:WaitForChild("UIAnimator"))
 local TopbarPanelRegistry = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("TopbarPanelRegistry"))
+local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
+local TOPBAR_ICONS = AssetConfig.Images.Topbar
 
 local CONFIG = {
 	Alignment = "left",
@@ -28,19 +30,19 @@ local CONFIG = {
 }
 
 local ICON_CONFIGS = {
-	Menu         = { enabled = true, image = "rbxassetid://87603332567027",  label = "", alignment = "right", order = 1 },
+	Menu         = { enabled = true, image = TOPBAR_ICONS.Menu,  label = "", alignment = "right", order = 1 },
 	Refresh      = { enabled = true, image = nil, label = "/", alignment = "right", order = 2 },
-	Music        = { enabled = true, image = "rbxassetid://123643550590893", label = "", alignment = "left", order = 1, animate = false },
-	Dance        = { enabled = false, image = "rbxassetid://113394514826547", label = "", order = 1 },
-	Setting      = { enabled = true, image = "rbxassetid://116292866711662", label = "", order = 2 }, 
-	FreeCam      = { enabled = true, image = "rbxassetid://134750039859396", label = "", order = 3 }, 
+	Music        = { enabled = true, image = TOPBAR_ICONS.Music, label = "", alignment = "left", order = 1, animate = false },
+	Dance        = { enabled = false, image = TOPBAR_ICONS.Dance, label = "", order = 1 },
+	Setting      = { enabled = true, image = TOPBAR_ICONS.Setting, label = "", order = 2 },
+	FreeCam      = { enabled = true, image = TOPBAR_ICONS.FreeCam, label = "", order = 3 },
 	Cinematic    = { enabled = true, image = "", label = "🎬", order = 4 },
 	CustomTitle  = { enabled = true, image = "", label = "🏷️", order = 5 },
 	ServerList   = { enabled = true, image = "", label = "🌐", caption = "Server List", order = 6 },
-	Broadcast    = { enabled = true, image = "rbxassetid://124033060370841", label = "" },
-	MyHat        = { enabled = true, image = "rbxassetid://120495411505696", label = "" },
-	GlobalEffect = { enabled = true, image = "rbxassetid://84595853614117", label = "" },
-	Gamepass     = { enabled = true, image = "rbxassetid://140276937557646", label = "", alignment = "right", order = 3 },
+	Broadcast    = { enabled = true, image = TOPBAR_ICONS.Broadcast, label = "" },
+	MyHat        = { enabled = true, image = TOPBAR_ICONS.MyHat, label = "" },
+	GlobalEffect = { enabled = true, image = TOPBAR_ICONS.GlobalEffect, label = "" },
+	Gamepass     = { enabled = true, image = TOPBAR_ICONS.Gamepass, label = "", alignment = "right", order = 3 },
 }
 
 local function getCfg(name)

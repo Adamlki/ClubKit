@@ -3,8 +3,10 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
 
+local GameConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("GameConfig"))
+
 local player = Players.LocalPlayer
-local GROUP_ID = 192828493 
+local GROUP_ID = GameConfig.GroupId
 
 -- ====================================
 -- NOTIFICATION HELPER

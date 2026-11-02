@@ -18,6 +18,19 @@ webhook URL. It is intentionally ignored by git.
 3. Never commit the filled-in file. If the Saweria URL was ever committed,
    rotate it in the Google Apps Script deployment.
 
+## Buyer setup
+
+If this place is sold as a copy, read `SETUP.md` before publishing. The buyer
+must update:
+
+- `ServerStorage.Modules.PrivateConfig` — owner, group, gamepasses, products,
+  DataStore prefix, Saweria webhook.
+- `ReplicatedStorage.Config.GameConfig` — public group ID and branding.
+- `ReplicatedStorage.Config.AssetConfig` — sound, image, and animation IDs.
+
+`ServerScriptService.SetupValidator` prints warnings when required values or
+instances are missing.
+
 ## DataStore in Studio
 
 Studio uses **live DataStores for reads** so leaderboards, levels, likes, titles,

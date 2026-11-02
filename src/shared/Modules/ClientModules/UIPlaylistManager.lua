@@ -1,10 +1,11 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MusicModule = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("MusicModule"))
+local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 
 local UIPlaylistManager = {}
 UIPlaylistManager.__index = UIPlaylistManager
 
-local DEFAULT_COVER = "rbxassetid://100874885625675"
+local DEFAULT_COVER = AssetConfig.Music.DefaultCover
 
 function UIPlaylistManager.new(playlist, playlistTemplateFrame)
 	local self = setmetatable({}, UIPlaylistManager)

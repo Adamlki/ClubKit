@@ -7,6 +7,8 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local GroupService     = game:GetService("GroupService")
 
 local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
+local GameConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("GameConfig"))
+local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 
 -- ============================================
 -- SETUP REMOTE
@@ -268,9 +270,9 @@ local function fetchPrimaryGroup(userId)
 		end
 	end
 	return {
-		id = 192828493,
-		name = "DMS STUDIO",
-		emblem = "http://www.roblox.com/asset/?id=100615948228188"
+		id = GameConfig.GroupId,
+		name = GameConfig.Branding.GroupName,
+		emblem = string.format("http://www.roblox.com/asset/?id=%d", AssetConfig.Images.DefaultCommunityId)
 	}
 end
 
@@ -375,7 +377,7 @@ local function fetchPlayerInfo(userId, callerPlayer)
 			friendsCount = 0,
 			followersCount = 0,
 			followingCount = 0,
-			primaryGroup = { emblem = "http://www.roblox.com/asset/?id=100615948228188" },
+			primaryGroup = { emblem = string.format("http://www.roblox.com/asset/?id=%d", AssetConfig.Images.DefaultCommunityId) },
 		}
 	end
 

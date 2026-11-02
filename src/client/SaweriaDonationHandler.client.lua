@@ -8,6 +8,7 @@ local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService      = game:GetService("TweenService")
 local FormatUtils       = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
+local AssetConfig       = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -201,7 +202,7 @@ pcall(function()
 
 	saweriaIcon = Icon.new()
 		:setName("SaweriaDonationIcon")
-		:setImage("rbxassetid://15040641378")
+		:setImage(AssetConfig.Images.SaweriaIcon)
 		:setLabel("")
 		:setOrder(3) -- Berdampingan di sebelah Robux Donate (Order 2)
 

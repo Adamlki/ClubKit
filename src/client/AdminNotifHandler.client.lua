@@ -12,6 +12,7 @@ local RS           = game:GetService("ReplicatedStorage")
 local TS           = game:GetService("TweenService")
 local SG           = game:GetService("StarterGui")
 local StringUtils  = require(RS:WaitForChild("Utils"):WaitForChild("StringUtils"))
+local AssetConfig  = require(RS:WaitForChild("Config"):WaitForChild("AssetConfig"))
 
 local player       = Players.LocalPlayer
 local playerGui    = player:WaitForChild("PlayerGui")
@@ -174,7 +175,7 @@ local function showTimerNotification(remainingTime)
 			Title    = "Broadcast Timer",
 			Text     = "Next broadcast available in " .. formatTime(remainingTime),
 			Duration = 4,
-			Icon     = "rbxassetid://7733992901"
+			Icon     = AssetConfig.Images.AdminNotification
 		})
 	end)
 end

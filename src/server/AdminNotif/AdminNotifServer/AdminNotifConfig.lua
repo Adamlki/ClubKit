@@ -1,3 +1,6 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
+
 local MessageConfig = {}
 
 -- ====================================
@@ -87,7 +90,7 @@ MessageConfig.Notification = {
 	},
 	Sound = {
 		Enabled       = false,
-		SoundId       = "",
+		SoundId       = AssetConfig.Sounds.Notification,
 		Volume        = 0,
 		PlaybackSpeed = 1
 	}
@@ -98,7 +101,7 @@ MessageConfig.Notification = {
 -- ====================================
 MessageConfig.UI = {
 	Icon = {
-		Image = "rbxassetid://7733992901",
+		Image = AssetConfig.Images.AdminNotification,
 		Name  = "BC",
 		Tip   = "Admin Message"
 	}

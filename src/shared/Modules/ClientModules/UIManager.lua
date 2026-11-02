@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local MusicModule = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("MusicModule"))
+local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 
 local UIAlbumManager = require(script.Parent.UIAlbumManager)
 local UIPlaylistManager = require(script.Parent.UIPlaylistManager)
@@ -15,7 +16,7 @@ local UINotificationManager = require(script.Parent.UINotificationManager)
 local UIManager = {}
 UIManager.__index = UIManager
 
-local DEFAULT_COVER = "rbxassetid://100874885625675"
+local DEFAULT_COVER = AssetConfig.Music.DefaultCover
 local HIERARCHY = { Owner = 5, Admin = 4, Moderator = 3, VIP = 2, Player = 1 }
 
 local function bindDebouncedClick(btn, delay, callback)

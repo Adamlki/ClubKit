@@ -1,4 +1,5 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
 
@@ -63,7 +64,7 @@ local function playLoveEffect(senderPlayer, targetPlayer)
 		local heartImage = Instance.new("ImageLabel")
 		heartImage.Size = UDim2.new(1, 0, 1, 0)
 		heartImage.BackgroundTransparency = 1
-		heartImage.Image = "rbxassetid://6034638780"
+		heartImage.Image = AssetConfig.Images.LikeHeart
 		heartImage.ImageColor3 = Color3.fromRGB(255, 50, 50)
 		heartImage.Parent = billboard
 	end

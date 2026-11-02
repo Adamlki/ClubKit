@@ -4,6 +4,7 @@ local ServerStorage = game:GetService("ServerStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local PlayerEffectState = require(script.Parent.PlayerEffectState)
+local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 
 local GlobalEffectManager = {}
 GlobalEffectManager.__index = GlobalEffectManager
@@ -12,8 +13,8 @@ function GlobalEffectManager.new()
 	local self = setmetatable({}, GlobalEffectManager)
 	
 	self.Config = {
-		FloatingAnimationId = "rbxassetid://112082806790047", 
-		FlyAnimationId = "rbxassetid://81229486815853",      
+		FloatingAnimationId = AssetConfig.Animations.Floating,
+		FlyAnimationId = AssetConfig.Animations.Fly,
 		FlyHeight = 50,                         
 		FlySpeed = 2,                           
 	}

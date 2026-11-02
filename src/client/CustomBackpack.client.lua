@@ -1,9 +1,11 @@
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
 
+local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 local isMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
 
 pcall(function()
@@ -11,7 +13,7 @@ pcall(function()
 end)
 
 local CONFIG = {
-	ClickSoundId = "rbxassetid://4499400560",
+	ClickSoundId = AssetConfig.Sounds.BackpackClick,
 	SlotSize = isMobile and 30 or 50,
 	Padding = 4,
 	SectionPadding = 6,
@@ -26,8 +28,8 @@ local CONFIG = {
 		SubText = Color3.fromRGB(140, 140, 140),
 		Border = Color3.fromRGB(25, 25, 25),
 	},
-	EyeOpenId = "rbxassetid://125603824847579", 
-	EyeClosedId = "rbxassetid://70802654569830", 
+	EyeOpenId = AssetConfig.Images.BackpackEyeOpen,
+	EyeClosedId = AssetConfig.Images.BackpackEyeClosed,
 }
 
 local KEY_TO_SLOT = {

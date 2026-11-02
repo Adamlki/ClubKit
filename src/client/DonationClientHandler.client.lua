@@ -11,6 +11,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ClientConfig = require(script:FindFirstChild("ClientConfig") or script.Parent:WaitForChild("ClientConfig"))
 local ClientUI = require(script:FindFirstChild("ClientUI") or script.Parent:WaitForChild("ClientUI"))
 local Icon = require(ReplicatedStorage:WaitForChild("Icon"))
+local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -307,7 +308,7 @@ pcall(function()
 
 	donationIcon = Icon.new()
 		:setName("DonationBoardIcon")
-		:setImage("rbxassetid://11560341824")
+		:setImage(AssetConfig.Images.DonationIcon)
 		:setLabel("")
 		:setOrder(2)
 

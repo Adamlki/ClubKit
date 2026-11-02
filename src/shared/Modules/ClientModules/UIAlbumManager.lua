@@ -1,10 +1,11 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MusicModule = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("MusicModule"))
+local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 
 local UIAlbumManager = {}
 UIAlbumManager.__index = UIAlbumManager
 
-local DEFAULT_COVER = "rbxassetid://100874885625675"
+local DEFAULT_COVER = AssetConfig.Music.DefaultCover
 
 function UIAlbumManager.new(albumList, albumTemplateBtn)
 	local self = setmetatable({}, UIAlbumManager)
@@ -54,7 +55,7 @@ function UIAlbumManager:LoadAlbums(favoriteSongs, silent)
 			countLabel.Text = string.format("%d songs", albumData.songCount)
 		end
 		if thumbImg then
-			thumbImg.Image = albumData.cover or (MusicModule.GetAlbumCover and MusicModule:GetAlbumCover(albumData.name)) or "rbxassetid://100874885625675"
+			thumbImg.Image = albumData.cover or (MusicModule.GetAlbumCover and MusicModule:GetAlbumCover(albumData.name)) or DEFAULT_COVER
 		end
 
 		self.albumButtons[albumData.name] = albumBtn
@@ -94,7 +95,7 @@ function UIAlbumManager:SelectAlbum(albumName, silent, songCount)
 	if not silent and self.onAlbumSelectedCallback then
 		local songs = MusicModule:GetAlbumSongs(albumName, self.favoriteSongs)
 		local count = songCount or (songs and #songs) or 0
-		local cover = (MusicModule.GetAlbumCover and MusicModule:GetAlbumCover(albumName)) or "rbxassetid://100874885625675"
+		local cover = (MusicModule.GetAlbumCover and MusicModule:GetAlbumCover(albumName)) or DEFAULT_COVER
 		self.onAlbumSelectedCallback(albumName, count, cover)
 	end
 end

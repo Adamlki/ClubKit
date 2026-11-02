@@ -7,6 +7,7 @@ local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
 local RunService = game:GetService("RunService")
 local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
+local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 
 local DEBUG_ENABLED = RunService:IsStudio()
 local DEBUG_PREFIX = "[SaweriaClientUI]"
@@ -51,7 +52,7 @@ local function playSaweriaSound()
 	if _G.HideDonationNotif then return end
 	pcall(function()
 		local sound = Instance.new("Sound")
-		sound.SoundId = "rbxassetid://79392333090964"
+		sound.SoundId = AssetConfig.Sounds.SaweriaNotification
 		sound.Volume = 0.7
 		sound.Parent = workspace
 		sound:Play()

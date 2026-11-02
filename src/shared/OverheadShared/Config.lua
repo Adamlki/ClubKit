@@ -1,3 +1,8 @@
+	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+	local ConfigFolder = ReplicatedStorage:WaitForChild("Config")
+	local GameConfig = require(ConfigFolder:WaitForChild("GameConfig"))
+	local AssetConfig = require(ConfigFolder:WaitForChild("AssetConfig"))
+
 	local Config = {}
 
 	-- ====================================
@@ -28,9 +33,9 @@
 	-- ====================================
 	-- GROUP & BADGES
 	-- ====================================
-	Config.GROUP_ID        = 192828493
-	Config.PREMIUM_IMAGE   = "rbxassetid://10885647358"
-	Config.VERIFIED_IMAGE  = "rbxassetid://11478378840"
+	Config.GROUP_ID        = GameConfig.GroupId
+	Config.PREMIUM_IMAGE   = AssetConfig.Images.PremiumBadge
+	Config.VERIFIED_IMAGE  = AssetConfig.Images.VerifiedBadge
 
 	-- ====================================
 	-- REGION & FLAGS

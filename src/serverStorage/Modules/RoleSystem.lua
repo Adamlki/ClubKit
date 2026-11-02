@@ -312,7 +312,7 @@ function RoleSystem:GetPlayerRole(player)
 		return "Player"
 	end
 
-	local targetGroupId = self.Config.GroupId or 192828493
+	local targetGroupId = self.Config.GroupId or 0
 	local ok, inGroup = pcall(player.IsInGroup, player, targetGroupId)
 	ownership.GroupCheckedAt = now
 	if ok and inGroup then
@@ -516,7 +516,7 @@ if RunService:IsServer() then
 		end
 		groupCheckCooldown[player.UserId] = now
 
-		local targetGroupId = RoleSystem.Config.GroupId or 192828493
+		local targetGroupId = RoleSystem.Config.GroupId or 0
 		local ok, inGroup = pcall(player.IsInGroup, player, targetGroupId)
 		local isMember = ok and inGroup
 

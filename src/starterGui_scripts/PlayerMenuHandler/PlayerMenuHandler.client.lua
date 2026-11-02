@@ -1,5 +1,6 @@
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local AssetConfig       = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 local TextChatService   = game:GetService("TextChatService")
 local UserInputService  = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
@@ -12,10 +13,10 @@ local RAYCAST_DISTANCE         = 500
 local MAX_INTERACTION_DISTANCE = 500
 local CLICK_COOLDOWN           = 0.2
 local DEFAULT_BIO              = "This user has no bio."
-local DEFAULT_COMMUNITY_IMAGE  = "http://www.roblox.com/asset/?id=100615948228188"
+local DEFAULT_COMMUNITY_IMAGE  = string.format("http://www.roblox.com/asset/?id=%d", AssetConfig.Images.DefaultCommunityId)
 
-local ICON_EYE_OPEN   = "rbxassetid://6031075931"
-local ICON_EYE_CLOSED = "rbxassetid://6031075929"
+local ICON_EYE_OPEN   = AssetConfig.Images.ProfileEyeOpen
+local ICON_EYE_CLOSED = AssetConfig.Images.ProfileEyeClosed
 
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local startSyncRE = remotes:WaitForChild("startSync")

@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
 local StringUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("StringUtils"))
 local ClientConfig = require(script.Parent:WaitForChild("ClientConfig"))
+local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 
 local ClientUI = {}
 
@@ -177,7 +178,7 @@ local NOTIF_HIDDEN_POS = UDim2.new(0.5, 0, -0.2, 0)
 
 local function playRobuxDonationSound()
 	pcall(function()
-		local soundId = (ClientConfig.NOTIFICATION and ClientConfig.NOTIFICATION.SOUND_ID) or "rbxassetid://79392333090964"
+		local soundId = (ClientConfig.NOTIFICATION and ClientConfig.NOTIFICATION.SOUND_ID) or AssetConfig.Sounds.Notification
 		local sound = Instance.new("Sound")
 		sound.SoundId = soundId
 		sound.Volume = (ClientConfig.NOTIFICATION and ClientConfig.NOTIFICATION.SOUND_VOLUME) or 0.6

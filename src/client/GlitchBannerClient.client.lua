@@ -1,10 +1,8 @@
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 
-local IMAGE_LIST = {
-	"rbxassetid://85415938671065",
-	"rbxassetid://89819761494578",
-	"rbxassetid://107557873401344",
-}
+local IMAGE_LIST = AssetConfig.Images.GlitchBanners
 
 local DISPLAY_DURATION = 6
 

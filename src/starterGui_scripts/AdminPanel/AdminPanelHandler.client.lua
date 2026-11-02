@@ -1,3 +1,6 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
+
 local CONFIG = {
 	DEBUG_ENABLED = false,
 
@@ -28,7 +31,7 @@ local CONFIG = {
 	ROLE_BTN_ACTIVE_COLOR   = Color3.fromRGB(27, 67, 46),
 	ROLE_BTN_INACTIVE_COLOR = Color3.fromRGB(24, 24, 24),
 
-	ADMIN_ICON_IMAGE     = "rbxassetid://87144040887420",
+	ADMIN_ICON_IMAGE     = AssetConfig.Images.AdminPanelIcon,
 	ADMIN_ICON_LABEL     = "",
 	ADMIN_ICON_ALIGNMENT = "left",
 	ADMIN_ICON_SETORDER  = -1,
@@ -57,7 +60,6 @@ local function debug(...) if CONFIG.DEBUG_ENABLED then print("[AdminPanel]", ...
 local function debugWarn(...) if CONFIG.DEBUG_ENABLED then warn("[AdminPanel]", ...) end end
 
 local Players           = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService      = game:GetService("TweenService")
 local RunService        = game:GetService("RunService")
 local Teams             = game:GetService("Teams")

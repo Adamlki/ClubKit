@@ -10,6 +10,7 @@ local ContentProvider = game:GetService("ContentProvider")
 local BridgeNet = require(ReplicatedStorage:WaitForChild("BridgeNet"))
 
 local MusicModule = require(ReplicatedStorage.Modules.MusicModule)
+local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 local UIManager = require(script.Parent.UIManager)
 
 local MusicPlayer = {}
@@ -17,7 +18,7 @@ MusicPlayer.__index = MusicPlayer
 
 local CONFIG = {
 	DEFAULT_VOLUME = 1,
-	DEFAULT_COVER = "rbxassetid://88574818940840",
+	DEFAULT_COVER = AssetConfig.Music.DefaultCover,
 }
 
 local ROLE_HIERARCHY_MAP = {

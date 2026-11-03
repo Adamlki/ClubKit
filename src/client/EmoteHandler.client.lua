@@ -2,10 +2,8 @@
 -- SINGLETON PROTECTION
 -- Mencegah script berjalan ganda jika masih ada LocalScript di StarterGui.EmoteGui
 -- ============================================
-if _G.__EmoteHandlerClientLoaded then
-	return
-end
-_G.__EmoteHandlerClientLoaded = true
+local ScriptOnce = require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("ScriptOnce"))
+if not ScriptOnce.Claim("EmoteHandlerClient") then return end
 
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer

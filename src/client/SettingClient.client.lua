@@ -1,7 +1,7 @@
 --!optimize 2
 
-if _G.__SettingClientLoaded then return end
-_G.__SettingClientLoaded = true
+local ScriptOnce = require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("ScriptOnce"))
+if not ScriptOnce.Claim("SettingClient") then return end
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ClientSettingsState = require(script.Parent:WaitForChild("Modules"):WaitForChild("ClientSettingsState"))

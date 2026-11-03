@@ -1,9 +1,7 @@
 --!optimize 2
 --!native
-if _G.__UIScaleControllerLoaded then
-	return
-end
-_G.__UIScaleControllerLoaded = true
+local ScriptOnce = require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("ScriptOnce"))
+if not ScriptOnce.Claim("UIScaleController") then return end
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")

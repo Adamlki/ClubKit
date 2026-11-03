@@ -147,18 +147,5 @@ end)
 -- ====================================
 -- GLOBAL HELPERS
 -- ====================================
-_G.ChatBadgeSystem = {
-	RefreshPlayer = function(player)
-		if player and player.Parent then
-			refreshBadge(player)
-			return true
-		end
-		return false
-	end,
-	RefreshAll = function()
-		for _, p in ipairs(Players:GetPlayers()) do
-			refreshBadge(p)
-		end
-		debugLog("Refreshed all players")
-	end,
-}
+-- Tidak ada lagi registry _G. Badge di-refresh lewat event RoleChanged,
+-- PlayerAdded, dan jalur internal script ini.

@@ -6,10 +6,8 @@
 -- Menggunakan Singleton Guard & Fast-Filter Property Checking
 -- ==============================================================================
 
-if _G.__GlobalAntiCollisionLoaded then
-	return
-end
-_G.__GlobalAntiCollisionLoaded = true
+local ScriptOnce = require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("ScriptOnce"))
+if not ScriptOnce.Claim("GlobalAntiCollision") then return end
 
 local PhysicsService = game:GetService("PhysicsService")
 local Players = game:GetService("Players")

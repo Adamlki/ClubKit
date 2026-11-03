@@ -4,8 +4,8 @@
 -- ====================================
 -- SINGLETON PROTECTION
 -- ====================================
-if _G.__AdminNotifHandlerLoaded then return end
-_G.__AdminNotifHandlerLoaded = true
+local ScriptOnce = require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("ScriptOnce"))
+if not ScriptOnce.Claim("AdminNotifHandler") then return end
 
 local Players      = game:GetService("Players")
 local RS           = game:GetService("ReplicatedStorage")

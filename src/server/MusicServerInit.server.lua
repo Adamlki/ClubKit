@@ -3,6 +3,6 @@ local MusicSystem = require(ServerStorage.Modules.MusicSystem.MusicSystem)
 
 -- Start the system
 local musicSystem = MusicSystem.new()
-_G.MusicSystem = musicSystem
-shared.MusicSystem = musicSystem
+-- Instance tetap dapat diakses lewat module, bukan global _G/shared.
+MusicSystem.Instance = musicSystem
 musicSystem:Start()

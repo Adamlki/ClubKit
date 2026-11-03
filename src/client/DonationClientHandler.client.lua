@@ -1,8 +1,8 @@
 --!optimize 2
 --!native
 
-if _G.__DonationClientHandlerLoaded then return end
-_G.__DonationClientHandlerLoaded = true
+local ScriptOnce = require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("ScriptOnce"))
+if not ScriptOnce.Claim("DonationClientHandler") then return end
 
 local Players = game:GetService("Players")
 local MarketplaceService = game:GetService("MarketplaceService")

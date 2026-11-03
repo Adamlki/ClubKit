@@ -1,8 +1,8 @@
 --!native
 --!optimize 2
 
-if _G.__SaweriaDonationHandlerLoaded then return end
-_G.__SaweriaDonationHandlerLoaded = true
+local ScriptOnce = require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("ScriptOnce"))
+if not ScriptOnce.Claim("SaweriaDonationHandler") then return end
 
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")

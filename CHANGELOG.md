@@ -10,6 +10,7 @@
 - Menambahkan atribusi `dev by jekychen` di `BuildInfo`.
 - Menambahkan guard `BuildEnforcement` yang memblokir build jika atribusi diubah.
 - Fix `LikeLeaderboard` agar membaca ordered likes lewat `DataStoreEnv`; prefix buyer sekarang konsisten dengan `LikeManager`.
+- Phase 1 refactor `_G`: debug/config hooks dipindahkan ke `DebugHooks`; referensi `_G` turun dari 134 ke 103.
 
 ## Catatan
 

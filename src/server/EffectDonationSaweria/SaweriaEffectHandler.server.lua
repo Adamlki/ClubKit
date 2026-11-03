@@ -9,7 +9,7 @@ local ServerStorage = game:GetService("ServerStorage")
 local Players = game:GetService("Players")
 
 local MegaEffectsConfig = require(script.Parent:WaitForChild("MegaEffectsConfig"))
-_G.MegaEffectsConfig = MegaEffectsConfig
+local DebugHooks = require(ServerStorage:WaitForChild("Modules"):WaitForChild("DebugHooks"))
 
 -- Remote Events (Baru & Lama untuk kompatibilitas penuh)
 local effectsRemotes = ReplicatedStorage:FindFirstChild("EffectsRemotes")
@@ -266,8 +266,8 @@ _G.TriggerRobuxEffect = function(playerOrName, amount)
 	end
 end
 
--- Global helper untuk trigger efek langsung (misal untuk testing dari command bar Studio)
-_G.TestMegaEffect = function(effectType, donorName, amount, currency)
+-- Debug helper untuk trigger efek langsung (misal untuk testing dari command bar Studio)
+local function testMegaEffect(effectType, donorName, amount, currency)
 	donorName = donorName or "MegaTester"
 	amount = tonumber(amount) or 1000
 	currency = currency or "Robux"
@@ -279,8 +279,8 @@ _G.TestMegaEffect = function(effectType, donorName, amount, currency)
 	effectsEvent:FireAllClients(effectType, donorName, recipient, amount, userId, currency)
 end
 
--- Global helper untuk on/off efek panggung secara dinamis
-_G.SetMegaEffectEnabled = function(effectName, isEnabled)
+-- Debug helper untuk on/off efek panggung secara dinamis
+local function setMegaEffectEnabled(effectName, isEnabled)
 	if MegaEffectsConfig.EFFECTS_ENABLED[effectName] ~= nil then
 		MegaEffectsConfig.EFFECTS_ENABLED[effectName] = (isEnabled == true)
 		print(string.format("[MegaEffectsConfig] Efek '%s' status: %s", effectName, tostring(isEnabled)))
@@ -301,5 +301,8 @@ _G.SetMegaEffectEnabled = function(effectName, isEnabled)
 	warn("[MegaEffectsConfig] Target tidak valid (Gunakan: Nuke, Smite, BlackHole, Starfall, Robux, Saweria, Global)")
 	return false
 end
+
+DebugHooks.Register("TestMegaEffect", testMegaEffect)
+DebugHooks.Register("SetMegaEffectEnabled", setMegaEffectEnabled)
 
 print("✅ [SaweriaEffectHandler] Siap menerima efek donasi Saweria & Robux (Configurable Driven)!")

@@ -10,7 +10,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local ServerScriptService = game:GetService("ServerScriptService")
-local SaweriaAPI = require(game:GetService("ServerStorage"):WaitForChild("Modules"):WaitForChild("SaweriaAPI"))
+local ServerStorage = game:GetService("ServerStorage")
+local DebugHooks = require(ServerStorage:WaitForChild("Modules"):WaitForChild("DebugHooks"))
+local SaweriaAPI = require(ServerStorage:WaitForChild("Modules"):WaitForChild("SaweriaAPI"))
 local ServerConfig = require(ServerScriptService:WaitForChild("Config"):WaitForChild("ServerConfig"))
 local SaweriaScreenBoardHandler = require(script.Parent:WaitForChild("SaweriaScreenBoardHandler"))
 local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
@@ -382,7 +384,7 @@ end
 -- ========================================
 -- TEST HELPER UNTUK ROBLOX STUDIO / ADMIN
 -- ========================================
-_G.TestSaweria = function(donatorName, amount, message)
+local function testSaweria(donatorName, amount, message)
 	donatorName = tostring(donatorName or "TestDonator")
 	amount = tostring(amount or 50000)
 	message = tostring(message or "Tes notifikasi Saweria!")
@@ -449,21 +451,27 @@ _G.TestSaweria = function(donatorName, amount, message)
 	print(string.format("[DonasiSaweria] 🧪 Test Saweria berhasil dipicu: %s | Rp %d | '%s'", donatorName, rpAmount, message))
 end
 
-_G.TestNuke = function(donatorName, message)
-	_G.TestSaweria(donatorName or "NukeTester", 15000, message or "Nuke Incoming! 🚀")
+local function testNuke(donatorName, message)
+	testSaweria(donatorName or "NukeTester", 15000, message or "Nuke Incoming! 🚀")
 end
 
-_G.TestSmite = function(donatorName, message)
-	_G.TestSaweria(donatorName or "SmiteTester", 50000, message or "Smite / Giant Hammer! ⚡🔨")
+local function testSmite(donatorName, message)
+	testSaweria(donatorName or "SmiteTester", 50000, message or "Smite / Giant Hammer! ⚡🔨")
 end
 
-_G.TestBlackHole = function(donatorName, message)
-	_G.TestSaweria(donatorName or "BlackHoleTester", 250000, message or "Black Hole Devastation! 🕳️")
+local function testBlackHole(donatorName, message)
+	testSaweria(donatorName or "BlackHoleTester", 250000, message or "Black Hole Devastation! 🕳️")
 end
 
-_G.TestStarfall = function(donatorName, message)
-	_G.TestSaweria(donatorName or "StarfallTester", 500000, message or "Starfall 10M Devastation! ✨⭐")
+local function testStarfall(donatorName, message)
+	testSaweria(donatorName or "StarfallTester", 500000, message or "Starfall 10M Devastation! ✨⭐")
 end
+
+DebugHooks.Register("TestSaweria", testSaweria)
+DebugHooks.Register("TestNuke", testNuke)
+DebugHooks.Register("TestSmite", testSmite)
+DebugHooks.Register("TestBlackHole", testBlackHole)
+DebugHooks.Register("TestStarfall", testStarfall)
 
 -- ========================================
 -- MAIN LOOP

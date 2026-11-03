@@ -4,6 +4,8 @@ local SS                = game:GetService("ServerStorage")
 local Workspace         = game:GetService("Workspace")
 local CollectionService = game:GetService("CollectionService")
 
+local DebugHooks = require(SS:WaitForChild("Modules"):WaitForChild("DebugHooks"))
+
 local CinematicRemote = RS:FindFirstChild("CinematicRemote")
 if not CinematicRemote then
 	CinematicRemote = Instance.new("RemoteEvent")
@@ -350,7 +352,7 @@ _G.IsStageFiring = function()
 	return isStageFiring
 end
 
-_G.TriggerTestDonation = function(donatorName, amount, message)
+local function triggerTestDonation(donatorName, amount, message)
 	amount = tonumber(amount) or 100
 	local p = Players:FindFirstChild(donatorName or "") or Players:GetPlayers()[1]
 	if p then
@@ -385,3 +387,5 @@ _G.TriggerTestDonation = function(donatorName, amount, message)
 		fireToAllPlayers(donationData)
 	end
 end
+
+DebugHooks.Register("TriggerTestDonation", triggerTestDonation)

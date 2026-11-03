@@ -247,7 +247,7 @@ end)
 -- DEBUG FUNCTIONS
 -- ============================================
 
-_G.RateLimiterDebug = {
+RateLimiter.Debug = {
 	getStats = function()
 		local total = 0
 		for _ in pairs(playerRequests) do

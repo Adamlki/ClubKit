@@ -8,6 +8,8 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
 local ServerConfig = require(ServerScriptService:WaitForChild("Config"):WaitForChild("ServerConfig"))
 local RoleSystem = require(ServerStorage:WaitForChild("Modules"):WaitForChild("RoleSystem"))
+local DebugHooks = require(ServerStorage:WaitForChild("Modules"):WaitForChild("DebugHooks"))
+local MegaEffectsConfig = require(ServerScriptService:WaitForChild("EffectDonationSaweria"):WaitForChild("MegaEffectsConfig"))
 
 local CONFIG = {
 	COIN_PREFIX = "/coin",
@@ -123,8 +125,8 @@ local function handleCoinCommand(player, args)
 
 	debugPrint("Test coin donation:", donatorName, amount, message)
 
-	if _G.TriggerTestDonation then
-		_G.TriggerTestDonation(donatorName, amount, message)
+	if DebugHooks.Has("TriggerTestDonation") then
+		DebugHooks.Call("TriggerTestDonation", donatorName, amount, message)
 		local extraInfo = ""
 		if amount >= 4000 then
 			extraInfo = " ✨⭐ (Efek Starfall Winged Giant)"
@@ -137,7 +139,7 @@ local function handleCoinCommand(player, args)
 		end
 		sendFeedback(player, "Coin Test", "Memicu Robux donate: " .. donatorName .. " R$" .. tostring(amount) .. extraInfo)
 	else
-		warn("[ADMIN CMD] _G.TriggerTestDonation belum ada. Mengirim notif saja.")
+		warn("[ADMIN CMD] DebugHooks TriggerTestDonation belum ada. Mengirim notif saja.")
 		pcall(function()
 			showDonationNotif:FireAllClients({
 				donator = donatorName,
@@ -190,13 +192,13 @@ local function handleSaweriaCommand(player, args)
 
 	local message = #args >= messageStartIndex and table.concat(args, " ", messageStartIndex) or "Tes fake donation Saweria!"
 
-	if _G.TestSaweria then
-		_G.TestSaweria(donatorName, amount, message)
+	if DebugHooks.Has("TestSaweria") then
+		DebugHooks.Call("TestSaweria", donatorName, amount, message)
 		local formattedRp = FormatUtils.formatNumber(amount, ".")
 		sendFeedback(player, "🧪 Fake Donate Sukses", string.format("%s • Rp %s\nPesan: '%s'", donatorName, formattedRp, message))
 		print(string.format("[ADMIN CMD] 🧪 Fake Saweria dipicu: %s | Rp %d | '%s'", donatorName, amount, message))
 	else
-		warn("[ADMIN CMD] _G.TestSaweria belum terdaftar!")
+		warn("[ADMIN CMD] DebugHooks TestSaweria belum terdaftar!")
 		sendFeedback(player, "Saweria Error", "Sistem DonasiSaweria belum siap/load!")
 	end
 end
@@ -297,16 +299,7 @@ local function handleEffectsCommand(player, args)
 		return
 	end
 
-	local cfg = _G.MegaEffectsConfig
-	if not cfg then
-		local ok, m = pcall(function()
-			return require(ServerScriptService:WaitForChild("EffectDonationSaweria"):WaitForChild("MegaEffectsConfig"))
-		end)
-		if ok and m then
-			cfg = m
-			_G.MegaEffectsConfig = m
-		end
-	end
+	local cfg = MegaEffectsConfig
 
 	if not cfg then
 		sendFeedback(player, "Effects Config", "ERROR: MegaEffectsConfig tidak ditemukan!")
@@ -458,25 +451,25 @@ Players.PlayerRemoving:Connect(function(player)
 	lastStageTime[player.UserId] = nil
 end)
 
-_G.TestCoin = function(amount, donatorName, message)
+local function testCoin(amount, donatorName, message)
 	amount = tonumber(amount)
 	if not amount or amount <= 0 then
-		print("Usage: _G.TestCoin(amount, 'NamaDonatur', 'pesan opsional')")
-		print("Contoh: _G.TestCoin(250000, 'Budi', 'UFO test!')")
+		print("Usage: DebugHooks.Call('TestCoin', amount, 'NamaDonatur', 'pesan opsional')")
+		print("Contoh: DebugHooks.Call('TestCoin', 250000, 'Budi', 'UFO test!')")
 		return
 	end
 	donatorName = donatorName or "TestDonor"
 	message = message or ""
 
-	if _G.TriggerTestDonation then
-		_G.TriggerTestDonation(donatorName, amount, message)
+	if DebugHooks.Has("TriggerTestDonation") then
+		DebugHooks.Call("TriggerTestDonation", donatorName, amount, message)
 		print("[TEST] Fired Robux Donation:", donatorName, amount, message)
 	else
-		warn("[TEST] _G.TriggerTestDonation tidak ditemukan!")
+		warn("[TEST] DebugHooks TriggerTestDonation tidak ditemukan!")
 	end
 end
 
-_G.TestStage = function(duration)
+local function testStage(duration)
 	if _G.TriggerStageEffects then
 		_G.TriggerStageEffects(duration)
 		print("[TEST] Fired Stage Effects for", duration or 15, "seconds")
@@ -484,5 +477,8 @@ _G.TestStage = function(duration)
 		warn("[TEST] _G.TriggerStageEffects tidak ditemukan!")
 	end
 end
+
+DebugHooks.Register("TestCoin", testCoin)
+DebugHooks.Register("TestStage", testStage)
 
 debugPrint("DonationAdminCommands siap: /saweria, /coin, & /stage aktif untuk Owner & Admin")

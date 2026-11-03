@@ -5,7 +5,9 @@ local TextService   = game:GetService("TextService")
 local workspace     = game:GetService("Workspace")
 
 local RunService    = game:GetService("RunService")
+local ServerStorage = game:GetService("ServerStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
+local DebugHooks = require(ServerStorage:WaitForChild("Modules"):WaitForChild("DebugHooks"))
 local ServerConfig = require(ServerScriptService:WaitForChild("Config"):WaitForChild("ServerConfig"))
 local DonationConfig = require(script.Parent.DonationConfig)
 
@@ -246,13 +248,15 @@ task.spawn(function()
 	end
 end)
 
--- Shortcut test dari console/command bar
-_G.TestRobuxScreen = function(name, amount, msg)
+-- Debug shortcut dari console/command bar
+local function testRobuxScreen(name, amount, msg)
 	ScreenBoardHandler:ShowDonationMessage(
 		{ UserId = 1, Name = name or "AdamRobux", DisplayName = name or "AdamRobux" },
 		amount or 100,
 		msg or "Keren banget clubnya king!"
 	)
 end
+
+DebugHooks.Register("TestRobuxScreen", testRobuxScreen)
 
 return ScreenBoardHandler

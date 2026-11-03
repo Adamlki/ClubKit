@@ -4,7 +4,9 @@ local TextService = game:GetService("TextService")
 local RunService = game:GetService("RunService")
 local workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
+local DebugHooks = require(ServerStorage:WaitForChild("Modules"):WaitForChild("DebugHooks"))
 
 local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
 local ServerConfig = require(ServerScriptService:WaitForChild("Config"):WaitForChild("ServerConfig"))
@@ -298,13 +300,15 @@ function SaweriaScreenBoardHandler:ResetToDefault()
 	end
 end
 
--- Global test shortcut
-_G.TestSaweriaScreen = function(donatorName, amount, message)
+-- Debug test shortcut
+local function testSaweriaScreen(donatorName, amount, message)
 	SaweriaScreenBoardHandler:ShowDonationMessage(
 		donatorName or "AdamSaweria",
 		amount or 50000,
 		message or "Keren banget clubnya king, sukses selalu!"
 	)
 end
+
+DebugHooks.Register("TestSaweriaScreen", testSaweriaScreen)
 
 return SaweriaScreenBoardHandler

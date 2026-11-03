@@ -12,6 +12,9 @@ local PrivateConfig = {
     -- ID grup komunitas pembeli. Harus sama dengan GameConfig.GroupId.
     GroupId = 0,
 
+    -- Versi skema config. Jangan ubah kecuali mengikuti migrasi Core.
+    ConfigSchema = 1,
+
     -- Awalan DataStore. Gunakan nama unik, misalnya "NamaGame_".
     DataStorePrefix = "BuyerGame_",
 

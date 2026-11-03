@@ -1,17 +1,20 @@
-local DataStoreService = game:GetService("DataStoreService")
 local UserService = game:GetService("UserService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local ServerScriptService = game:GetService("ServerScriptService")
+local ServerStorage = game:GetService("ServerStorage")
 
 local LeaderboardRegistry = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("LeaderboardRegistry"))
+local DataStoreEnv = require(ServerStorage:WaitForChild("Modules"):WaitForChild("DataStoreEnv"))
 
 local ORDERED_DATASTORE_NAME = "PlayerLikes_Ordered_v1"
 local MAX_PLAYERS = 30
 local REFRESH_INTERVAL = 120
 
-local OrderedLikesStore = DataStoreService:GetOrderedDataStore(ORDERED_DATASTORE_NAME)
+-- Harus memakai DataStoreEnv agar prefix buyer dan aturan Studio konsisten
+-- dengan LikeManager yang menulis data likes.
+local OrderedLikesStore = DataStoreEnv.GetOrdered(ORDERED_DATASTORE_NAME)
 
 -- Buat RemoteEvent untuk Update Client
 local updateLikeBoardRemote = ReplicatedStorage:FindFirstChild("UpdateLikeBoard")
@@ -171,7 +174,7 @@ end
 local function updateLeaderboardBoard()
 	local allTimeLikes = fetchOrderedLikes(OrderedLikesStore)
 	local dailyKey = "PlayerLikes_Daily_" .. os.date("!%Y_%m_%d")
-	local dailyStore = DataStoreService:GetOrderedDataStore(dailyKey)
+	local dailyStore = DataStoreEnv.GetOrdered(dailyKey)
 	local dailyLikes = fetchOrderedLikes(dailyStore)
 
 	local newPayload = {

@@ -40,6 +40,10 @@ local assetConfig = safeRequire(
 	ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"),
 	"AssetConfig"
 )
+local buildInfo = safeRequire(
+	ReplicatedStorage:WaitForChild("Config"):WaitForChild("BuildInfo"),
+	"BuildInfo"
+)
 local serverConfig = safeRequire(
 	ServerScriptService:WaitForChild("Config"):WaitForChild("ServerConfig"),
 	"ServerConfig"
@@ -64,6 +68,16 @@ if privateConfig then
 
 	if gameConfig and (gameConfig.GroupId or 0) ~= (privateConfig.GroupId or 0) then
 		warnSetup("GameConfig.GroupId dan PrivateConfig.GroupId berbeda. Samakan keduanya.")
+	end
+
+	if buildInfo and (privateConfig.ConfigSchema or 0) ~= buildInfo.CONFIG_SCHEMA then
+		warnSetup(
+			"ConfigSchema tidak cocok: PrivateConfig="
+				.. tostring(privateConfig.ConfigSchema)
+				.. ", Core="
+				.. tostring(buildInfo.CONFIG_SCHEMA)
+				.. ". Ikuti panduan migrasi config."
+		)
 	end
 
 	local webhook = tostring(privateConfig.SaweriaWebhookURL or "")
@@ -163,8 +177,25 @@ if httpOk and not httpEnabled then
 	warnSetup("HttpService.HttpEnabled masih false. Aktifkan HTTP Requests untuk Saweria/roproxy.")
 end
 
+local versionLabel = buildInfo
+	and (
+		"Core v"
+			.. tostring(buildInfo.CORE_VERSION)
+			.. " | "
+			.. tostring(buildInfo.DEV_LABEL)
+			.. " | Config schema "
+			.. tostring(buildInfo.CONFIG_SCHEMA)
+	)
+	or "Core version tidak diketahui"
+
 if warningCount == 0 then
-	print("[SETUP] Konfigurasi terlihat lengkap.")
+	print("[SETUP] " .. versionLabel .. " - konfigurasi terlihat lengkap.")
 else
-	print("[SETUP] Pemeriksaan selesai: " .. warningCount .. " warning harus diperbaiki sebelum publish.")
+	print(
+		"[SETUP] "
+			.. versionLabel
+			.. " - pemeriksaan selesai: "
+			.. warningCount
+			.. " warning harus diperbaiki sebelum publish."
+	)
 end

@@ -2,6 +2,15 @@
 
 Dokumen ini untuk pembeli place. Jangan publish sebelum semua langkah selesai.
 
+## Aturan penting
+
+- **Buyer wajib mengedit Config dan Content** untuk mengisi ID, map, GUI, sound, dan animation miliknya.
+- **Buyer jangan mengedit Core** kecuali benar-benar paham; patch update dari penjual hanya menyentuh Core.
+- **Penjual tidak boleh menimpa Config/Content** milik buyer saat mengirim update.
+- Semua update dikirim sebagai patch Core, bukan copy place penuh.
+- Versi Core ada di `ReplicatedStorage.Config.BuildInfo`.
+- Jangan mengubah `BuildInfo.DEV_BY` atau `BuildInfo.DEV_LABEL`; build akan diblokir. Atribusi wajib tetap `dev by jekychen`.
+
 ## 1. File konfigurasi utama
 
 | File | Isi |
@@ -9,11 +18,21 @@ Dokumen ini untuk pembeli place. Jangan publish sebelum semua langkah selesai.
 | `ServerStorage.Modules.PrivateConfig` | Owner/Admin/Moderator, GroupId, GamePass, Developer Product, Webhook Saweria, prefix DataStore |
 | `ReplicatedStorage.Config.GameConfig` | GroupId publik dan branding |
 | `ReplicatedStorage.Config.AssetConfig` | Sound, icon, image, animation pendukung |
+| `ServerScriptService.DonationSystem.DonationServerHandler.DonationConfig` | Produk donasi dan harga |
+| `ServerScriptService.EffectDonationSaweria.MegaEffectsConfig` | Tier dan efek donasi |
+| `ServerScriptService.AdminNotif.AdminNotifServer.AdminNotifConfig` | Role dan cooldown broadcast admin |
+| `ReplicatedStorage.OverheadShared.Config` | Nama DataStore overhead, ukuran nama, rank |
+| `StarterPlayerScripts.ClientConfig` | Pesan chat dan tampilan donasi |
 
 Template `PrivateConfig.example.lua` ada di `ServerStorage.Modules`.
 Salin isinya ke `PrivateConfig`, lalu ganti semua nilai placeholder.
 
 **Jangan memakai `PrivateConfig` milik penjual.** File itu berisi Owner ID, GamePass/Product ID, dan URL Saweria penjual.
+
+### Versi config
+
+`PrivateConfig.ConfigSchema` harus sama dengan `ReplicatedStorage.Config.BuildInfo.CONFIG_SCHEMA`.
+Kalau berbeda, `SetupValidator` akan memberi warning. Ikuti panduan migrasi dari penjual; jangan menyalin config lama begitu saja.
 
 ## 2. Wajib diganti
 

@@ -29,7 +29,14 @@ must update:
 - `ReplicatedStorage.Config.AssetConfig` — sound, image, and animation IDs.
 
 `ServerScriptService.SetupValidator` prints warnings when required values or
-instances are missing.
+instances are missing. It also prints the Core version from
+`ReplicatedStorage.Config.BuildInfo`.
+
+See `UPDATE.md` for the Core/Config/Content update workflow,
+`PATCH_TEMPLATE.md` for the release format, and `CHANGELOG.md` for version
+history. Build integrity and developer attribution are enforced by
+`ReplicatedStorage.Config.BuildInfo`, `GameConfig`, and
+`ServerScriptService.BuildEnforcement`; do not change `DEV_BY`/`DEV_LABEL`.
 
 ## DataStore in Studio
 

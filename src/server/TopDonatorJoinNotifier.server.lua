@@ -30,6 +30,8 @@ end
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
+local LeaderboardRegistry = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("LeaderboardRegistry"))
 
 -- 1. Siapkan RemoteEvent untuk Client (UI)
 local NotifEvent = ReplicatedStorage:FindFirstChild(SETTINGS.RemoteEventName)
@@ -39,15 +41,15 @@ if not NotifEvent then
 	NotifEvent.Parent = ReplicatedStorage
 end
 
--- 2. Gunakan cache terpusat dari _G.LeaderboardControl (LeaderboardOrchestrator)
+-- 2. Gunakan cache terpusat dari LeaderboardRegistry (LeaderboardOrchestrator)
 -- FIX QUOTA DATASTORE: Mencegah pembuatan instance DonationLeaderboard ke-2 yang memicu GetSortedAsync ganda
-local ServerScriptService = game:GetService("ServerScriptService")
 local fallbackRobuxBoard = nil
 
 local function getRobuxRank(userId)
 	local topDonors = nil
-	if _G.LeaderboardControl and _G.LeaderboardControl.GetData then
-		local ok, data = pcall(_G.LeaderboardControl.GetData)
+	local control = LeaderboardRegistry.getController("Robux")
+	if control and control.GetData then
+		local ok, data = pcall(control.GetData)
 		if ok and type(data) == "table" and #data > 0 then
 			topDonors = data
 		end

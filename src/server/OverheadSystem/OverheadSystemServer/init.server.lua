@@ -170,7 +170,7 @@ LevelSystem.LevelUp:Connect(function(player, oldLevel, newLevel)
 	OverheadManager:UpdateLevel(player, newLevel)
 end)
 
--- Auto donation rank changes now handled by _G.LeaderboardControl checks in OverheadManager
+-- Auto donation rank changes now handled by LeaderboardRegistry controller checks in OverheadManager
 
 -- ====================================
 -- REMOTE EVENTS SETUP

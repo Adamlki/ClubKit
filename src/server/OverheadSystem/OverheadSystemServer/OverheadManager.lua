@@ -2,6 +2,9 @@ local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService       = game:GetService("HttpService")
 local LocalizationService = game:GetService("LocalizationService")
+local ServerScriptService = game:GetService("ServerScriptService")
+
+local LeaderboardRegistry = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("LeaderboardRegistry"))
 
 local OverheadManager = {}
 
@@ -68,8 +71,9 @@ local function getTopRobuxList()
 	if cachedRobuxTop and (now - lastRobuxFetch) < RANK_CACHE_TTL then
 		return cachedRobuxTop
 	end
-	if _G.LeaderboardControl then
-		local success, topDonors = pcall(function() return _G.LeaderboardControl.GetData() end)
+	local control = LeaderboardRegistry.getController("Robux")
+	if control and control.GetData then
+		local success, topDonors = pcall(control.GetData)
 		if success and type(topDonors) == "table" then
 			cachedRobuxTop = topDonors
 			lastRobuxFetch = now
@@ -163,7 +167,7 @@ function OverheadManager:UpdateAllAttributes(player)
 
 	-- 6. Likes Rank
 	local likesRank = 0
-	local topLikes = _G.LikesLeaderboardData
+	local topLikes = LeaderboardRegistry.getData("Likes")
 	if type(topLikes) == "table" then
 		for _, donor in ipairs(topLikes) do
 			if donor.UserId == player.UserId then

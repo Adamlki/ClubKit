@@ -444,7 +444,6 @@ local function refreshSaweriaLeaderboard()
 end
 
 LeaderboardRegistry.register("Saweria", refreshSaweriaLeaderboard)
-_G.UpdateSaweriaLeaderboard = refreshSaweriaLeaderboard
 
 -- Inisialisasi awal saat server baru menyala (agar client yang baru masuk langsung dapat data patung)
 task.spawn(function()

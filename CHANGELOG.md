@@ -12,6 +12,7 @@
 - Fix `LikeLeaderboard` agar membaca ordered likes lewat `DataStoreEnv`; prefix buyer sekarang konsisten dengan `LikeManager`.
 - Phase 1 refactor `_G`: debug/config hooks dipindahkan ke `DebugHooks`; referensi `_G` turun dari 134 ke 103.
 - Phase 2 refactor `_G`: client flags/actions dipindahkan ke `ClientState`; referensi `_G` turun dari 103 ke 58.
+- Phase 3 refactor `_G`: leaderboard controller/callback/data dipindahkan ke `LeaderboardRegistry`; referensi `_G` turun dari 58 ke 32.
 
 ## Catatan
 

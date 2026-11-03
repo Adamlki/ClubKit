@@ -29,7 +29,7 @@ local leaderboard = DonationLeaderboard.new()
 -- ============================================
 -- MANUAL CONTROL (DIPINDAHKAN KE ATAS)
 -- ============================================
-_G.LeaderboardControl = {
+local leaderboardControl = {
 	Refresh = function()
 		leaderboard:ClearCache()
 		updateLeaderboard()
@@ -46,6 +46,8 @@ _G.LeaderboardControl = {
 		return leaderboard:GetTopDonors(TOP_ENTRIES)
 	end,
 }
+
+LeaderboardRegistry.setController("Robux", leaderboardControl)
 
 -- ============================================
 -- STATE (CACHE) - OPTIMASI UNTUK 100 PLAYER
@@ -129,7 +131,6 @@ local function refreshRobuxLeaderboard()
 end
 
 LeaderboardRegistry.register("Robux", refreshRobuxLeaderboard)
-_G.UpdateRobuxLeaderboard = refreshRobuxLeaderboard
 
 local clientBoardCooldown = {}
 

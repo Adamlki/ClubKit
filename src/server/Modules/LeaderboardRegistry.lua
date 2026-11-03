@@ -5,41 +5,35 @@ type UpdateCallback = () -> ()
 local LeaderboardRegistry = {}
 
 local handlers: { [string]: UpdateCallback } = {}
+local controllers: { [string]: any } = {}
+local dataCache: { [string]: any } = {}
 
 --- Daftarkan handler pembaruan leaderboard
 function LeaderboardRegistry.register(category: string, callback: UpdateCallback)
 	handlers[category] = callback
-
-	-- Backwards compatibility synchronization ke _G
-	if category == "Robux" then
-		_G.UpdateRobuxLeaderboard = callback
-	elseif category == "Saweria" then
-		_G.UpdateSaweriaLeaderboard = callback
-	elseif category == "Likes" then
-		_G.UpdateLikeLeaderboard = callback
-	elseif category == "Levels" then
-		_G.UpdateLevelLeaderboard = callback
-	end
 end
 
---- Dapatkan handler untuk kategori tertentu (dengan fallback ke _G jika ada skrip lama)
+--- Daftarkan controller manual (mis. Robux GetData/Refresh)
+function LeaderboardRegistry.setController(category: string, controller: any)
+	controllers[category] = controller
+end
+
+function LeaderboardRegistry.getController(category: string)
+	return controllers[category]
+end
+
+--- Cache data leaderboard terakhir untuk overhead/notifier
+function LeaderboardRegistry.setData(category: string, payload: any)
+	dataCache[category] = payload
+end
+
+function LeaderboardRegistry.getData(category: string)
+	return dataCache[category]
+end
+
+--- Dapatkan handler untuk kategori tertentu
 function LeaderboardRegistry.getHandler(category: string): UpdateCallback?
-	if handlers[category] then
-		return handlers[category]
-	end
-
-	-- Fallback check ke _G
-	if category == "Robux" and _G.UpdateRobuxLeaderboard then
-		return _G.UpdateRobuxLeaderboard
-	elseif category == "Saweria" and _G.UpdateSaweriaLeaderboard then
-		return _G.UpdateSaweriaLeaderboard
-	elseif category == "Likes" and _G.UpdateLikeLeaderboard then
-		return _G.UpdateLikeLeaderboard
-	elseif category == "Levels" and _G.UpdateLevelLeaderboard then
-		return _G.UpdateLevelLeaderboard
-	end
-
-	return nil
+	return handlers[category]
 end
 
 --- Eksekusi pembaruan kategori secara aman

@@ -184,7 +184,7 @@ local function updateLeaderboardBoard()
 
 	local hasChanged = isDataDifferent(cachedTopLikes, newPayload)
 	cachedTopLikes = newPayload
-	_G.LikesLeaderboardData = allTimeLikes
+	LeaderboardRegistry.setData("Likes", allTimeLikes)
 
 	if hasChanged then
 		updateLikeBoardRemote:FireAllClients(cachedTopLikes)
@@ -258,4 +258,3 @@ local function refreshLikeLeaderboard()
 end
 
 LeaderboardRegistry.register("Likes", refreshLikeLeaderboard)
-_G.UpdateLikeLeaderboard = refreshLikeLeaderboard

@@ -13,6 +13,7 @@ local Icon      = require(ReplicatedStorage:WaitForChild("Icon"))
 local UIAnimator = require(ReplicatedStorage:WaitForChild("UIAnimator"))
 local TopbarPanelRegistry = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("TopbarPanelRegistry"))
 local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
+local ClientState = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("ClientState"))
 local TOPBAR_ICONS = AssetConfig.Images.Topbar
 
 local CONFIG = {
@@ -556,14 +557,14 @@ if freecamIcon then
 		freecamState.debounce = true
 		playClick()
 		freecamState.isOn = true
-		if _G.__Freecam_Enable then _G.__Freecam_Enable() end
+		ClientState.callAction("FreecamEnable")
 		task.delay(0.35, function() freecamState.debounce = false end)
 	end)
 	freecamIcon:bindEvent("deselected", function()
 		if freecamState.debounce then return end
 		playClick()
 		freecamState.isOn = false
-		if _G.__Freecam_Disable then _G.__Freecam_Disable() end
+		ClientState.callAction("FreecamDisable")
 		freecamState.debounce = false
 	end)
 end

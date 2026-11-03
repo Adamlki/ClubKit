@@ -9,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService      = game:GetService("TweenService")
 local FormatUtils       = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
 local AssetConfig       = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
+local ClientState       = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("ClientState"))
 
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -103,8 +104,8 @@ local function openSaweria()
 	isOpen = true
 
 	-- Tutup Robux Donation Board jika sedang terbuka agar tidak tumpang tindih
-	if _G.CloseRobuxDonation then
-		pcall(_G.CloseRobuxDonation)
+	if ClientState.hasAction("CloseRobuxDonation") then
+		ClientState.callAction("CloseRobuxDonation")
 	end
 
 	updateStats()
@@ -129,8 +130,8 @@ local function closeSaweria()
 	end
 end
 
-_G.OpenSaweria = openSaweria
-_G.CloseSaweria = closeSaweria
+ClientState.registerAction("OpenSaweria", openSaweria)
+ClientState.registerAction("CloseSaweria", closeSaweria)
 
 -- ==============================================================================
 -- EVENT BINDINGS

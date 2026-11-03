@@ -11,6 +11,7 @@
 - Menambahkan guard `BuildEnforcement` yang memblokir build jika atribusi diubah.
 - Fix `LikeLeaderboard` agar membaca ordered likes lewat `DataStoreEnv`; prefix buyer sekarang konsisten dengan `LikeManager`.
 - Phase 1 refactor `_G`: debug/config hooks dipindahkan ke `DebugHooks`; referensi `_G` turun dari 134 ke 103.
+- Phase 2 refactor `_G`: client flags/actions dipindahkan ke `ClientState`; referensi `_G` turun dari 103 ke 58.
 
 ## Catatan
 

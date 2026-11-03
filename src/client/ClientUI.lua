@@ -8,6 +8,7 @@ local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild
 local StringUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("StringUtils"))
 local ClientConfig = require(script.Parent:WaitForChild("ClientConfig"))
 local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
+local ClientState = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("ClientState"))
 
 local ClientUI = {}
 
@@ -207,10 +208,10 @@ function ClientUI.showNotification(notificationFrame, displayName, amount, messa
 	end
 
 	task.spawn(function()
-		while _G.__ActiveDonationNotification do
+		while ClientState.isDonationNotificationActive() do
 			task.wait(0.3)
 		end
-		_G.__ActiveDonationNotification = true
+		ClientState.setDonationNotificationActive(true)
 
 		local nameLabel = notificationFrame:FindFirstChild("NameLabel") or notificationFrame:FindFirstChild("PlayerName")
 		local messageBox = notificationFrame:FindFirstChild("MessageBox")
@@ -297,7 +298,7 @@ function ClientUI.showNotification(notificationFrame, displayName, amount, messa
 			slideOut.Completed:Connect(function()
 				notificationFrame.Visible = false
 				activeNotificationTween = nil
-				_G.__ActiveDonationNotification = false
+				ClientState.setDonationNotificationActive(false)
 				if onComplete then
 					onComplete()
 				end

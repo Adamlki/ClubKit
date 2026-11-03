@@ -1,6 +1,7 @@
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui        = game:GetService("StarterGui")
+local ClientState       = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("ClientState"))
 
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -329,9 +330,11 @@ task.spawn(loadInitialData)
 setColor(Color3.fromRGB(255, 255, 255))
 updateChancesUI()
 
-_G.ToggleCustomTitleGui = function()
+local function toggleCustomTitleGui()
 	mainFrame.Visible = not mainFrame.Visible
 end
+
+ClientState.registerAction("ToggleCustomTitleGui", toggleCustomTitleGui)
 
 mainFrame:GetPropertyChangedSignal("Visible"):Connect(function()
 	if mainFrame.Visible then

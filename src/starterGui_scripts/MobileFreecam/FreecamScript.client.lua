@@ -23,6 +23,7 @@ if not LocalPlayer then
 end
 
 local CameraLease = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("CameraLease"))
+local ClientState = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("ClientState"))
 
 local leaseToken = nil
 local Camera = Workspace.CurrentCamera
@@ -487,7 +488,7 @@ local function TurnOffFreecam()
 	end
 end
 
-_G.__Freecam_Enable = function()
+local function enableFreecam()
 	if not enabled and StartFreecam() then
 		enabled = true
 		Controls:Disable()
@@ -498,9 +499,12 @@ _G.__Freecam_Enable = function()
 	end
 end
 
-_G.__Freecam_Disable = function()
+local function disableFreecam()
 	TurnOffFreecam()
 end
+
+ClientState.registerAction("FreecamEnable", enableFreecam)
+ClientState.registerAction("FreecamDisable", disableFreecam)
 
 closeBtn.MouseButton1Click:Connect(TurnOffFreecam)
 

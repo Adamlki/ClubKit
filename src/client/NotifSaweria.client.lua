@@ -8,6 +8,7 @@ local Debris = game:GetService("Debris")
 local RunService = game:GetService("RunService")
 local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
 local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
+local ClientState = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("ClientState"))
 
 local DEBUG_ENABLED = RunService:IsStudio()
 local DEBUG_PREFIX = "[SaweriaClientUI]"
@@ -49,7 +50,7 @@ local function parseClientAmount(val)
 end
 
 local function playSaweriaSound()
-	if _G.HideDonationNotif then return end
+	if ClientState.isDonationNotifHidden() then return end
 	pcall(function()
 		local sound = Instance.new("Sound")
 		sound.SoundId = AssetConfig.Sounds.SaweriaNotification
@@ -68,14 +69,14 @@ local isDisplayingNotif = false
 local activeTween = nil
 
 local function processQueue()
-	if _G.HideDonationNotif then
+	if ClientState.isDonationNotifHidden() then
 		table.clear(donationQueue)
 		isDisplayingNotif = false
 		if notifFrame then
 			notifFrame.Visible = false
 			notifFrame.Position = NOTIF_HIDDEN_POS
 		end
-		_G.__ActiveDonationNotification = nil
+		ClientState.clearDonationNotificationActive()
 		return
 	end
 	if isDisplayingNotif or #donationQueue == 0 then return end
@@ -84,14 +85,14 @@ local function processQueue()
 	local current = table.remove(donationQueue, 1)
 
 	task.spawn(function()
-		while _G.__ActiveDonationNotification and not _G.HideDonationNotif do
+		while ClientState.isDonationNotificationActive() and not ClientState.isDonationNotifHidden() do
 			task.wait(0.3)
 		end
-		if _G.HideDonationNotif then
+		if ClientState.isDonationNotifHidden() then
 			isDisplayingNotif = false
 			return
 		end
-		_G.__ActiveDonationNotification = true
+		ClientState.setDonationNotificationActive(true)
 
 		local nameLabel = notifFrame:FindFirstChild("NameLabel") or notifFrame:FindFirstChild("UsernameLabel") or notifFrame:FindFirstChild("PlayerName")
 		local messageBox = notifFrame:FindFirstChild("MessageBox")
@@ -178,7 +179,7 @@ local function processQueue()
 			slideOut.Completed:Connect(function()
 				notifFrame.Visible = false
 				activeTween = nil
-				_G.__ActiveDonationNotification = false
+				ClientState.setDonationNotificationActive(false)
 				isDisplayingNotif = false
 				processQueue()
 			end)
@@ -207,7 +208,7 @@ end
 
 donationEvent.OnClientEvent:Connect(function(data)
 	if not data or not data.donator then return end
-	if _G.HideDonationNotif then return end
+	if ClientState.isDonationNotifHidden() then return end
 
 	local donatorName = tostring(data.donator or "Anonymous")
 	local amount = parseClientAmount(data.amount)

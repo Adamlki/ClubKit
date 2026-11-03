@@ -11,6 +11,7 @@ local RequestDonationState = RS:WaitForChild("RequestDonationState")
 local FormatUtils          = require(RS:WaitForChild("Utils"):WaitForChild("FormatUtils"))
 local CameraLease          = require(RS:WaitForChild("Modules"):WaitForChild("CameraLease"))
 local AssetConfig          = require(RS:WaitForChild("Config"):WaitForChild("AssetConfig"))
+local ClientState          = require(RS:WaitForChild("Modules"):WaitForChild("ClientState"))
 
 local donationGUI = script.Parent
 
@@ -42,7 +43,7 @@ local leaseToken      = nil
 local SOUND_ID = AssetConfig.Sounds.Level4Donation
 
 local function donationNotifHidden()
-	return _G.HideDonationNotif == true
+	return ClientState.isDonationNotifHidden()
 end
 
 local function playSound()

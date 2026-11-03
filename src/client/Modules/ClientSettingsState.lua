@@ -1,62 +1,34 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ClientState = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("ClientState"))
+
 local ClientSettingsState = {}
 
-local state = {
-	HideDonationEffects = false,
-	HideAdminNotif = false,
-	HideDonationNotif = false,
-}
-
-local changeListeners: { (key: string, value: boolean) -> () } = {}
-_G.HideDonationEffects = false
-_G.IsDonationEffectsHidden = function()
-	return state.HideDonationEffects == true
-end
-
-_G.HideAdminNotif = false
-_G.HideDonationNotif = false
-
-_G.IsDonationNotifHidden = function()
-	return state.HideDonationNotif == true
-end
-
-local function notifyChanged(key: string, value: boolean)
-	for _, listener in ipairs(changeListeners) do
-		task.spawn(listener, key, value)
-	end
-end
-
 function ClientSettingsState.isDonationEffectsHidden(): boolean
-	return state.HideDonationEffects == true or _G.HideDonationEffects == true
+	return ClientState.isDonationEffectsHidden()
 end
 
 function ClientSettingsState.isDonationNotifHidden(): boolean
-	return state.HideDonationNotif == true or _G.HideDonationNotif == true
+	return ClientState.isDonationNotifHidden()
 end
 
 function ClientSettingsState.isAdminNotifHidden(): boolean
-	return state.HideAdminNotif == true or _G.HideAdminNotif == true
+	return ClientState.isAdminNotifHidden()
 end
 
 function ClientSettingsState.setDonationEffectsHidden(value: boolean)
-	state.HideDonationEffects = value
-	_G.HideDonationEffects = value
-	notifyChanged("HideDonationEffects", value)
+	return ClientState.setDonationEffectsHidden(value)
 end
 
 function ClientSettingsState.setDonationNotifHidden(value: boolean)
-	state.HideDonationNotif = value
-	_G.HideDonationNotif = value
-	notifyChanged("HideDonationNotif", value)
+	return ClientState.setDonationNotifHidden(value)
 end
 
 function ClientSettingsState.setAdminNotifHidden(value: boolean)
-	state.HideAdminNotif = value
-	_G.HideAdminNotif = value
-	notifyChanged("HideAdminNotif", value)
+	return ClientState.setAdminNotifHidden(value)
 end
 
 function ClientSettingsState.onChanged(callback: (key: string, value: boolean) -> ())
-	table.insert(changeListeners, callback)
+	ClientState.onChanged(callback)
 end
 
 return ClientSettingsState

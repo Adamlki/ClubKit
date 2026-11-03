@@ -12,6 +12,7 @@ local ClientConfig = require(script:FindFirstChild("ClientConfig") or script.Par
 local ClientUI = require(script:FindFirstChild("ClientUI") or script.Parent:WaitForChild("ClientUI"))
 local Icon = require(ReplicatedStorage:WaitForChild("Icon"))
 local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
+local ClientState = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("ClientState"))
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -93,7 +94,9 @@ end
 local function openFrame(frame)
 	frame.Visible = true
 	if frame == UI.mainFrame then
-		if _G.CloseSaweria then pcall(_G.CloseSaweria) end
+		if ClientState.hasAction("CloseSaweria") then
+			ClientState.callAction("CloseSaweria")
+		end
 		UI.container.CanvasPosition = Vector2.zero
 		updatePlayerProfile()
 		updatePlayerStats()
@@ -103,10 +106,12 @@ local function openFrame(frame)
 	end
 end
 
-_G.CloseRobuxDonation = function()
+local function closeRobuxDonation()
 	UI.mainFrame.Visible = false
 	deselectDonationIcon()
 end
+
+ClientState.registerAction("CloseRobuxDonation", closeRobuxDonation)
 
 local loadProducts
 
@@ -332,7 +337,7 @@ local donationQueue = {}
 local isDisplayingNotif = false
 
 local function processDonationQueue()
-	if _G.HideDonationNotif then
+	if ClientState.isDonationNotifHidden() then
 		table.clear(donationQueue)
 		isDisplayingNotif = false
 		if UI.notificationFrame then UI.notificationFrame.Visible = false end
@@ -365,7 +370,7 @@ local function setupBroadcastListener()
 
 	receiveRemote.OnClientEvent:Connect(function(displayName, amount, message, userId, totalAmount)
 		debugLog("Broadcast diterima:", displayName, amount)
-		if _G.HideDonationNotif then return end
+		if ClientState.isDonationNotifHidden() then return end
 		ClientUI.sendDonationChatMessage(displayName, amount)
 
 		if amount >= ClientConfig.NOTIFICATION.MIN_DONATION then

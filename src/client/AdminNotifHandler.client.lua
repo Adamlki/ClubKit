@@ -13,6 +13,7 @@ local TS           = game:GetService("TweenService")
 local SG           = game:GetService("StarterGui")
 local StringUtils  = require(RS:WaitForChild("Utils"):WaitForChild("StringUtils"))
 local AssetConfig  = require(RS:WaitForChild("Config"):WaitForChild("AssetConfig"))
+local ClientState  = require(RS:WaitForChild("Modules"):WaitForChild("ClientState"))
 
 local player       = Players.LocalPlayer
 local playerGui    = player:WaitForChild("PlayerGui")
@@ -372,7 +373,7 @@ ReceiveMessageRemote.OnClientEvent:Connect(function(messageData)
 
 	elseif messageData.Type == "Message" then
 		if messageData.Message and messageData.SenderId then
-			if _G.HideAdminNotif then
+			if ClientState.isAdminNotifHidden() then
 				return
 			end
 			createNotification(messageData)

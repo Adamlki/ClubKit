@@ -3,7 +3,9 @@
 if _G.__SettingClientLoaded then return end
 _G.__SettingClientLoaded = true
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ClientSettingsState = require(script.Parent:WaitForChild("Modules"):WaitForChild("ClientSettingsState"))
+local ClientState = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("ClientState"))
 
 local CONFIG = {
 	DEBUG_MODE = false, 
@@ -524,7 +526,7 @@ end
 
 collectionService:GetInstanceAddedSignal("DonationEffect"):Connect(function(effect)
 	task.wait(0.1)
-	if FeatureManager:GetFeatureState("donationeffect") or _G.HideDonationEffects then
+	if FeatureManager:GetFeatureState("donationeffect") or ClientSettingsState.isDonationEffectsHidden() then
 		Utils:HideBasePart(effect, true)
 		for _, desc in ipairs(effect:GetDescendants()) do
 			Utils:HideEffect(desc, true)
@@ -541,7 +543,7 @@ if stageEffectsFolder then
 			local sound = stageFX:FindFirstChild("HissSound")
 			if sound then
 				sound:GetPropertyChangedSignal("Playing"):Connect(function()
-					if _G.HideDonationEffects and sound.Playing then
+					if ClientSettingsState.isDonationEffectsHidden() and sound.Playing then
 						pcall(function() sound:Stop() end)
 					end
 				end)
@@ -549,7 +551,7 @@ if stageEffectsFolder then
 			for _, fx in ipairs(stageFX:GetChildren()) do
 				if fx:IsA("ParticleEmitter") or fx:IsA("Smoke") then
 					fx:GetPropertyChangedSignal("Enabled"):Connect(function()
-						if _G.HideDonationEffects and fx.Enabled then
+						if ClientSettingsState.isDonationEffectsHidden() and fx.Enabled then
 							fx.Enabled = false
 						end
 					end)
@@ -588,7 +590,7 @@ function DonationNotifSystem:SetVisible(visible)
 			notifFrame.Visible = false
 			notifFrame.Position = UDim2.new(0.5, 0, -0.2, 0)
 		end
-		_G.__ActiveDonationNotification = nil
+		ClientState.clearDonationNotificationActive()
 
 		local donationBoardGui = playerGui:FindFirstChild("DonationBoard")
 		local dbFrame = donationBoardGui and donationBoardGui:FindFirstChild("NotificationFrame")

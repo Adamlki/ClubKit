@@ -13,6 +13,7 @@
 - Phase 1 refactor `_G`: debug/config hooks dipindahkan ke `DebugHooks`; referensi `_G` turun dari 134 ke 103.
 - Phase 2 refactor `_G`: client flags/actions dipindahkan ke `ClientState`; referensi `_G` turun dari 103 ke 58.
 - Phase 3 refactor `_G`: leaderboard controller/callback/data dipindahkan ke `LeaderboardRegistry`; referensi `_G` turun dari 58 ke 32.
+- Phase 4 refactor `_G`: stage/Robux effects dipindahkan ke `EffectService`; referensi `_G` turun dari 32 ke 16.
 
 ## Catatan
 

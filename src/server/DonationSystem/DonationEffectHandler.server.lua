@@ -5,6 +5,7 @@ local Workspace         = game:GetService("Workspace")
 local CollectionService = game:GetService("CollectionService")
 
 local DebugHooks = require(SS:WaitForChild("Modules"):WaitForChild("DebugHooks"))
+local EffectService = require(SS:WaitForChild("Modules"):WaitForChild("EffectService"))
 
 local CinematicRemote = RS:FindFirstChild("CinematicRemote")
 if not CinematicRemote then
@@ -338,19 +339,22 @@ StageEffectEvent.Event:Connect(function(action, duration)
 	end
 end)
 
-_G.TriggerStageEffects = function(duration)
+local function publicTriggerStageEffects(duration)
 	task.spawn(function() triggerStageEffects(duration or CONFIG.STAGE_FX_DURATION) end)
 end
 
-_G.StopStageEffects = stopStageEffects
-
-_G.GetStageFXDuration = function()
+local function getStageFXDuration()
 	return CONFIG.STAGE_FX_DURATION
 end
 
-_G.IsStageFiring = function()
+local function isStageFiringPublic()
 	return isStageFiring
 end
+
+EffectService.Register("TriggerStageEffects", publicTriggerStageEffects)
+EffectService.Register("StopStageEffects", stopStageEffects)
+EffectService.Register("GetStageFXDuration", getStageFXDuration)
+EffectService.Register("IsStageFiring", isStageFiringPublic)
 
 local function triggerTestDonation(donatorName, amount, message)
 	amount = tonumber(amount) or 100

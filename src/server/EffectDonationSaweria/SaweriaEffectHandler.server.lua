@@ -10,6 +10,7 @@ local Players = game:GetService("Players")
 
 local MegaEffectsConfig = require(script.Parent:WaitForChild("MegaEffectsConfig"))
 local DebugHooks = require(ServerStorage:WaitForChild("Modules"):WaitForChild("DebugHooks"))
+local EffectService = require(ServerStorage:WaitForChild("Modules"):WaitForChild("EffectService"))
 
 -- Remote Events (Baru & Lama untuk kompatibilitas penuh)
 local effectsRemotes = ReplicatedStorage:FindFirstChild("EffectsRemotes")
@@ -258,13 +259,15 @@ RobuxEffectEvent.Event:Connect(function(playerOrName, amount)
 	end)
 end)
 
--- Global helper untuk trigger efek Robux dari script lain / console
-_G.TriggerRobuxEffect = function(playerOrName, amount)
+-- Helper untuk trigger efek Robux dari script lain / console
+local function triggerRobuxEffect(playerOrName, amount)
 	local event = ServerStorage:FindFirstChild("RobuxEffectEvent")
 	if event then
 		event:Fire(playerOrName, amount)
 	end
 end
+
+EffectService.Register("TriggerRobuxEffect", triggerRobuxEffect)
 
 -- Debug helper untuk trigger efek langsung (misal untuk testing dari command bar Studio)
 local function testMegaEffect(effectType, donorName, amount, currency)

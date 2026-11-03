@@ -10,6 +10,7 @@ local ServerConfig = require(ServerScriptService:WaitForChild("Config"):WaitForC
 local RoleSystem = require(ServerStorage:WaitForChild("Modules"):WaitForChild("RoleSystem"))
 local DebugHooks = require(ServerStorage:WaitForChild("Modules"):WaitForChild("DebugHooks"))
 local MegaEffectsConfig = require(ServerScriptService:WaitForChild("EffectDonationSaweria"):WaitForChild("MegaEffectsConfig"))
+local EffectService = require(ServerStorage:WaitForChild("Modules"):WaitForChild("EffectService"))
 
 local CONFIG = {
 	COIN_PREFIX = "/coin",
@@ -216,8 +217,8 @@ local function handleStageCommand(player, args)
 
 	local subCmd = args[1] and string.lower(args[1])
 	if subCmd == "off" or subCmd == "stop" then
-		if _G.StopStageEffects then
-			_G.StopStageEffects()
+		if EffectService.Has("StopStageEffects") then
+			EffectService.Call("StopStageEffects")
 		else
 			local stageEffectsFolder = Workspace:FindFirstChild("StageEffects")
 			if stageEffectsFolder then
@@ -232,17 +233,19 @@ local function handleStageCommand(player, args)
 		return
 	end
 
-	local defaultDuration = (_G.GetStageFXDuration and _G.GetStageFXDuration()) or 15
+	local durationOk, durationValue = EffectService.Call("GetStageFXDuration")
+	local defaultDuration = (durationOk and tonumber(durationValue)) or 15
 	local customSeconds = tonumber(args[1])
 	local duration = customSeconds and math.clamp(customSeconds, 1, 60) or defaultDuration
 
-	if _G.IsStageFiring and _G.IsStageFiring() then
+	local firingOk, firingValue = EffectService.Call("IsStageFiring")
+	if firingOk and firingValue then
 		sendFeedback(player, "Stage Effects", "Stage effects saat ini sudah aktif menyala!")
 		return
 	end
 
-	if _G.TriggerStageEffects then
-		_G.TriggerStageEffects(duration)
+	if EffectService.Has("TriggerStageEffects") then
+		EffectService.Call("TriggerStageEffects", duration)
 	else
 		task.spawn(function()
 			local stageEffectsFolder = Workspace:FindFirstChild("StageEffects")
@@ -470,11 +473,11 @@ local function testCoin(amount, donatorName, message)
 end
 
 local function testStage(duration)
-	if _G.TriggerStageEffects then
-		_G.TriggerStageEffects(duration)
+	if EffectService.Has("TriggerStageEffects") then
+		EffectService.Call("TriggerStageEffects", duration)
 		print("[TEST] Fired Stage Effects for", duration or 15, "seconds")
 	else
-		warn("[TEST] _G.TriggerStageEffects tidak ditemukan!")
+		warn("[TEST] EffectService TriggerStageEffects tidak ditemukan!")
 	end
 end
 

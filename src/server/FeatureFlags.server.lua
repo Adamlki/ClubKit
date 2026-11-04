@@ -1,7 +1,5 @@
--- ============================================================
 -- FEATURE FLAGS
 -- Menyalin toggle dari ServerConfig ke ReplicatedStorage agar client dapat menampilkan/menyembunyikan UI dengan aman.
--- ============================================================
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")

@@ -1,5 +1,3 @@
-
-
 local StringUtils = {}
 
 function StringUtils.sanitizeHtml(text: any): string

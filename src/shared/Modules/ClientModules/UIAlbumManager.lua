@@ -20,9 +20,7 @@ function UIAlbumManager.new(albumList, albumTemplateBtn)
 	return self
 end
 
--- ====================================
 -- LOAD ALBUMS
--- ====================================
 function UIAlbumManager:LoadAlbums(favoriteSongs, silent)
 	self.favoriteSongs = favoriteSongs or {}
 
@@ -76,9 +74,7 @@ function UIAlbumManager:LoadAlbums(favoriteSongs, silent)
 	end
 end
 
--- ====================================
 -- SELECT ALBUM
--- ====================================
 function UIAlbumManager:SelectAlbum(albumName, silent, songCount)
 	self.currentAlbum = albumName
 

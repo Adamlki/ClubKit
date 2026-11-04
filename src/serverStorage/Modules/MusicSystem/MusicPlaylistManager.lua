@@ -16,9 +16,7 @@ function MusicPlaylistManager.new(config)
 	return self
 end
 
--- ====================================
 -- PLAYLIST OPERATIONS
--- ====================================
 
 function MusicPlaylistManager:GetNextSong()
 	local playlist = MusicModule:GetAllMusic()

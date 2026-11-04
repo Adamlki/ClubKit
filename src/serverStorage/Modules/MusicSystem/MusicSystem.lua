@@ -19,9 +19,7 @@ local MusicModule = require(ReplicatedStorage.Modules:WaitForChild("MusicModule"
 local MusicSystem = {}
 MusicSystem.__index = MusicSystem
 
--- ====================================
 -- CONFIGURATION (SIMPLIFIED - NO DJ)
--- ====================================
 local CONFIG = {
 	-- Queue
 	MAX_QUEUE_SIZE = 50,
@@ -53,9 +51,7 @@ local CONFIG = {
 	SKIP_VOTE_COOLDOWN = 7,
 }
 
--- ====================================
 -- INITIALIZATION
--- ====================================
 function MusicSystem.new()
 	local self = setmetatable({}, MusicSystem)
 
@@ -130,9 +126,7 @@ function MusicSystem.new()
 	return self
 end
 
--- ====================================
 -- SETUP REMOTES
--- ====================================
 function MusicSystem:SetupRemotes()
 	local remoteFolder = ReplicatedStorage:FindFirstChild("MusicRemotes")
 	if not remoteFolder then
@@ -159,11 +153,9 @@ function MusicSystem:SetupRemotes()
 	}
 end
 
--- ====================================
 -- PLAY NEXT SONG
--- ====================================
 function MusicSystem:PlayNext()
-	-- 🛡️ ANTI-DEADLOCK: Cek apakah lock transisi macet lebih dari 5 detik
+	-- ANTI-DEADLOCK: Cek apakah lock transisi macet lebih dari 5 detik
 	if self.isTransitioning then 
 		if self._transitionStartTime and (os.clock() - self._transitionStartTime) > 5 then
 			warn("[MusicSystem] ⚠️ Transition lock timeout (>5s). Me-reset paksa isTransitioning...")
@@ -182,7 +174,7 @@ function MusicSystem:PlayNext()
 	self.isTransitioning = true
 	self._transitionStartTime = os.clock()
 
-	-- 🧹 Bersihkan vote skip yang mungkin masih aktif saat lagu berganti
+	-- Bersihkan vote skip yang mungkin masih aktif saat lagu berganti
 	if self.skipVoteManager and self.skipVoteManager:IsActive() then
 		self.skipVoteManager:CancelVote(self.dispatcher)
 	end
@@ -214,7 +206,7 @@ function MusicSystem:PlayNext()
 			self.dispatcher:SyncState()
 			self.isTransitioning = false
 			
-			-- 🔥 BROADCAST PRELOAD UNTUK LAGU BERIKUTNYA
+			-- BROADCAST PRELOAD UNTUK LAGU BERIKUTNYA
 			self:BroadcastPreloadNext()
 
 		else
@@ -240,7 +232,7 @@ function MusicSystem:PlayNext()
 					self.dispatcher:SyncState()
 					self.isTransitioning = false
 					
-					-- 🔥 BROADCAST PRELOAD UNTUK LAGU BERIKUTNYA
+					-- BROADCAST PRELOAD UNTUK LAGU BERIKUTNYA
 					self:BroadcastPreloadNext()
 				end
 			else
@@ -274,9 +266,7 @@ function MusicSystem:PlayNext()
 	end
 end
 
--- ====================================
 -- BROADCAST PRELOAD NEXT SONG (SMART BACKGROUND BUFFER)
--- ====================================
 function MusicSystem:BroadcastPreloadNext()
 	local nextSongId = nil
 	local nextSongTitle = nil
@@ -306,9 +296,7 @@ function MusicSystem:BroadcastPreloadNext()
 	end
 end
 
--- ====================================
 -- START SYSTEM
--- ====================================
 function MusicSystem:Start()
 	-- Connect player events
 	Players.PlayerAdded:Connect(function(player)
@@ -319,7 +307,7 @@ function MusicSystem:Start()
 		self.playerManager:OnPlayerRemoving(player)
 	end)
 
-	-- 🔥 FIX: BindToClose untuk mencegah Data Loss saat Server Shutdown/Restart
+	-- Simpan data saat server shutdown.
 	game:BindToClose(function()
 		print("[MusicSystem] Server shutting down, backing up all favorite data...")
 		for _, player in ipairs(Players:GetPlayers()) do

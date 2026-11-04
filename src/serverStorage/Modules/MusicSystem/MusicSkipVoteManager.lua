@@ -25,18 +25,14 @@ function MusicSkipVoteManager.new(config, roleSystem)
 	return self
 end
 
--- ====================================
 -- ELIGIBLE VOTERS (SEMUA PEMAIN DI SERVER)
 -- Sesuai aturan: Jika VIP skip, vote dikirim ke SELURUH player di server
--- ====================================
 
 function MusicSkipVoteManager:GetEligibleVoters()
 	return Players:GetPlayers()
 end
 
--- ====================================
 -- RATE LIMITING
--- ====================================
 
 function MusicSkipVoteManager:CheckRateLimit(player, customCooldown)
 	local userId = player.UserId
@@ -55,9 +51,7 @@ function MusicSkipVoteManager:CheckRateLimit(player, customCooldown)
 	return true, 0
 end
 
--- ====================================
 -- VOTE MANAGEMENT
--- ====================================
 
 function MusicSkipVoteManager:IsActive()
 	return self.skipVote.active

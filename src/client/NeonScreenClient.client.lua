@@ -109,4 +109,3 @@ task.spawn(function()
 		updateLightingState()
 	end
 end)
-

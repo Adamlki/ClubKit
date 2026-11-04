@@ -61,9 +61,7 @@ local function playSaweriaSound()
 	end)
 end
 
--- ==============================================================================
 -- QUEUE SYSTEM
--- ==============================================================================
 local donationQueue = {}
 local isDisplayingNotif = false
 local activeTween = nil
@@ -197,9 +195,7 @@ local function processQueue()
 	end)
 end
 
--- ==============================================================================
 -- LISTEN EVENT DARI SERVER
--- ==============================================================================
 local donationEvent = ReplicatedStorage:WaitForChild("DonationNotification", 15)
 if not donationEvent then
 	debugWarn("❌ DonationNotification event not found di ReplicatedStorage!")

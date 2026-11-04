@@ -1,5 +1,3 @@
-
-
 local RunService = game:GetService("RunService")
 
 export type LoggerInstance = {

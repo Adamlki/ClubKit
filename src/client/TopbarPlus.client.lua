@@ -1,6 +1,4 @@
--- ============================================================
 -- UNIFIED TOPBAR PLUS V3 & SYNCTO SCRIPT
--- ============================================================
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players           = game:GetService("Players")
@@ -71,9 +69,7 @@ local function playClick()
 	end
 end
 
--- ============================================================
 -- UISTROKE + GRADIENT
--- ============================================================
 local gradientRotation    = 0
 local registeredGradients = {}
 
@@ -157,9 +153,7 @@ local function hideOriginalButton(gui, buttonName)
 	end
 end
 
--- ============================================================
 -- STATE
--- ============================================================
 local icons         = {}
 local menuIcon      = nil
 local dropdownIcons = {}
@@ -184,9 +178,7 @@ end
 
 TopbarPanelRegistry:Register("TopbarPlus", closeAllTopbarPanels)
 
--- ============================================================
 -- INSTANT ICON CREATION (NO YIELDING)
--- ============================================================
 local function createRawIcon(name)
 	local cfg = getCfg(name)
 	if not cfg.enabled then return nil end
@@ -226,10 +218,8 @@ local hatIcon        = createRawIcon("MyHat")
 local effectIcon     = createRawIcon("GlobalEffect")
 local gamepassIcon   = createRawIcon("Gamepass")
 
--- Initially disable network-dependent icons until verified
 if broadcastIcon then broadcastIcon:setEnabled(false) end
 if effectIcon then effectIcon:setEnabled(false) end
--- Shop hanya muncul jika FeatureFlags.VIPShopEnabled bernilai true.
 if gamepassIcon then gamepassIcon:setEnabled(false) end
 
 if menuIcon then
@@ -240,20 +230,14 @@ if menuIcon then
 	if cinematicIcon then table.insert(activeMenu, cinematicIcon) end
 	if titleIcon then table.insert(activeMenu, titleIcon) end
 	if serverListIcon then table.insert(activeMenu, serverListIcon) end
-	
-	-- Menu Spesial (Network)
 	if broadcastIcon then table.insert(activeMenu, broadcastIcon) end
 	if hatIcon then table.insert(activeMenu, hatIcon) end
 	if effectIcon then table.insert(activeMenu, effectIcon) end
-	-- Gamepass sengaja TIDAK dimasukkan ke menu; tampil langsung di topbar kanan.
 	
-	-- Gunakan setMenu agar bergeser ke samping
 	menuIcon:setMenu(activeMenu)
 end
 
--- ============================================================
 -- ASYNC LOGIC HOOKUPS
--- ============================================================
 
 local function setupFrameSync(name, icon, frame, closeButtonPath)
 	if not icon or not frame then return end
@@ -360,17 +344,13 @@ local function bindIconLogic(name, icon, gui, frame, closeBtnPath, originalBtnNa
 	end
 	if frame then
 		setupFrameSync(name, icon, frame, closeBtnPath)
-		-- Ensure initial state
 		if frame.Visible then frame.Visible = false end
 	end
 end
 
--- ============================================================
 -- SPAWN GUI FETCHING
--- ============================================================
 
--- Dance diputuskan dari topbar karena sudah ada button sendiri buat dancenya.
--- Pastikan tombol asli di EmoteGui tetap terlihat jika sebelumnya sempat di-hide.
+-- Dance punya tombol sendiri di topbar; pastikan tombol asli EmoteGui tetap terlihat.
 task.spawn(function()
 	local gui = playerGui:WaitForChild("EmoteGui", 5)
 	if gui then
@@ -511,8 +491,6 @@ task.spawn(function()
 					end
 				end
 
-				-- Attribute tetap benar walau event ShowIcon sudah lewat
-				-- sebelum client selesai binding.
 				setHatEnabled(player:GetAttribute("CanUseHat") == true)
 				local attrConn = player:GetAttributeChangedSignal("CanUseHat"):Connect(function()
 					setHatEnabled(player:GetAttribute("CanUseHat") == true)
@@ -569,10 +547,7 @@ if freecamIcon then
 	end)
 end
 
-
--- ============================================================
 -- INIT & CLEANUP
--- ============================================================
 task.wait(CONFIG.InitDelay)
 isInitialized = true
 

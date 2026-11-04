@@ -1,8 +1,4 @@
--- ==========================================
 -- SAWERIA EFFECT HANDLER (SERVER)
--- Menghubungkan SaweriaEffectEvent ke Efek 3D
--- Mendukung EffectsEvent & Remote Legacy (FireSmite, FireNuke, FireBlackHole)
--- ==========================================
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
@@ -12,7 +8,6 @@ local MegaEffectsConfig = require(script.Parent:WaitForChild("MegaEffectsConfig"
 local DebugHooks = require(ServerStorage:WaitForChild("Modules"):WaitForChild("DebugHooks"))
 local EffectService = require(ServerStorage:WaitForChild("Modules"):WaitForChild("EffectService"))
 
--- Remote Events (Baru & Lama untuk kompatibilitas penuh)
 local effectsRemotes = ReplicatedStorage:FindFirstChild("EffectsRemotes")
 if not effectsRemotes then
 	effectsRemotes = Instance.new("Folder")
@@ -31,7 +26,6 @@ local FireSmite = ReplicatedStorage:FindFirstChild("FireSmite")
 local FireNuke = ReplicatedStorage:FindFirstChild("FireNuke")
 local FireBlackHole = ReplicatedStorage:FindFirstChild("FireBlackHole")
 
--- Bindable Event dari DonasiSaweria
 local SaweriaEffectEvent = ServerStorage:FindFirstChild("SaweriaEffectEvent")
 if not SaweriaEffectEvent then
 	SaweriaEffectEvent = Instance.new("BindableEvent")
@@ -39,7 +33,6 @@ if not SaweriaEffectEvent then
 	SaweriaEffectEvent.Parent = ServerStorage
 end
 
--- Bindable Event dari Robux Donation (1k - 10k Robux)
 local RobuxEffectEvent = ServerStorage:FindFirstChild("RobuxEffectEvent")
 if not RobuxEffectEvent then
 	RobuxEffectEvent = Instance.new("BindableEvent")
@@ -47,12 +40,10 @@ if not RobuxEffectEvent then
 	RobuxEffectEvent.Parent = ServerStorage
 end
 
--- Cache UserId (Bounded with eviction limit)
 local userIdCache = {}
 local cacheCount = 0
 local MAX_CACHE_LIMIT = 100
 
--- Antrean Efek (FIFO Queue) dengan batas maksimal
 local effectQueue = {}
 local isPlayingEffect = false
 local MAX_QUEUE_LIMIT = 20
@@ -62,7 +53,6 @@ local function getUserId(username)
 		return userIdCache[username]
 	end
 
-	-- Cari pemain yang sedang online di server dulu
 	local onlinePlayer = Players:FindFirstChild(username)
 	if onlinePlayer then
 		if cacheCount >= MAX_CACHE_LIMIT then
@@ -74,7 +64,6 @@ local function getUserId(username)
 		return onlinePlayer.UserId
 	end
 
-	-- Ambil dari API Roblox
 	local success, userId = pcall(function()
 		return Players:GetUserIdFromNameAsync(username)
 	end)
@@ -90,15 +79,12 @@ local function getUserId(username)
 		return userId
 	end
 
-	-- Fallback jika ID tidak ditemukan / nama anonim
 	userIdCache[username] = 1
 	cacheCount += 1
 	return 1
 end
 
--- ==========================================
--- TIER EFEK (DRIVEN BY MegaEffectsConfig)
--- ==========================================
+-- TIER EFEK
 local function getRobuxEffectTier(amount)
 	if not MegaEffectsConfig.GLOBAL_ENABLED or not MegaEffectsConfig.ROBUX_ENABLED then
 		return nil
@@ -189,7 +175,6 @@ local function processQueue()
 			print(string.format("[SaweriaEffectHandler] 💥 Memutar Efek: %s | Donatur: %s (UserId: %d) | %s %d", 
 				effectType, data.donorName, data.userId, currency, data.amount))
 
-			-- 1. Tembak ke EffectsRemotes.EffectsEvent (Sistem Utama - 1x tembak agar tidak muncul dobel!)
 			effectsEvent:FireAllClients(effectType, data.donorName, recipient, data.amount, data.userId, currency)
 
 			task.wait(waitTime or 10)
@@ -199,7 +184,6 @@ local function processQueue()
 	isPlayingEffect = false
 end
 
--- Listener dari DonasiSaweria
 SaweriaEffectEvent.Event:Connect(function(donorName, amount)
 	donorName = tostring(donorName or "Anonymous")
 	amount = tonumber(amount) or 0
@@ -225,7 +209,6 @@ SaweriaEffectEvent.Event:Connect(function(donorName, amount)
 	end)
 end)
 
--- Listener dari Donasi Robux (1k - 10k Robux)
 RobuxEffectEvent.Event:Connect(function(playerOrName, amount)
 	local donorName = "Anonymous"
 	local userId = 1
@@ -259,7 +242,6 @@ RobuxEffectEvent.Event:Connect(function(playerOrName, amount)
 	end)
 end)
 
--- Helper untuk trigger efek Robux dari script lain / console
 local function triggerRobuxEffect(playerOrName, amount)
 	local event = ServerStorage:FindFirstChild("RobuxEffectEvent")
 	if event then
@@ -269,7 +251,6 @@ end
 
 EffectService.Register("TriggerRobuxEffect", triggerRobuxEffect)
 
--- Debug helper untuk trigger efek langsung (misal untuk testing dari command bar Studio)
 local function testMegaEffect(effectType, donorName, amount, currency)
 	donorName = donorName or "MegaTester"
 	amount = tonumber(amount) or 1000
@@ -282,7 +263,6 @@ local function testMegaEffect(effectType, donorName, amount, currency)
 	effectsEvent:FireAllClients(effectType, donorName, recipient, amount, userId, currency)
 end
 
--- Debug helper untuk on/off efek panggung secara dinamis
 local function setMegaEffectEnabled(effectName, isEnabled)
 	if MegaEffectsConfig.EFFECTS_ENABLED[effectName] ~= nil then
 		MegaEffectsConfig.EFFECTS_ENABLED[effectName] = (isEnabled == true)

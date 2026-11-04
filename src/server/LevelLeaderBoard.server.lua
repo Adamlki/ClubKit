@@ -121,9 +121,7 @@ local function refreshLeaderboard()
 	end
 end
 
--- ====================================
 -- CLIENT ON-DEMAND SYNC (RATE LIMITED)
--- ====================================
 local requestCooldowns = {}
 local REQUEST_COOLDOWN = 5
 
@@ -158,9 +156,7 @@ remote.OnServerEvent:Connect(function(player)
 	end
 end)
 
--- ====================================
--- PLAYER MANAGEMENT (ANTI GHOSTING FIX)
--- ====================================
+-- PLAYER MANAGEMENT
 local function onPlayerJoin(player)
 	debugPrint("Player joined:", player.Name)
 	if not player:FindFirstChild("leaderstats") then
@@ -179,9 +175,7 @@ for _, player in ipairs(Players:GetPlayers()) do
 	end)
 end
 
--- ====================================
 -- AUTO-SAVE LOOP (Setiap 10 Menit)
--- ====================================
 task.spawn(function()
 	while true do
 		-- Interval 10 Menit untuk 100 Player (600 detik)

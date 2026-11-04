@@ -11,9 +11,7 @@ function MusicQueueManager.new(config)
 	return self
 end
 
--- ====================================
 -- GET MAX QUEUE FOR ROLE
--- ====================================
 function MusicQueueManager:GetMaxQueueForRole(role)
 	if self.config.MAX_QUEUE_PER_ROLE and self.config.MAX_QUEUE_PER_ROLE[role] then
 		return self.config.MAX_QUEUE_PER_ROLE[role]
@@ -22,9 +20,7 @@ function MusicQueueManager:GetMaxQueueForRole(role)
 	return self.config.MAX_QUEUE_PER_USER or 5
 end
 
--- ====================================
 -- QUEUE OPERATIONS
--- ====================================
 
 function MusicQueueManager:AddToQueue(musicData, uploaderName, userId, role)
 	-- Check queue size limit

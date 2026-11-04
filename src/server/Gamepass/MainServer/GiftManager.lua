@@ -64,9 +64,7 @@ local function findGiftTypeForProduct(productId)
 	return nil
 end
 
--- ==============================================================================
 -- OPERASI ATOMIK FIFO QUEUE & IDEMPOTENSI RECEIPT
--- ==============================================================================
 
 local function pushIntentAtomic(giverUserId, productId, intentData)
 	local qKey = getQueueKey(giverUserId, productId)
@@ -104,7 +102,7 @@ local function cancelLatestIntentAtomic(giverUserId, productId)
 		pcall(function()
 			intentStore:UpdateAsync(qKey, function(oldQueue)
 				if not oldQueue or #oldQueue == 0 then return nil end
-				table.remove(oldQueue) -- Buang intent terbaru yang dibatalkan
+				table.remove(oldQueue)
 				return #oldQueue > 0 and oldQueue or nil
 			end)
 		end)
@@ -237,7 +235,7 @@ function GiftManager:Init(ProcessReceiptHandler)
 	ProcessReceiptHandler:RegisterCallback("GiftSystem", function(player, productId, amount, receiptInfo)
 		local matchedGiftType = findGiftTypeForProduct(productId)
 		if not matchedGiftType then
-			return nil -- bukan produk gift; biarkan ProcessReceiptHandler memutuskan
+			return nil
 		end
 
 		local purchaseId = receiptInfo and receiptInfo.PurchaseId or "unknown"

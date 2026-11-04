@@ -6,9 +6,7 @@ local TextService       = game:GetService("TextService")
 
 local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 
--- ====================================
 -- MODULES
--- ====================================
 local OverheadShared     = ReplicatedStorage:WaitForChild("OverheadShared")
 local Config             = require(OverheadShared:WaitForChild("Config"))
 local DebugSystem        = require(script.DebugSystem)
@@ -20,9 +18,7 @@ local RoleSystem         = require(ServerStorage.Modules.RoleSystem)
 local LevelSystem        = require(ServerStorage.Modules.LevelSystem)
 local TitleDataManager   = require(script.TitleDataManager)
 
--- ====================================
 -- INITIALIZATION
--- ====================================
 DebugSystem:Init(Config.DEBUG_ENABLED)
 TitleDataManager:Init(Config)
 
@@ -38,17 +34,15 @@ OverheadManager:Init(
 
 NametagDisabler:Init()
 
--- ====================================
 -- CHARACTER EVENTS
--- ====================================
 local function onCharacterAdded(player, character)
-	-- 🔥 FIX 24/7 SERVER: Tunggu penampilan avatar dengan timeout 5 detik agar coroutine tidak hang selamanya jika CDN Roblox gagal
+	-- Tunggu avatar tampil, maksimal 5 detik.
 	local appearanceWait = 0
 	while not player:HasAppearanceLoaded() and player.Parent and appearanceWait < 5 do
 		appearanceWait += task.wait(0.2)
 	end
 
-	-- 🔥 FIX MAGIC NUMBER: Tunggu komponen krusial dimuat oleh Roblox dengan Timeout 10 detik
+	-- Tunggu komponen penting, maksimal 10 detik.
 	local head = character:WaitForChild("Head", 10)
 	local hrp = character:WaitForChild("HumanoidRootPart", 10)
 	local humanoid = character:WaitForChild("Humanoid", 10)
@@ -58,26 +52,23 @@ local function onCharacterAdded(player, character)
 		return 
 	end
 
-	-- Pastikan player masih online dan character masih valid
+	-- Pastikan player dan character masih valid.
 	if not player or not player.Parent then return end
 	if not character or not character.Parent then return end
 
 	NametagDisabler:DisableNametag(player, character)
-	
-	-- 🔥 ARCHITECT FIX: Jalankan pembuatan Overhead secara Asynchronous (Non-Blocking).
-	-- Karena CreateOverhead memanggil SaweriaAPI (HTTP GetAsync yang memakan waktu 3-5 detik),
-	-- kita membungkusnya dengan task.spawn agar tidak menahan (freeze) alur spawn pemain lain.
+
+	-- Buat overhead secara async agar HTTP Saweria tidak memblokir spawn.
 	task.spawn(function()
 		OverheadManager:CreateOverhead(player, character)
-		
-		-- FIX: Setelah overhead dibuat, force update label team sekali lagi.
-		-- Ini safety net untuk kasus di mana player.Team baru settled
+
+		-- Safety net setelah Team selesai di-assign.
 		task.wait(0.5)
 		if player and player.Parent and character and character.Parent then
 			OverheadManager:UpdateTeam(player)
 		end
 
-		-- Reload data Donasi & Saweria setelah beberapa detik
+		-- Muat ulang data donasi setelah overhead siap.
 		task.wait(3.5)
 		if player and player.Parent and character and character.Parent then
 			if OverheadManager.UpdateDonationRank then
@@ -108,11 +99,10 @@ local function onCharacterAdded(player, character)
 end
 
 local function onPlayerAdded(player)
-	-- Init level player
 	LevelSystem:InitializePlayer(player)
 	LevelSystem:SetupCommands(player, RoleSystem)
 
-	-- Preload donatur rank di background agar siap saat overhead dibuat
+	-- Preload rank di background.
 	task.spawn(function()
 		DonaturRankSystem:PreloadRank(player.UserId)
 	end)
@@ -125,17 +115,7 @@ local function onPlayerAdded(player)
 		onCharacterAdded(player, character)
 	end)
 
-	-- ====================================
-	-- FIX UTAMA: Update overhead label saat team berubah
-	--
-	-- Masalah sebelumnya: task.wait(0.1) terlalu pendek.
-	-- Saat player.Team berubah, Roblox butuh beberapa frame untuk
-	-- menyelesaikan assignment secara internal. Jika overhead di-update
-	-- terlalu cepat, player.Team mungkin masih nilai lama.
-	--
-	-- Solusi: task.wait(0.3) + verifikasi ulang player.Team sudah benar
-	-- sebelum update label.
-	-- ====================================
+	-- Update label setelah Team benar-benar tersettled.
 	player:GetPropertyChangedSignal("Team"):Connect(function()
 		task.wait(0.3)
 		if player and player.Parent then
@@ -159,9 +139,7 @@ local function onPlayerRemoving(player)
 	DebugSystem:Log("Player left:", player.Name)
 end
 
--- ====================================
 -- ROLE & LEVEL LISTENERS
--- ====================================
 RoleSystem.RoleChanged:Connect(function(player, oldRole, newRole)
 	OverheadManager:UpdateRole(player, newRole)
 end)
@@ -172,9 +150,7 @@ end)
 
 -- Auto donation rank changes now handled by LeaderboardRegistry controller checks in OverheadManager
 
--- ====================================
 -- REMOTE EVENTS SETUP
--- ====================================
 local titleRemotes = ReplicatedStorage:FindFirstChild("TitleRemotes")
 if not titleRemotes then
 	titleRemotes        = Instance.new("Folder")
@@ -208,18 +184,14 @@ local checkAccessRemote   = ensureRemoteFunction("CheckAccess")
 local getPlayerDataRemote = ensureRemoteFunction("GetPlayerData")
 local getPlayerTitleRemote = ensureRemoteFunction("GetPlayerTitle")
 
--- ====================================
 -- CHECK ACCESS
--- ====================================
 checkAccessRemote.OnServerInvoke = function(sender)
 	if not sender then return false end
 	local role = RoleSystem:GetPlayerRole(sender)
 	return role == "Owner" or role == "Admin"
 end
 
--- ====================================
 -- GET PLAYER TITLE (BACKWARD COMPATIBILITY)
--- ====================================
 getPlayerTitleRemote.OnServerInvoke = function(sender, targetPlayer)
 	if not sender then return nil end
 	local senderRole = RoleSystem:GetPlayerRole(sender)
@@ -232,9 +204,7 @@ getPlayerTitleRemote.OnServerInvoke = function(sender, targetPlayer)
 	return TitleDataManager:LoadTitleData(targetPlayer.UserId)
 end
 
--- ====================================
 -- GET PLAYER DATA
--- ====================================
 getPlayerDataRemote.OnServerInvoke = function(sender, targetPlayer)
 	if not sender then return nil end
 
@@ -270,9 +240,7 @@ getPlayerDataRemote.OnServerInvoke = function(sender, targetPlayer)
 	}
 end
 
--- ====================================
 -- UPDATE TITLE REMOTE
--- ====================================
 local function markTitleUpdated(targetPlayer)
 	if not targetPlayer or not targetPlayer.Parent then return end
 	local revision = (targetPlayer:GetAttribute("TitleRevision") or 0) + 1
@@ -280,7 +248,6 @@ local function markTitleUpdated(targetPlayer)
 end
 
 updateTitleRemote.OnServerEvent:Connect(function(sender, targetPlayer, titleData)
-	-- 🔥 ARCHITECT FIX: Rate Limiting
 	if not RemoteEventManager.checkRateLimit(sender, "updateTitle") then return end
 
 	DebugSystem:Log("UpdateTitle Request from", sender and sender.Name or "nil")
@@ -298,11 +265,11 @@ updateTitleRemote.OnServerEvent:Connect(function(sender, targetPlayer, titleData
 
 	if type(titleData) ~= "table" then return end
 
-	-- 🔥 SECURITY FIX: Dekonstruksi & Validasi ketat (Table Injection Protection)
+	-- Validasi dan batasi data dari client.
 	local rawTitle = titleData.Title
 	if type(rawTitle) ~= "string" then rawTitle = "" end
 	rawTitle = rawTitle:match("^%s*(.-)%s*$") or ""
-	rawTitle = string.sub(rawTitle, 1, 50) -- Batasi panjang string
+	rawTitle = string.sub(rawTitle, 1, 50)
 
 	local rawColor = titleData.Color
 	if typeof(rawColor) ~= "Color3" then rawColor = Color3.fromRGB(255, 255, 255) end
@@ -319,7 +286,7 @@ updateTitleRemote.OnServerEvent:Connect(function(sender, targetPlayer, titleData
 		TitleDataManager:UpdateCache(targetPlayer.UserId, emptyData)
 		DebugSystem:Log("Title removed for", targetPlayer.Name)
 	else
-		-- 🔥 COMPLIANCE FIX: Roblox Text Filtering (Jangan loloskan rawTitle jika filter gagal!)
+		-- Wajib lolos filter teks Roblox sebelum disimpan.
 		local filteredTitle = nil
 		local okFilter = pcall(function()
 			local filterResult = TextService:FilterStringAsync(rawTitle, sender.UserId)
@@ -343,18 +310,15 @@ updateTitleRemote.OnServerEvent:Connect(function(sender, targetPlayer, titleData
 		DebugSystem:Log("Title updated & saved for", targetPlayer.Name, "->", filteredTitle)
 	end
 
-	-- FIX: Rebuild overhead hanya jika character valid
+	-- Rebuild overhead jika character valid.
 	if targetPlayer.Character and targetPlayer.Character.Parent then
 		OverheadManager:CreateOverhead(targetPlayer, targetPlayer.Character)
 	end
 	markTitleUpdated(targetPlayer)
 end)
 
--- ====================================
 -- ASSIGN DONATUR RANK REMOTE
--- ====================================
 assignDonaturRemote.OnServerEvent:Connect(function(sender, targetPlayer, rank)
-	-- 🔥 ARCHITECT FIX: Rate Limiting
 	if not RemoteEventManager.checkRateLimit(sender, "assignDonatur") then return end
 
 	DebugSystem:Log("AssignDonaturRank Request from", sender and sender.Name or "nil")
@@ -387,9 +351,7 @@ assignDonaturRemote.OnServerEvent:Connect(function(sender, targetPlayer, rank)
 	end
 end)
 
--- ====================================
 -- PLAYER INITIALIZATION
--- ====================================
 for _, player in ipairs(Players:GetPlayers()) do
 	task.spawn(onPlayerAdded, player)
 end

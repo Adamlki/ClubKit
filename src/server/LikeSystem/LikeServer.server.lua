@@ -6,7 +6,6 @@ local ServerStorage = game:GetService("ServerStorage")
 local LikeManager = require(ServerStorage:WaitForChild("Modules"):WaitForChild("LikeManager"))
 local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 
--- Create RemoteEvents if they don't exist
 local RemotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
 if not RemotesFolder then
 	RemotesFolder = Instance.new("Folder")
@@ -35,9 +34,7 @@ if not CheckLikeCooldownRemote then
 	CheckLikeCooldownRemote.Parent = RemotesFolder
 end
 
--- Wait for UI to load if needed, but we use RemoteFunction for checking cooldown
 CheckLikeCooldownRemote.OnServerInvoke = function(player, targetUserId)
-	-- [TAMBAHKAN INI]: Pelindung spam agar player tidak mengirim ratusan request cek per detik
 	if not RemoteEventManager.checkRateLimit(player, "CheckLike") then return {cooldownTime = 0, targetLikes = 0} end
 	
 	if type(targetUserId) ~= "number" then return {cooldownTime = 0, targetLikes = 0} end
@@ -57,14 +54,12 @@ end
 local likeDebounces = {}
 
 LikePlayerRemote.OnServerInvoke = function(player, targetUserId)
-	-- 🔥 SECURITY FIX: Server-side debounce per player (1 detik)
 	local now = os.time()
 	if likeDebounces[player.UserId] and (now - likeDebounces[player.UserId]) < 1 then
 		return false, "Terlalu cepat! Tunggu sebentar."
 	end
 	likeDebounces[player.UserId] = now
 
-	-- Blokir spammer di pintu depan!
 	if not RemoteEventManager.checkRateLimit(player, "LikePlayerInvoke") then
 		return false, "Terlalu cepat! Tunggu sebentar."
 	end
@@ -79,24 +74,17 @@ LikePlayerRemote.OnServerInvoke = function(player, targetUserId)
 		return false, "Player not found or has left the game."
 	end
 	
-	-- Process the like
 	local success, messageOrTime = LikeManager.ProcessLike(player, targetPlayer)
 	
 	if success then
-		-- Fire visual effect to all clients
 		LikeVisualEffectRemote:FireAllClients(player, targetPlayer)
-		
-		-- Return success and the new cooldown end time
 		return true, LikeManager.GetCooldownEndTime(player, targetPlayer)
 	else
-		-- Return false and error message / remaining time
 		return false, messageOrTime
 	end
 end
 
--- ============================================
 -- LEADERSTATS (TOTAL LIKES)
--- ============================================
 local function setupPlayer(player)
 	task.spawn(function()
 		local leaderstats = player:WaitForChild("leaderstats", 15)

@@ -4,18 +4,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 local Players = game:GetService("Players")
 
--- ============================================
 -- INITIALIZE REMOTES
--- ============================================
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local animationStartRE = remotes:WaitForChild("animationStart")
 local startSyncRE = remotes:WaitForChild("startSync")
 local changeSpeedRE = remotes:WaitForChild("changeSpeed")
 local syncNotificationRE = remotes:WaitForChild("SyncNotification")
 
--- ============================================
 -- LOAD SERVER MODULES
--- ============================================
 local SyncServer = ServerScriptService:WaitForChild("SyncServer")
 local ServerModules = SyncServer:WaitForChild("Modules")
 
@@ -26,15 +22,11 @@ local AnimationController = require(ServerModules:WaitForChild("AnimationControl
 local SyncController = require(ServerModules:WaitForChild("SyncController"))
 local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 
--- ============================================
 -- LOAD SHARED MODULES
--- ============================================
 local SharedModules = ReplicatedStorage:WaitForChild("Modules")
 local AnimatorUtils = require(SharedModules:WaitForChild("AnimatorUtils"))
 
--- ============================================
 -- BUILD ANIMATION TABLE & O(1) LOOKUP CACHE
--- ============================================
 local loadedAnimations = AnimationLoader.loadAnimations()
 local loadedAnimationsById = {}
 local loadedAnimationsByNormId = {}
@@ -56,22 +48,16 @@ for _, anim in pairs(loadedAnimations) do
 	end
 end
 
--- ============================================
--- RATE LIMIT DITANGANI OLEH REMOTE EVENT MANAGER
--- ============================================
-
--- ============================================
 -- REMOTE HANDLERS
--- ============================================
 animationStartRE.OnServerEvent:Connect(function(player, animationId, shouldPlay, speed, clientFadeTime, isSpam, clientStartTime)
-	-- 🔥 SECURITY FIX: Cegah Type Spoofing & NaN / Inf Injection
+	-- Validasi tipe dan nilai dari client.
 	if animationId ~= nil and type(animationId) ~= "string" and type(animationId) ~= "number" then return end
 	if type(shouldPlay) ~= "boolean" then return end
 	if speed ~= nil and (type(speed) ~= "number" or speed ~= speed) then return end
 	if not RemoteEventManager.checkRateLimit(player, "animationStart") then return end
 	speed = math.clamp(speed or 1, 0.1, 3.0)
 
-	-- Validasi clientStartTime agar tidak bisa di-inject NaN / string / angka ekstrem
+	-- Tolak timestamp yang tidak valid atau terlalu jauh dari waktu server.
 	local nowServer = workspace:GetServerTimeNow()
 	if type(clientStartTime) ~= "number" or clientStartTime ~= clientStartTime or math.abs(nowServer - clientStartTime) > 10 then
 		clientStartTime = nowServer
@@ -82,7 +68,6 @@ animationStartRE.OnServerEvent:Connect(function(player, animationId, shouldPlay,
 		local rawStr = tostring(animationId)
 		if #rawStr > 60 then return end
 
-		-- 🔥 OPTIMASI 50+ PLAYERS: O(1) Instant Lookup
 		animation = loadedAnimationsById[animationId]
 		local norm = normalizeAnimId(animationId)
 		if not animation and norm ~= "" then
@@ -99,27 +84,23 @@ animationStartRE.OnServerEvent:Connect(function(player, animationId, shouldPlay,
 end)
 
 changeSpeedRE.OnServerEvent:Connect(function(player, speed)
-	-- 🔥 SECURITY FIX: Cegah Type Spoofing & NaN / Inf Injection (speed ~= speed mendeteksi NaN)
+	-- speed ~= speed mendeteksi NaN.
 	if type(speed) ~= "number" or speed ~= speed then return end
 	speed = math.clamp(speed, 0.1, 3.0)
 
-	-- 🔥 ARCHITECT FIX: Gunakan RemoteEventManager
 	if not RemoteEventManager.checkRateLimit(player, "changeAnimationSpeed") then return end
 
 	AnimationController.adjustAnimationSpeed(player, speed, loadedAnimations)
 end)
 
 startSyncRE.OnServerEvent:Connect(function(player, target, condition)
-	-- Keamanan Anti-Spam (Thread Bombing)
 	if not RemoteEventManager.checkRateLimit(player, "startSync") then return end
 	if typeof(target) ~= "Instance" or not target:IsA("Player") then return end
 
 	SyncController.handleSyncRequest(player, target, condition, loadedAnimations)
 end)
 
--- ============================================
 -- CONNECTION CLEANUP
--- ============================================
 local playerConnections = {}
 
 local function cleanupPlayerConnections(player)
@@ -133,11 +114,8 @@ local function cleanupPlayerConnections(player)
 	end
 end
 
--- ============================================
--- Force unsync semua follower saat player keluar/respawn
--- ============================================
+-- Force unsync semua follower saat player keluar/respawn.
 local function forceUnsyncAllFollowers(leavingPlayer)
-	-- Delegasikan semua tugas pembersihan ke SyncController!
 	SyncController.forceUnsyncAllFollowers(leavingPlayer, loadedAnimations)
 end
 
@@ -147,16 +125,13 @@ local function queueLeaderUpdate()
 	leaderUpdatePending = true
 	task.delay(0.2, function()
 		leaderUpdatePending = false
-		SyncController.updateAllLeaderStatus() -- ✅ BENAR! Panggil SyncController
+		SyncController.updateAllLeaderStatus()
 	end)
 end
 
--- ============================================
 -- RESPAWN HANDLER
--- ============================================
 local function setupPlayerRespawnHandler(player)
 	cleanupPlayerConnections(player) 
-	-- ✅ PEMBERSIHAN SELESAI, baru buat yang baru:
 	playerConnections[player] = {}
 
 	local charAddedConn = player.CharacterAdded:Connect(function(character)
@@ -165,7 +140,7 @@ local function setupPlayerRespawnHandler(player)
 
 		if not humanoid or not hrp then
 			warn("[SyncSystem] Character load timeout for", player.Name)
-			-- 🔥 SILENT FAILURE FIX: Jangan return! Tetap setel atribut dasar agar sistem tidak error mencari atribut
+			-- Jangan return: atribut dasar tetap harus di-set.
 		end
 
 		task.wait(0.5)
@@ -203,9 +178,7 @@ local function setupPlayerRespawnHandler(player)
 	end
 end
 
--- ============================================
 -- PLAYER REMOVING
--- ============================================
 Players.PlayerRemoving:Connect(function(leavingPlayer)
 	pcall(forceUnsyncAllFollowers, leavingPlayer)
 	cleanupPlayerConnections(leavingPlayer)
@@ -221,12 +194,10 @@ Players.PlayerRemoving:Connect(function(leavingPlayer)
 	end)
 end)
 
--- ============================================
 -- PLAYER INITIALIZATION
--- ============================================
 Players.PlayerAdded:Connect(function(player)
 	task.wait(0.5)
-	-- 🔥 VALIDASI: Cegah Memory Leak (Ghost Player) jika player DC saat yield
+	-- VALIDASI: Cegah Memory Leak (Ghost Player) jika player DC saat yield
 	if not player or not player.Parent then return end
 	setupPlayerRespawnHandler(player)
 end)
@@ -235,9 +206,7 @@ for _, player in ipairs(Players:GetPlayers()) do
 	task.spawn(setupPlayerRespawnHandler, player)
 end
 
--- ============================================
 -- CLEANUP ON SHUTDOWN
--- ============================================
 game:BindToClose(function()
 	for player, _ in pairs(playerConnections) do
 		cleanupPlayerConnections(player)

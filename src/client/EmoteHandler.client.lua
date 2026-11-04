@@ -1,7 +1,5 @@
--- ============================================
 -- SINGLETON PROTECTION
 -- Mencegah script berjalan ganda jika masih ada LocalScript di StarterGui.EmoteGui
--- ============================================
 local ScriptOnce = require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("ScriptOnce"))
 if not ScriptOnce.Claim("EmoteHandlerClient") then return end
 
@@ -26,19 +24,14 @@ local AnimationPreloader = require(Modules:WaitForChild("AnimationPreloader"))
 local AnimatorUtils = require(Modules:WaitForChild("AnimatorUtils"))
 local AnimationRegistry = require(Modules:WaitForChild("AnimationRegistry"))
 AnimatorUtils.AnimationPreloader = AnimationPreloader
-
--- 🔥 INTEGRASI MODULE ANIMASI
 local UIAnimator = require(ReplicatedStorage:WaitForChild("UIAnimator"))
 
--- ============================================
--- GLOBAL CONNECTION TRACKER (ANTI MEMORY LEAK)
--- ============================================
+-- GLOBAL CONNECTION TRACKER
 local isScriptActive = true
 local scriptConnections = {}
-local fakeStartTimes = setmetatable({}, { __mode = "k" }) -- 🔥 THE HIVE MIND: Weak table cache waktu mulai dinamis (Anti-Memory Leak)
-local characterConnections = {} -- [char] = { conn1, conn2, ... }
-local playerConnections = {} -- [Player] = { conn1, conn2, ... }
--- Harus dideklarasikan sebelum cleanupCharacterConnections (dipakai di dalamnya)
+local fakeStartTimes = setmetatable({}, { __mode = "k" })
+local characterConnections = {}
+local playerConnections = {}
 local globalSyncListeners = setmetatable({}, { __mode = "k" })
 local leaderCharAddedConn = nil
 local leaderDanceConn = nil
@@ -65,10 +58,7 @@ local function cleanupCharacterConnections(char)
 	end
 end
 
-
--- ============================================
--- GUI ELEMENTS (Mendukung StarterPlayerScripts & StarterGui)
--- ============================================
+-- GUI ELEMENTS
 local playerGui = player:WaitForChild("PlayerGui")
 local gui = script.Parent:IsA("ScreenGui") and script.Parent or playerGui:WaitForChild("EmoteGui", 30)
 if not gui then
@@ -134,9 +124,7 @@ local speedSlider = speedBar and speedBar:FindFirstChild("speedPosition")
 local speedButton = speedSlider and speedSlider:FindFirstChild("Button")
 local speedtext = speedFrame and speedFrame:FindFirstChild("TextLabel")
 
--- ============================================
 -- VARIABLES & CONSTANTS
--- ============================================
 local SPEED_MIN = 0.1
 local SPEED_MAX = 3.0
 local SPEED_DEFAULT = 1.0
@@ -195,9 +183,7 @@ local animationStarted
 local lastEmoteClickTime = 0 
 local lastDanceSwitchTime = 0 
 
--- ============================================
 -- CORE ANIMATION & STATE CONTROL
--- ============================================
 local function isClubDanceId(animId)
 	if not animId or animId == "" then return false end
 	if emoteIdCache[animId] then return true end
@@ -286,9 +272,7 @@ local function restoreCharacterAnimations(character)
 	end
 end
 
--- ============================================
 -- GUI HELPER FUNCTIONS
--- ============================================
 local function showNotification(message, duration, bgColor)
 	table.insert(notificationQueue, { message = message, duration = duration or 3, bgColor = bgColor or Color3.fromRGB(50, 150, 255) })
 
@@ -395,9 +379,7 @@ local function findAnimById(danceId)
 	return fallbackAnim
 end
 
--- ============================================
--- THE UNIVERSAL HIVE MIND (Observer Tunggal)
--- ============================================
+-- GLOBAL OBSERVER
 local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
 	if char ~= player.Character then return end 
 
@@ -857,9 +839,7 @@ for _, p in ipairs(Players:GetPlayers()) do monitorPlayerCharacter(p) end
 trackConnection(Players.PlayerAdded:Connect(monitorPlayerCharacter))
 trackConnection(Players.PlayerRemoving:Connect(onPlayerRemoving))
 
--- ============================================
 -- GUI & SYNC MANAGEMENT
--- ============================================
 
 local function getDanceNameFromId(danceId)
 	if not danceId or danceId == "" then return nil end
@@ -1151,9 +1131,7 @@ end
 setupSyncMonitoring()
 trackConnection(player.CharacterAdded:Connect(function() task.wait(1) if isScriptActive then setupSyncMonitoring() end end))
 
--- ============================================
 -- ANIMATION STARTED 
--- ============================================
 function animationStarted(animation, button)
 	if inputLock or pendingRequest then return end
 
@@ -1274,9 +1252,7 @@ function animationStarted(animation, button)
 	end
 end
 
--- ============================================
 -- GUI & BUTTON BUILDER
--- ============================================
 
 local updateDisplay 
 
@@ -1373,9 +1349,7 @@ poseBtn.MouseButton1Click:Connect(function() setActiveCategory("Pose") end)
 favoriteBtn.MouseButton1Click:Connect(function() setActiveCategory("Favorite") end)
 searchBox:GetPropertyChangedSignal("Text"):Connect(function() searchQuery = searchBox.Text updateDisplay() end)
 
--- ============================================
 -- SPEED SLIDER 
--- ============================================
 if speedSlider and speedBar and speedtext and speedButton then
 	local isDraggingSpeed = false
 	local activeInput = nil
@@ -1470,9 +1444,7 @@ if speedSlider and speedBar and speedtext and speedButton then
 	speedtext.Text = string.format("%.1fx", SPEED_DEFAULT)
 end
 
--- ============================================
 -- PRELOAD & LOAD ANIMATIONS
--- ============================================
 task.spawn(function()
 	while #emotesFolder:GetChildren() == 0 and isScriptActive do task.wait(0.1) end
 	if not isScriptActive then return end
@@ -1529,9 +1501,7 @@ task.spawn(function()
 	setActiveCategory("Dance")
 end)
 
--- ============================================
 -- ANTI-DRIFT BACKGROUND SYNC 
--- ============================================
 task.spawn(function()
 	local ANTI_DRIFT_INTERVAL = 0.35
 	local CULL_DISTANCE = 60
@@ -1701,9 +1671,7 @@ task.spawn(function()
 	end
 end)
 
--- ============================================
--- THE ZOMBIE CLEANER
--- ============================================
+-- CLEANUP
 trackConnection(player.CharacterAdded:Connect(function(newCharacter)
 	task.spawn(function()
 		local animScript = newCharacter:WaitForChild("Animate", 2)
@@ -1768,9 +1736,7 @@ script.Destroying:Connect(function()
 	end
 end)
 
--- ============================================
 -- DRAWER SLIDE & DRAG CONTROLLER (RESET ON CLOSE & DOCKED BUTTON)
--- ============================================
 local toggleBtn = gui:WaitForChild("DanceToggleButton", 5) or gui:FindFirstChild("DanceToggleButton")
 
 local oldDragDetector = mainframe:FindFirstChildOfClass("UIDragDetector")

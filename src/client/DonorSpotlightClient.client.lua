@@ -1,7 +1,4 @@
--- ============================================================
--- DonorSpotlightClient (Cinematic Camera Spotlight on Donor)
--- Optimized for Mobile: Zero Memory Leak, No Stuck Camera, Smooth Transitions
--- ============================================================
+-- DONOR SPOTLIGHT CONTROLLER
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -18,13 +15,11 @@ if not DonorSpotlightRemote then
 	return
 end
 
--- State Management (Thread & Session Safety)
 local currentSessionId = 0
 local activeTween = nil
 local activeConnections = {}
 local leaseToken = nil
 
--- Raycast params untuk deteksi dinding (mencegah kamera tembus tembok saat orbit)
 local wallRayParams = RaycastParams.new()
 wallRayParams.FilterType = Enum.RaycastFilterType.Exclude
 wallRayParams.IgnoreWater = true
@@ -45,9 +40,7 @@ local function cancelActiveTween()
 	end
 end
 
--- ============================================================
--- FAIL-SAFE RESTORE CAMERA (PASTIKAN KAMERA TIDAK PERNAH NYANGKUT)
--- ============================================================
+-- FAIL-SAFE RESTORE CAMERA
 local originalFOV = 70
 
 local function forceRestoreCamera(originalCamType)
@@ -73,7 +66,6 @@ local function forceRestoreCamera(originalCamType)
 	end
 end
 
--- Transisi halus kembali ke POV pemain sendiri (ZOOM OUT & PULL BACK)
 local function returnToPlayerPOV(originalCamType, onDone)
 	if not CameraLease:IsOwner("DonorSpotlight", leaseToken) then
 		forceRestoreCamera(originalCamType)
@@ -92,14 +84,12 @@ local function returnToPlayerPOV(originalCamType, onDone)
 	local localHum = localChar and localChar:FindFirstChildOfClass("Humanoid")
 	local localHrp = localChar and localChar:FindFirstChild("HumanoidRootPart")
 
-	-- Jika karakter pemain mati atau tidak ada, langsung pulihkan tanpa animasi
 	if not localChar or not localHum or localHum.Health <= 0 or not localHrp then
 		forceRestoreCamera(originalCamType)
 		if onDone then onDone() end
 		return
 	end
 
-	-- Hitung posisi kamera di belakang bahu/kepala pemain lokal dengan proteksi dinding
 	local lookVec = localHrp.CFrame.LookVector
 	local headPos = localHrp.Position + Vector3.new(0, 1.5, 0)
 	local returnOffset = -(lookVec * 11) + Vector3.new(0, 3.5, 0)
@@ -115,7 +105,6 @@ local function returnToPlayerPOV(originalCamType, onDone)
 
 	cancelActiveTween()
 
-	-- Buat tween ZOOM OUT & transisi pulang (0.8 detik, smooth quad out)
 	local returnTween = TweenService:Create(
 		cam,
 		TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
@@ -135,7 +124,6 @@ local function returnToPlayerPOV(originalCamType, onDone)
 
 	returnTween:Play()
 
-	-- Tunggu maksimal 0.9 detik dengan proteksi timeout agar tidak hang
 	local elapsed = 0
 	while not completed and elapsed < 0.9 do
 		local dt = RunService.RenderStepped:Wait()
@@ -144,20 +132,15 @@ local function returnToPlayerPOV(originalCamType, onDone)
 
 	if conn and conn.Connected then conn:Disconnect() end
 	cancelActiveTween()
-
-	-- Kembalikan kontrol kamera sepenuhnya ke Roblox PlayerScripts
 	forceRestoreCamera(originalCamType)
 
 	if onDone then onDone() end
 end
 
--- ============================================================
--- MAIN SPOTLIGHT SEQUENCE (CINEMATIC ZOOM-IN & ZOOM-OUT)
--- ============================================================
+-- MAIN SPOTLIGHT SEQUENCE
 local function playDonorSpotlight(donorUserId, donorDisplayName, duration)
-	duration = duration or 5 -- Total 5 detik
+	duration = duration or 5
 
-	-- Buat session ID baru untuk membatalkan animasi sebelumnya (Anti Race-Condition)
 	currentSessionId += 1
 	local sessionId = currentSessionId
 
@@ -167,14 +150,12 @@ local function playDonorSpotlight(donorUserId, donorDisplayName, duration)
 	local cam = Workspace.CurrentCamera
 	if not cam then return end
 
-	-- Simpan FOV asli pemain
 	if cam.FieldOfView and cam.FieldOfView > 30 and cam.FieldOfView < 120 then
 		originalFOV = cam.FieldOfView
 	else
 		originalFOV = 70
 	end
 
-	-- Cari pemain donor (Mendukung ID negatif di Studio dan DisplayName)
 	local donorPlayer = nil
 	if donorUserId and tonumber(donorUserId) then
 		donorPlayer = Players:GetPlayerByUserId(tonumber(donorUserId))
@@ -189,14 +170,11 @@ local function playDonorSpotlight(donorUserId, donorDisplayName, duration)
 		end
 	end
 	if not donorPlayer and #Players:GetPlayers() == 1 then
-		-- Fallback khusus Studio test play single player
 		donorPlayer = localPlayer
 	end
 
-	-- Jika donor tidak ada di server, batal
 	if not donorPlayer then return end
 
-	-- Tunggu karakter donor siap (maks 1.5 detik)
 	local donorChar = donorPlayer.Character
 	local waited = 0
 	while waited < 1.5 and (not donorChar or not donorChar:FindFirstChild("HumanoidRootPart")) do
@@ -210,20 +188,17 @@ local function playDonorSpotlight(donorUserId, donorDisplayName, duration)
 	local donorHum = donorChar:FindFirstChildOfClass("Humanoid")
 	if not donorHrp or not donorHum or donorHum.Health <= 0 then return end
 
-	-- Simpan CameraType awal (Custom / Follow dsb)
 	local originalCamType = cam.CameraType
 	if originalCamType == Enum.CameraType.Scriptable then
 		originalCamType = Enum.CameraType.Custom
 	end
 
-	-- Setup Raycast Ignore List (Karakter donor & pemain lokal diabaikan agar tidak dianggap dinding)
 	local ignoreList = { donorChar }
 	if localPlayer.Character then
 		table.insert(ignoreList, localPlayer.Character)
 	end
 	wallRayParams.FilterDescendantsInstances = ignoreList
 
-	-- Proteksi Event: Jika donor mati / leave, atau local player mati / respawn -> segera kembalikan kamera!
 	local isRunning = true
 	local function abortSpotlight()
 		if not isRunning then return end
@@ -249,18 +224,14 @@ local function playDonorSpotlight(donorUserId, donorDisplayName, duration)
 	leaseToken = CameraLease:Acquire("DonorSpotlight", 50)
 	if not leaseToken then return end
 
-	-- Alihkan kamera ke mode Scriptable
 	cam.CameraType = Enum.CameraType.Scriptable
 
 	local donorHeadPos = donorHrp.Position + Vector3.new(0, 1.4, 0)
 	local donorLook = donorHrp.CFrame.LookVector
 	local donorRight = donorHrp.CFrame.RightVector
-
-	-- Sudut Heroic Front 3/4 (Depan agak serong kanan donor, menghadap donor)
 	local frontDir = (donorLook * 0.88 + donorRight * 0.32).Unit
-
-	-- Cek apakah depan donor terhalang tembok (misal mepet dinding)
 	local testRay = Workspace:Raycast(donorHeadPos, frontDir * 9, wallRayParams)
+
 	if testRay and testRay.Distance < 5 then
 		-- Jika depan terhalang tembok, coba cek dari sudut lain yang lebih lapang
 		local backDir = (-donorLook * 0.88 + donorRight * 0.32).Unit
@@ -270,25 +241,19 @@ local function playDonorSpotlight(donorUserId, donorDisplayName, duration)
 		end
 	end
 
-	-- Jarak awal establishing (jauh) vs jarak close-up (zoom in)
 	local startDist = 13.0
 	local targetCloseDist = 6.5
 
-	-- Posisi kamera Zoom-In (fokus ke dada & wajah donor dengan sudut sedikit mendongak / hero angle)
 	local closeTargetPos = donorHeadPos + (frontDir * targetCloseDist) + Vector3.new(0, 0.4, 0)
 	local wallHitClose = Workspace:Raycast(donorHeadPos, closeTargetPos - donorHeadPos, wallRayParams)
 	if wallHitClose then
 		closeTargetPos = donorHeadPos + (closeTargetPos - donorHeadPos).Unit * math.max(3.5, wallHitClose.Distance - 0.8)
 	end
 
-	-- Target fokus kamera (titik wajah/kepala donor)
 	local focalPoint = donorHeadPos + Vector3.new(0, 0.2, 0)
 	local closeTargetCF = CFrame.new(closeTargetPos, focalPoint)
 
-	-- ============================================================
 	-- FASE 1: DYNAMIC ZOOM-IN HERO PUSH (~0.85 detik)
-	-- Kamera melesat mendekat ke donor dan FOV menegang (fokus sinematik)
-	-- ============================================================
 	cancelActiveTween()
 	local cinematicFOV = math.clamp(originalFOV - 20, 46, 54) -- Efek lensa portrait/telephoto
 
@@ -327,11 +292,7 @@ local function playDonorSpotlight(donorUserId, donorDisplayName, duration)
 		return
 	end
 
-	-- ============================================================
 	-- FASE 2: HERO SHOWCASE / SLOW CINEMATIC DRIFT (NO ROTATION!)
-	-- Kamera tetap di depan donor, melakukan slow push & subtle breathing
-	-- Durasi ~2.8 detik agar avatar donor terlihat jelas, gagah, & menonjol
-	-- ============================================================
 	local remainingDuration = math.max(1.8, duration - 1.8)
 	local elapsed = 0
 	local basePos = closeTargetPos
@@ -339,32 +300,23 @@ local function playDonorSpotlight(donorUserId, donorDisplayName, duration)
 	while isRunning and (elapsed < remainingDuration) and (sessionId == currentSessionId) do
 		if not CameraLease:IsOwner("DonorSpotlight", leaseToken) then break end
 		local dt = RunService.RenderStepped:Wait()
-		dt = math.min(dt, 0.05) -- Clamp jika HP drop FPS
+		dt = math.min(dt, 0.05)
 		elapsed += dt
 
-		-- Validasi donor masih hidup & ada
 		if not donorChar.Parent or not donorHrp.Parent or donorHum.Health <= 0 then
 			break
 		end
 
 		local currentHead = donorHrp.Position + Vector3.new(0, 1.4, 0)
 		local currentFocal = currentHead + Vector3.new(0, 0.2, 0)
-
-		-- Efek subtle breathing / steady dolly push (tanpa muter sama sekali!)
 		local progress = math.clamp(elapsed / remainingDuration, 0, 1)
-		-- Perlahan makin mendekat 0.7 stud secara halus (dolly-in slow motion)
 		local slowPush = -frontDir * (progress * 0.7)
-		-- Sentuhan floating gimbal sangat halus
 		local breathingY = Vector3.new(0, math.sin(elapsed * 2.0) * 0.12, 0)
-
 		local currentCamPos = currentHead + (frontDir * targetCloseDist) + slowPush + breathingY
 		cam.CFrame = CFrame.new(currentCamPos, currentFocal)
 	end
 
-	-- ============================================================
-	-- FASE 3: DYNAMIC ZOOM-OUT & TRANSISI PULANG KE POV PEMAIN (~0.85s)
-	-- FOV melebar kembali ke normal dan kamera pulang ke POV
-	-- ============================================================
+	-- FASE 3: DYNAMIC ZOOM-OUT & TRANSISI PULANG KE POV PEMAIN
 	if sessionId == currentSessionId then
 		returnToPlayerPOV(originalCamType, function()
 			isRunning = false
@@ -372,15 +324,12 @@ local function playDonorSpotlight(donorUserId, donorDisplayName, duration)
 	end
 end
 
--- ============================================================
 -- GLOBAL FAIL-SAFE: JIKA LOCAL PLAYER RESPAWN
--- ============================================================
 localPlayer.CharacterAdded:Connect(function()
 	currentSessionId += 1
 	forceRestoreCamera(Enum.CameraType.Custom)
 end)
 
--- Listener Remote dari Server
 DonorSpotlightRemote.OnClientEvent:Connect(function(donorUserId, donorDisplayName, duration)
 	task.spawn(function()
 		local ok, err = pcall(function()
@@ -392,4 +341,3 @@ DonorSpotlightRemote.OnClientEvent:Connect(function(donorUserId, donorDisplayNam
 		end
 	end)
 end)
-

@@ -10,9 +10,7 @@ local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):W
 -- Load Systems
 local RoleSystem = require(ServerStorage:WaitForChild("Modules"):WaitForChild("RoleSystem"))
 
--- ====================================
 -- CONFIG
--- ====================================
 local CONFIG = {
 	Debug = {
 		ENABLE_DEBUG       = false,
@@ -33,9 +31,7 @@ local CONFIG = {
 	},
 }
 
--- ====================================
 -- DEBUG HELPER
--- ====================================
 local function debugPrint(...)
 	if CONFIG.Debug.ENABLE_DEBUG and CONFIG.Debug.SHOW_SERVER_LOGS then
 		print("[UnifiedRole]", ...)
@@ -48,14 +44,10 @@ local function debugDispatch(...)
 	end
 end
 
--- ====================================
 -- DATASTORES
--- ====================================
 local _, transactionWriteStore = DataStoreEnv.Get(CONFIG.DataStores.TRANSACTION_HISTORY)
 
--- ====================================
 -- REMOTE SETUP
--- ====================================
 local giveRoleRemote = ReplicatedStorage:FindFirstChild("GiveRoleRemote")
 if not giveRoleRemote then
 	giveRoleRemote        = Instance.new("RemoteEvent")
@@ -66,45 +58,30 @@ else
 	debugPrint("Using existing GiveRoleRemote")
 end
 
--- ====================================
 -- CONSTANTS
--- ====================================
 local ADMIN_ROLES = { Owner = true, Admin = true, Moderator = true }
 
--- Valid role types yang bisa di-give lewat panel
--- "Player" berarti REMOVE role (kembalikan ke Player default)
+-- "Player" menghapus role khusus dan mengembalikan ke default.
 local VALID_ROLE_TYPES = {
 	VIP       = true,
 	Moderator = true,
 	Admin     = true,
-	Player    = true,  -- Give "Player" = hapus givenPass, kembali ke default
+	Player    = true,
 }
 
--- ====================================
 -- HELPER FUNCTIONS
--- ====================================
 local function isAdmin(player)
 	return ADMIN_ROLES[RoleSystem:GetPlayerRole(player)] == true
 end
 
--- ====================================
--- CEK PERMISSION UNTUK GIVE ROLE
--- ====================================
--- Hierarki give permission:
---   Owner     → bisa give VIP, Moderator, Admin, Player (semua)
---   Admin     → bisa give VIP, Moderator, Player
---   Moderator → bisa give VIP, Player
--- "Player" = remove givenPass dari target (downgrade ke Player default)
--- Owner TIDAK bisa di-give role apapun (protected)
+-- Hierarki: Owner > Admin > Moderator; "Player" menghapus role.
 local function canGiveRole(player, roleType)
 	local playerRole = RoleSystem:GetPlayerRole(player)
 
-	-- Owner bisa give semua (VIP, Moderator, Admin, Player)
 	if playerRole == "Owner" then
 		return true, nil
 	end
 
-	-- Admin bisa give VIP, Moderator, Player — tapi TIDAK Admin
 	if playerRole == "Admin" then
 		if roleType == "VIP" or roleType == "Moderator" or roleType == "Player" then
 			return true, nil
@@ -113,7 +90,6 @@ local function canGiveRole(player, roleType)
 		end
 	end
 
-	-- Moderator hanya bisa give VIP atau Player
 	if playerRole == "Moderator" then
 		if roleType == "VIP" or roleType == "Player" then
 			return true, nil
@@ -125,9 +101,7 @@ local function canGiveRole(player, roleType)
 	return false, "Kamu bukan admin!"
 end
 
--- ====================================
 -- DATASTORE RETRY HELPER
--- ====================================
 local function datastoreRetry(operation, maxAttempts)
 	maxAttempts = maxAttempts or CONFIG.Settings.MAX_RETRY_ATTEMPTS
 	for attempt = 1, maxAttempts do
@@ -139,7 +113,7 @@ local function datastoreRetry(operation, maxAttempts)
 end
 
 local function saveTransaction(giverUserId, targetUserId, roleType, receiptInfo)
-	-- 🔥 FIX DATASTORE COLLISION & KEY LIMIT: Gunakan GUID saja (maksimal 50 karakter)
+	-- Key transaksi unik dan pendek (maks. 50 karakter).
 	local cleanGuid = string.gsub(HttpService:GenerateGUID(false), "-", "")
 	local uniqueId = string.sub(cleanGuid, 1, 16)
 	local key = string.format("txn_%d_%s", os.time(), uniqueId)
@@ -154,11 +128,8 @@ local function saveTransaction(giverUserId, targetUserId, roleType, receiptInfo)
 	end)
 end
 
--- ====================================
 -- REMOTE EVENT HANDLER
--- ====================================
 giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
-	-- 🔥 ARCHITECT FIX: Rate Limiter Sentral
 	if not RemoteEventManager.checkRateLimit(player, "adminRoleAction") then return end
 
 	if type(requestData) ~= "table" then
@@ -172,14 +143,11 @@ giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
 	debugDispatch(string.format("Request | Player: %s | Source: %s | Action: %s",
 		player.Name, source or "nil", action or "nil"))
 
-	-- ====================================
 	-- ADMIN PANEL - GIVE ROLE
-	-- ====================================
 	if source == "AdminPanel" then
 		if action == "GiveRole" then
 			debugPrint("AdminPanel: GiveRole")
 
-			-- Verifikasi admin
 			if not isAdmin(player) then
 				giveRoleRemote:FireClient(player, {
 					source  = "AdminPanel",
@@ -189,7 +157,7 @@ giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
 				return
 			end
 
-			-- 🔥 FATAL SECURITY FIX: Cegah Type Mismatch Crash
+			-- Validasi User ID dari client.
 			local targetUserId = tonumber(requestData.targetUserId)
 			if not targetUserId then
 				giveRoleRemote:FireClient(player, {
@@ -212,7 +180,6 @@ giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
 				return
 			end
 
-			-- Validate role type
 			if not VALID_ROLE_TYPES[roleType] then
 				giveRoleRemote:FireClient(player, {
 					source  = "AdminPanel",
@@ -222,7 +189,7 @@ giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
 				return
 			end
 
-			-- Cegah give role ke Owner (hardcoded protected)
+			-- Owner tidak bisa diubah.
 			local targetCurrentRole = RoleSystem:GetPlayerRole(targetPlayer)
 			if CONFIG.Settings.PROTECTED_ROLES[targetCurrentRole] then
 				giveRoleRemote:FireClient(player, {
@@ -233,7 +200,7 @@ giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
 				return
 			end
 
-			-- Cegah bawahan menurunkan/mengubah role atasan!
+			-- Tidak boleh mengubah role setara atau lebih tinggi.
 			local playerRoleName = RoleSystem:GetPlayerRole(player)
 			local giverPriority = RoleSystem.Config.RoleHierarchy[playerRoleName] or 0
 			local targetPriority = RoleSystem.Config.RoleHierarchy[targetCurrentRole] or 0
@@ -247,7 +214,7 @@ giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
 				return
 			end
 
-			-- Cek permission giver
+			-- Cek permission pemberi role.
 			local canGive, errorMessage = canGiveRole(player, roleType)
 			if not canGive then
 				giveRoleRemote:FireClient(player, {
@@ -260,11 +227,9 @@ giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
 
 			local success, result
 
-			-- "Player" = hapus givenPass → kembalikan ke Player default
 			if roleType == "Player" then
 				success, result = RoleSystem:RemovePassFromPlayer(targetUserId)
 			else
-				-- Give VIP / Moderator / Admin
 				success, result = RoleSystem:GivePassToPlayer(targetUserId, roleType, player.UserId)
 			end
 
@@ -279,7 +244,6 @@ giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
 					successMessage = string.format("%s role diberikan ke %s", roleType, targetDisplayName)
 				end
 
-				-- Production log (always printed)
 				debugPrint(string.format("[ROLE GIVEN] %s (@%s) gave %s to %s (@%s) | UserID: %d | New role: %s",
 					player.Name, player.DisplayName,
 					roleType,
@@ -288,7 +252,6 @@ giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
 
 				debugPrint(string.format("%s gave %s to %s (now: %s)", player.Name, roleType, targetPlayer.Name, newRole))
 
-				-- Save transaction
 				saveTransaction(player.UserId, targetUserId, roleType, {
 					adminGive = true,
 					timestamp = os.time(),
@@ -300,7 +263,6 @@ giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
 					message = successMessage,
 				})
 
-				-- Beritahu target player jika sedang di server
 				pcall(function()
 					if targetPlayer and targetPlayer ~= player then
 						giveRoleRemote:FireClient(targetPlayer, {
@@ -319,13 +281,10 @@ giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
 				})
 			end
 
-		-- ====================================
 		-- REMOVE ROLE (OWNER ONLY)
-		-- ====================================
 		elseif action == "RemoveRole" then
 			debugPrint("AdminPanel: RemoveRole (Owner only)")
 
-			-- Hanya Owner yang bisa remove role via action ini
 			if RoleSystem:GetPlayerRole(player) ~= "Owner" then
 				giveRoleRemote:FireClient(player, {
 					source  = "AdminPanel",
@@ -335,7 +294,7 @@ giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
 				return
 			end
 
-			-- 🔥 FATAL SECURITY FIX: Cegah Type Mismatch Crash di RemoveRole
+			-- Validasi User ID dari client.
 			local targetUserId = tonumber(requestData.targetUserId)
 			if not targetUserId then
 				giveRoleRemote:FireClient(player, {
@@ -362,7 +321,6 @@ giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
 				local newRole = RoleSystem:GetPlayerRole(targetPlayer)
 				local successMessage = string.format("Role %s dihapus (sekarang: %s)", targetDisplayName, newRole)
 
-				-- Production log
 				debugPrint(string.format("[ROLE REMOVED] %s (@%s) removed role from %s (@%s) | New role: %s | UserID: %d",
 					player.Name, player.DisplayName,
 					targetPlayer.Name, targetPlayer.DisplayName,
@@ -393,9 +351,7 @@ giveRoleRemote.OnServerEvent:Connect(function(player, requestData)
 	end
 end)
 
--- ====================================
 -- INITIALIZATION
--- ====================================
 debugPrint("============================================================")
 debugPrint("Unified Role Handler Initialized")
 debugPrint("Config: Embedded (GiveRoleConfig module removed)")

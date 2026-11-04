@@ -22,9 +22,7 @@ function UIPlaylistManager.new(playlist, playlistTemplateFrame)
 	return self
 end
 
--- ====================================
 -- CLEAR PLAYLIST
--- ====================================
 function UIPlaylistManager:ClearPlaylist()
 	for _, child in ipairs(self.playlist:GetChildren()) do
 		if child:IsA("Frame") and child ~= self.playlistTemplateFrame then
@@ -36,9 +34,7 @@ function UIPlaylistManager:ClearPlaylist()
 	self.noResultsLabel = nil
 end
 
--- ====================================
 -- SHOW NO RESULTS MESSAGE
--- ====================================
 function UIPlaylistManager:ShowNoResults()
 	if self.noResultsLabel and self.noResultsLabel.Parent then
 		self.noResultsLabel:Destroy()
@@ -57,9 +53,7 @@ function UIPlaylistManager:ShowNoResults()
 	self.noResultsLabel = noResultLabel
 end
 
--- ====================================
 -- UPDATE PLAYLIST (TABLE VIEW)
--- ====================================
 function UIPlaylistManager:UpdatePlaylist(musicList, albumName)
 	self.currentPlaylist = musicList or {}
 	self.currentAlbumName = albumName
@@ -110,7 +104,7 @@ function UIPlaylistManager:UpdatePlaylist(musicList, albumName)
 				if now - lastAddClick < 0.3 then return end
 				lastAddClick = now
 
-				-- Visual feedback: change '+' to '✓' briefly
+				-- Visual feedback: change '+' to '' briefly
 				addBtn.Text = "✓"
 				addBtn.TextColor3 = Color3.fromRGB(46, 220, 113)
 				local stroke = addBtn:FindFirstChild("BtnStroke") or addBtn:FindFirstChildOfClass("UIStroke")
@@ -155,9 +149,7 @@ function UIPlaylistManager:UpdatePlaylist(musicList, albumName)
 	end
 end
 
--- ====================================
 -- SEARCH IN ALBUM
--- ====================================
 function UIPlaylistManager:SearchInAlbum(albumName, query)
 	if not query or query:match("^%s*$") then
 		local songs = MusicModule:GetAlbumSongs(albumName, self.favoriteSongs)
@@ -169,9 +161,7 @@ function UIPlaylistManager:SearchInAlbum(albumName, query)
 	self:UpdatePlaylist(results, albumName)
 end
 
--- ====================================
 -- FAVORITES
--- ====================================
 function UIPlaylistManager:IsMusicFavorite(musicId)
 	for _, favId in ipairs(self.favoriteSongs) do
 		if favId == musicId then
@@ -203,9 +193,7 @@ function UIPlaylistManager:UpdateFavorites(favoriteSongs)
 	end
 end
 
--- ====================================
 -- CALLBACKS
--- ====================================
 function UIPlaylistManager:OnPlay(callback)
 	self.onPlayCallback = callback
 end

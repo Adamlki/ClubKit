@@ -25,14 +25,12 @@ local characterConnections = {}
 local updateScheduled = false
 local lastUpdateTime = 0
 
-
 local function debug(...)
 	if CONFIG.DEBUG_ENABLED then
 		print("[LeaderTracker]", ...)
 	end
 end
 
--- Cleanup connections
 local function cleanupPlayerConnections(player)
 	if playerConnections[player] then
 		for _, connection in ipairs(playerConnections[player]) do
@@ -106,7 +104,7 @@ local function setupCharacterTracking(player, character)
 	cleanupCharacterConnections(character)
 	characterConnections[character] = {}
 
-	-- Listen: Syncing attribute
+	-- Pantau perubahan atribut Syncing.
 	-- Hanya listener ini yang dibutuhkan — satu-satunya trigger eksternal yang
 	-- perlu ditangkap. IsLeader & FollowerCount TIDAK didengarkan karena
 	-- updatePlayerLeaderStatus() sudah FireAllClients setelah set kedua attribute
@@ -118,7 +116,7 @@ local function setupCharacterTracking(player, character)
 	end)
 	table.insert(characterConnections[character], syncingConnection)
 
-	-- Listen: Character death
+	-- Pantau kematian karakter.
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		local diedConnection = humanoid.Died:Connect(function()
@@ -127,9 +125,7 @@ local function setupCharacterTracking(player, character)
 			-- Clear attributes (delegated ke SyncController dengan dirty-checking)
 			SyncController.clearAllSyncAttributes(character)
 
-			-- ?? NOTE: No manual cache cleanup needed (weak tables auto-cleanup!)
 
-			-- Cleanup connections
 			cleanupCharacterConnections(character)
 		end)
 		table.insert(characterConnections[character], diedConnection)
@@ -153,7 +149,6 @@ Players.PlayerAdded:Connect(function(player)
 		task.spawn(function()
 			character:WaitForChild("Humanoid")
 
-			-- ?? NOTE: No manual cache cleanup needed!
 
 			-- Clear attributes (delegated ke SyncController dengan dirty-checking)
 			SyncController.clearAllSyncAttributes(character)
@@ -170,16 +165,12 @@ Players.PlayerAdded:Connect(function(player)
 		-- Clear attributes (delegated ke SyncController dengan dirty-checking)
 		SyncController.clearAllSyncAttributes(character)
 
-		-- ?? NOTE: No manual cache cleanup needed!
 
-		-- Cleanup connections
 		cleanupCharacterConnections(character)
 	end)
 	table.insert(playerConnections[player], charRemovingConn)
 
-	-- Setup existing character
 	if player.Character then
-		-- ?? NOTE: No manual cache cleanup needed!
 
 		SyncController.clearAllSyncAttributes(player.Character)
 
@@ -192,31 +183,24 @@ end)
 Players.PlayerRemoving:Connect(function(player)
 	debug("??", player.Name, "left the game")
 
-	-- Clear attributes
 	if player.Character then
 		SyncController.clearAllSyncAttributes(player.Character)
 
 		cleanupCharacterConnections(player.Character)
 	end
 
-	-- ?? NOTE: No manual cache cleanup needed (weak tables auto-cleanup!)
+	-- Cache dibersihkan otomatis oleh weak table.
 
-	-- Notify clients
-	-- UpdateLeaderStatus:FireAllClients(player, false, 0)
-
-	-- Cleanup connections
 	cleanupPlayerConnections(player)
 
 	task.defer(immediateUpdateAll)
 end)
 
 -- Periodic update (safety net)
--- 🔥 ARCHITECT FIX: O(N) batch calculation instead of O(N²) per-player getFollowerCount
 local periodicUpdateTask = task.spawn(function()
 	while true do
 		task.wait(CONFIG.PERIODIC_CHECK_INTERVAL)
 
-		-- 1. Hitung semua follower counts dalam 1 pass O(N)
 		local followerCounts = {}
 		for _, p in ipairs(Players:GetPlayers()) do
 			if p.Character then
@@ -227,7 +211,6 @@ local periodicUpdateTask = task.spawn(function()
 			end
 		end
 
-		-- 2. Bandingkan dengan attribute saat ini, hanya update yang drift
 		for _, player in ipairs(Players:GetPlayers()) do
 			if player.Character then
 				local followerCount = followerCounts[player.Name] or 0
@@ -275,7 +258,6 @@ game:BindToClose(function()
 		cleanupPlayerConnections(player)
 	end
 
-	-- ?? NOTE: No manual cache cleanup needed (Lua GC will handle it!)
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player.Character then

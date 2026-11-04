@@ -1,6 +1,5 @@
 local module = {}
 
-
 module.Dances = {
 	["12 TO 12"] = "rbxassetid://114945156874482",
 	["2PA2"] = "rbxassetid://120654441026135",
@@ -530,7 +529,6 @@ module.Poses = {
 
 module.Emotes = module.Poses
 
-
 function module.getAnimationId(animName, category)
 	if category == "Pose" or category == "Emote" then
 		return module.Poses[animName]
@@ -538,7 +536,6 @@ function module.getAnimationId(animName, category)
 		return module.Dances[animName]
 	end
 end
-
 
 function module.getCategory(animName)
 	if module.Poses[animName] then
@@ -566,7 +563,6 @@ function module.getNamesByCategory(category)
 	return names
 end
 
-
 function module.getAllNames()
 	local names = {}
 
@@ -582,11 +578,9 @@ function module.getAllNames()
 	return names
 end
 
-
 function module.exists(animName)
 	return module.Dances[animName] ~= nil or module.Poses[animName] ~= nil
 end
-
 
 function module.getCount()
 	local count = 0

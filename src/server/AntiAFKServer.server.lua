@@ -22,9 +22,7 @@ if not antiAFKRejoinEvent then
 	antiAFKRejoinEvent.Parent = remotesFolder
 end
 
--- ============================================================
 -- MEMORYSTORE FOR SECURE SERVER-SIDE POSITION CACHING
--- ============================================================
 local afkPositionsMap = nil
 local isMemoryStoreAvailable = false
 local AFK_POSITION_TTL = 180 
@@ -85,9 +83,7 @@ local function validateCFrameComponents(comp: any): CFrame?
 	return cf
 end
 
--- ============================================================
 -- POSITION RESTORATION ON REJOIN
--- ============================================================
 local function handlePlayerJoin(player: Player)
 	local joinData = player:GetJoinData()
 	local teleportData = joinData and joinData.TeleportData
@@ -148,9 +144,7 @@ for _, p in ipairs(Players:GetPlayers()) do
 	task.spawn(handlePlayerJoin, p)
 end
 
--- ============================================================
 -- AUTO-REJOIN REQUEST HANDLER
--- ============================================================
 antiAFKRejoinEvent.OnServerEvent:Connect(function(player: Player)
 	if not RemoteEventManager.checkRateLimit(player, "antiAfkRejoin") then return end
 	print(string.format("[AntiAFKServer] 🔄 Permintaan Auto-Rejoin diterima dari %s", player.Name))

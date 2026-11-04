@@ -1,10 +1,7 @@
 --!native
 --!optimize 2
--- ============================================================
 -- CENTRALIZED ROUND-ROBIN LEADERBOARD ORCHESTRATOR
--- Mengelola giliran get/update semua kategori leaderboard & patung secara terpusat
--- Mencegah network spike, lag burst, dan DataStore error 429
--- ============================================================
+-- Menjalankan update leaderboard secara bergiliran untuk mencegah spike dan error 429.
 
 local RunService = game:GetService("RunService")
 local LeaderboardRegistry = require(script.Parent:WaitForChild("Modules"):WaitForChild("LeaderboardRegistry"))
@@ -21,9 +18,7 @@ local function debugPrint(...)
 	end
 end
 
--- ============================================================
 -- DAFTAR KATEGORI LEADERBOARD (ROUND-ROBIN QUEUE)
--- ============================================================
 local categories = {
 	{
 		name = "Robux Leaderboard (All-Time & Daily)",
@@ -63,9 +58,7 @@ local categories = {
 	},
 }
 
--- ============================================================
 -- MAIN ORCHESTRATOR THREAD
--- ============================================================
 task.spawn(function()
 	debugPrint("🚀 Inisialisasi Round-Robin Leaderboard Orchestrator...")
 

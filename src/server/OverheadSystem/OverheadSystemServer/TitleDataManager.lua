@@ -20,8 +20,7 @@ local function deserializeColor(colorData)
 end
 
 function TitleDataManager:LoadTitleData(userId)
-	-- FIX 100+ PLAYERS: Gunakan negative caching (false) agar pemain tanpa custom title
-	-- tidak memicu GetAsync berulang kali setiap siklus update leaderboard 2 menit.
+	-- Cache negatif agar pemain tanpa title tidak memicu GetAsync berulang.
 	if playerTitleCache[userId] ~= nil then
 		return playerTitleCache[userId] or nil
 	end

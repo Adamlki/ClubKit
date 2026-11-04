@@ -2,9 +2,7 @@ local RateLimiter = require(script.Parent:WaitForChild("RateLimiter"))
 
 local RemoteEventManager = {}
 
--- ============================================
 -- CONFIG: Mapping RemoteEvent Name -> Rate Limit Action
--- ============================================
 local REMOTE_ACTION_MAP = {
 	-- Remotes folder
 	["startSync"] = "startSync",
@@ -42,38 +40,29 @@ local REMOTE_ACTION_MAP = {
 	["RefreshRole"] = "giveRole",
 }
 
--- ============================================
 -- WRAPPER FUNCTIONS
--- ============================================
 
--- Wrap RemoteEvent.OnServerEvent dengan rate limiting
 function RemoteEventManager.wrapRemoteEvent(remoteEvent, actionName, callback)
 	if not remoteEvent or not remoteEvent:IsA("RemoteEvent") then
 		warn("[RemoteEventManager] Invalid RemoteEvent")
 		return
 	end
 	
-	-- Gunakan mapped action name atau nama remote
 	local rateLimitAction = actionName or REMOTE_ACTION_MAP[remoteEvent.Name] or remoteEvent.Name
 	
 	remoteEvent.OnServerEvent:Connect(function(player, ...)
-		-- Check rate limit
 		local allowed, reason = RateLimiter.check(player, rateLimitAction)
 		
 		if not allowed then
-			-- Optional: Notify player they're rate limited
-			-- warn(string.format("[RateLimit] %s rate limited for %s", player.Name, rateLimitAction))
 			return
 		end
 		
-		-- Execute callback
 		if callback then
 			callback(player, ...)
 		end
 	end)
 end
 
--- Wrap RemoteFunction.OnServerInvoke dengan rate limiting
 function RemoteEventManager.wrapRemoteFunction(remoteFunction, actionName, callback)
 	if not remoteFunction or not remoteFunction:IsA("RemoteFunction") then
 		warn("[RemoteEventManager] Invalid RemoteFunction")
@@ -83,14 +72,12 @@ function RemoteEventManager.wrapRemoteFunction(remoteFunction, actionName, callb
 	local rateLimitAction = actionName or REMOTE_ACTION_MAP[remoteFunction.Name] or remoteFunction.Name
 	
 	remoteFunction.OnServerInvoke = function(player, ...)
-		-- Check rate limit
 		local allowed, reason = RateLimiter.check(player, rateLimitAction)
 		
 		if not allowed then
 			return "rate_limited"
 		end
 		
-		-- Execute callback
 		if callback then
 			return callback(player, ...)
 		end
@@ -99,9 +86,7 @@ function RemoteEventManager.wrapRemoteFunction(remoteFunction, actionName, callb
 	end
 end
 
--- ============================================
 -- HELPER: Auto-wrap semua remotes di folder
--- ============================================
 
 function RemoteEventManager.wrapFolder(folder, callbackMap)
 	if not folder or not folder:IsA("Folder") then
@@ -126,9 +111,7 @@ function RemoteEventManager.wrapFolder(folder, callbackMap)
 	end
 end
 
--- ============================================
--- HELPER: Check tanpa wrap (untuk manual usage)
--- ============================================
+-- HELPER: Check tanpa wrap
 
 function RemoteEventManager.checkRateLimit(player, actionName)
 	return RateLimiter.check(player, actionName)
@@ -138,9 +121,7 @@ function RemoteEventManager.checkRateLimitWithInfo(player, actionName)
 	return RateLimiter.checkWithInfo(player, actionName)
 end
 
--- ============================================
 -- GETTER
--- ============================================
 
 function RemoteEventManager.getRateLimiter()
 	return RateLimiter

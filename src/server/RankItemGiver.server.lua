@@ -1,18 +1,12 @@
--- ====================================
 -- RANK ITEM GIVER SYSTEM
--- ====================================
 
 local ServerStorage = game:GetService("ServerStorage")
 local Players = game:GetService("Players")
 
--- ====================================
 -- LOAD ROLE SYSTEM MODULE
--- ====================================
 local RoleSystem = require(ServerStorage.Modules.RoleSystem)
 
--- ====================================
 -- CONFIGURATION
--- ====================================
 local itemsFolder = ServerStorage:WaitForChild("Items", 10)
 
 local function getItemTemplate(itemName)
@@ -60,9 +54,7 @@ local Config = {
 	}
 }
 
--- ====================================
 -- UTILITY FUNCTIONS
--- ====================================
 
 local function debugPrint(...)
 	if Config.DebugMode then
@@ -107,7 +99,6 @@ local function optimizeToolPhysics(tool)
 	end
 end
 
-
 local function giveItemToPlayer(player, itemConfig, playerRole)
 	if not player or not player.Backpack then return end
 	local template = getItemTemplate(itemConfig.Name)
@@ -128,8 +119,7 @@ end
 local function checkAndGiveItems(player)
 	if not player or not player.Parent then return end
 
-	-- Hitung role sekali per pemain. Sebelumnya GetPlayerRole dipanggil 7x
-	-- (satu kali untuk setiap item) sehingga berpotensi memicu 7x IsInGroup.
+	-- Ambil role sekali per pemain, bukan per item.
 	local playerRole = RoleSystem:GetPlayerRole(player)
 	local playerHierarchy = RoleSystem.Config.RoleHierarchy[playerRole] or 0
 
@@ -142,9 +132,7 @@ local function checkAndGiveItems(player)
 	end
 end
 
--- ====================================
 -- PLAYER MANAGEMENT
--- ====================================
 
 local function onPlayerAdded(player)
 	RoleSystem:InitializePlayer(player)
@@ -161,9 +149,7 @@ local function onPlayerAdded(player)
 	end)
 end
 
--- ====================================
 -- ROLE CHANGE HANDLER
--- ====================================
 
 RoleSystem.RoleChanged:Connect(function(player, oldRole, newRole)
 	debugPrint(string.format("Role changed: %s (%s -> %s)", player.Name, oldRole, newRole))
@@ -174,9 +160,7 @@ RoleSystem.RoleChanged:Connect(function(player, oldRole, newRole)
 	end)
 end)
 
--- ====================================
 -- INITIALIZATION
--- ====================================
 
 Players.PlayerAdded:Connect(onPlayerAdded)
 

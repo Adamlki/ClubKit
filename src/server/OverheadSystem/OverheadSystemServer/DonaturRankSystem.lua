@@ -3,13 +3,11 @@ local DataStoreEnv = require(ServerStorage:WaitForChild("Modules"):WaitForChild(
 
 local DonaturRankSystem = {}
 
--- ====================================
 -- STATE
--- ====================================
 local dataStore  = nil
 local dataWriteStore = nil
 local rankCache  = {}
-local loadingLocks = {} -- 🟢 BARU: Mencegah request ganda di waktu bersamaan
+local loadingLocks = {}
 
 local DEBUG = false
 
@@ -21,9 +19,7 @@ local function logWarn(...)
 	if DEBUG then warn("[DonaturRank]", ...) end
 end
 
--- ====================================
 -- INIT
--- ====================================
 function DonaturRankSystem:Init(config)
 	DEBUG    = config.DEBUG_ENABLED or false
 	local storeName = config.DONATUR_RANK_DATASTORE_NAME
@@ -31,38 +27,29 @@ function DonaturRankSystem:Init(config)
 	log("Initialized - DataStore:", storeName)
 end
 
--- ====================================
--- LOAD RANK (dari DataStore, dengan cache & lock)
--- ====================================
+-- LOAD RANK
 function DonaturRankSystem:LoadRank(userId)
-	-- 1. Cek jika sudah ada di cache
 	local cached = rankCache[userId]
 	if cached ~= nil then
 		return cached ~= false and cached or nil
 	end
 
-	-- 2. 🟢 ANTI-SPAM LOCK: Jika script lain sedang mengambil data ini, tunggu!
 	if loadingLocks[userId] then
 		local waited = 0
 		while loadingLocks[userId] and waited < 15 do
 			waited += task.wait(0.1)
 		end
 
-		-- Setelah kunci dibuka, ambil dari cache. Jika lock macet, jangan
-		-- menggantung thread overhead selamanya.
 		local reCheck = rankCache[userId]
 		return reCheck ~= false and reCheck or nil
 	end
 
-	-- Kunci request agar script lain tidak ikut-ikutan menembak DataStore
 	loadingLocks[userId] = true 
 
-	-- 3. Fetch dari DataStore
 	local success, data = pcall(function()
 		return dataStore:GetAsync(tostring(userId))
 	end)
 
-	-- Buka kunci karena data sudah didapat
 	loadingLocks[userId] = nil 
 
 	if success then
@@ -81,9 +68,7 @@ function DonaturRankSystem:LoadRank(userId)
 	end
 end
 
--- ====================================
--- GET RANK (cache-first, load jika belum)
--- ====================================
+-- GET RANK
 function DonaturRankSystem:GetRank(userId)
 	local cached = rankCache[userId]
 	if cached ~= nil then
@@ -92,9 +77,7 @@ function DonaturRankSystem:GetRank(userId)
 	return self:LoadRank(userId)
 end
 
--- ====================================
--- ASSIGN RANK (simpan ke DataStore)
--- ====================================
+-- ASSIGN RANK
 function DonaturRankSystem:AssignRank(userId, rank)
 	local success, err = pcall(function()
 		if rank then
@@ -114,37 +97,29 @@ function DonaturRankSystem:AssignRank(userId, rank)
 	end
 end
 
--- ====================================
 -- REMOVE RANK
--- ====================================
 function DonaturRankSystem:RemoveRank(userId)
 	return self:AssignRank(userId, nil)
 end
 
--- ====================================
 -- PRELOAD (saat player join, load di background)
--- ====================================
 function DonaturRankSystem:PreloadRank(userId)
 	if rankCache[userId] ~= nil then return end
 
 	task.spawn(function()
-		-- 🟢 JEDA PINTAR: Tunggu 1 hingga 2 detik agar tidak bertabrakan dengan LevelSystem
+		-- JEDA PINTAR: Tunggu 1 hingga 2 detik agar tidak bertabrakan dengan LevelSystem
 		task.wait(math.random(10, 20) / 10) 
 		self:LoadRank(userId)
 	end)
 end
 
--- ====================================
 -- CLEAR CACHE (saat player leave)
--- ====================================
 function DonaturRankSystem:ClearCache(userId)
 	rankCache[userId] = nil
 	loadingLocks[userId] = nil
 end
 
--- ====================================
 -- UPDATE CACHE LANGSUNG (tanpa DataStore)
--- ====================================
 function DonaturRankSystem:UpdateCache(userId, rank)
 	rankCache[userId] = rank or false
 end

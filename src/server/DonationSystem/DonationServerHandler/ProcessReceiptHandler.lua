@@ -4,18 +4,14 @@ local DonationConfig     = require(script.Parent.DonationConfig)
 
 local ProcessReceiptHandler = {}
 
--- ============================================
 -- STATE
--- ============================================
 local initialized        = false
 local registeredCallbacks = {}
 local processedReceipts  = {} 
 local activeProcessing   = {}
 local warnedPriceMismatch = {}
 
--- ============================================
 -- HELPER
--- ============================================
 local function debugLog(category, ...)
 	if not DonationConfig.DEBUG.ENABLED then return end
 	local show = (category == "RECEIPT" and DonationConfig.DEBUG.SHOW_RECEIPT)
@@ -39,7 +35,6 @@ local function markReceiptProcessed(purchaseId)
 	}
 end
 
--- Hapus receipt lama (lebih dari 1 jam)
 local function cleanupOldReceipts()
 	local now = os.time()
 	local cleaned = 0
@@ -54,15 +49,8 @@ local function cleanupOldReceipts()
 	end
 end
 
--- ============================================
 -- CALLBACK MANAGEMENT
--- ============================================
 
---[[
-    Daftarkan callback yang dipanggil saat pembelian diproses.
-    @param name     string    Nama unik callback
-    @param callback function  function(player, productId, amount, receiptInfo) -> bool
-]]
 function ProcessReceiptHandler:RegisterCallback(name, callback)
 	if type(name) ~= "string" or type(callback) ~= "function" then
 		warn("[RECEIPT] RegisterCallback: name harus string dan callback harus function")
@@ -90,9 +78,7 @@ function ProcessReceiptHandler:IsInitialized()
 	return initialized
 end
 
--- ============================================
 -- MAIN RECEIPT PROCESSOR
--- ============================================
 
 function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 	local userId    = receiptInfo.PlayerId
@@ -102,20 +88,17 @@ function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 	debugLog("RECEIPT", "=== New Receipt ===")
 	debugLog("RECEIPT", "UserId:", userId, "| ProductId:", productId, "| PurchaseId:", purchaseId)
 
-	-- Idempotent: jika sudah diproses, langsung grant
 	if isReceiptProcessed(purchaseId) then
 		debugLog("RECEIPT", "Duplicate receipt, returning PurchaseGranted")
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
 
-	-- Cegah Roblox menjalankan fungsi 2x jika DataStore sedang ngelag
 	if activeProcessing[purchaseId] then
 		debugLog("RECEIPT", "Receipt sedang diproses thread lain, ditunda.")
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 	activeProcessing[purchaseId] = true
 
-	-- Cari player — jika tidak ada, Roblox akan mencoba lagi nanti
 	local player = Players:GetPlayerByUserId(userId)
 	if not player then
 		debugLog("ERROR", "Player tidak ditemukan, userId:", userId)
@@ -123,10 +106,8 @@ function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
-	-- Cari harga produk dari config donasi board
 	local configuredAmount = DonationConfig.PRODUCT_PRICES[productId]
 	if not configuredAmount then
-		-- Produk non-donasi: satu-satunya jalur resmi adalah GiftSystem
 		local giftCallback = registeredCallbacks["GiftSystem"]
 		if giftCallback then
 			local ok, success = pcall(function()
@@ -144,11 +125,8 @@ function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 				activeProcessing[purchaseId] = nil
 				return Enum.ProductPurchaseDecision.NotProcessedYet
 			end
-			-- success == nil: bukan produk gift, lanjut ke penanganan unknown di bawah
 		end
 
-		-- JANGAN pernah grant tanpa reward. Tahan receipt (Roblox akan retry)
-		-- dan beri warning keras supaya config produk bisa segera diperbaiki.
 		warn("[RECEIPT] ⚠️ UNKNOWN productId:", productId,
 			"| userId:", userId,
 			"| purchaseId:", tostring(purchaseId),
@@ -157,7 +135,6 @@ function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
-	-- Nominal aktual yang dibayar player. Fallback ke harga config jika CurrencySpent tidak tersedia.
 	local spent = tonumber(receiptInfo.CurrencySpent)
 	local amount = (spent and spent > 0) and spent or configuredAmount
 
@@ -171,7 +148,6 @@ function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 
 	debugLog("RECEIPT", "Player:", player.Name, "| Amount:", amount, "Robux")
 
-	-- PRIORITAS: Jalankan DataStore pertama kali untuk Cek Idempotensi!
 	local dataStoreCallback = registeredCallbacks["SaveToDataStore"]
 	if dataStoreCallback then
 		local ok, success, isNew = pcall(function()
@@ -184,7 +160,6 @@ function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 			return Enum.ProductPurchaseDecision.NotProcessedYet
 		end
 		
-		-- Jika bukan receipt baru (sudah pernah sukses masuk DB), langsung GRANTED!
 		if isNew == false then
 			debugLog("RECEIPT", "Duplicate receipt di DataStore. Mengabaikan efek visual.")
 			markReceiptProcessed(purchaseId)
@@ -193,7 +168,6 @@ function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 		end
 	end
 
-	-- Jalankan sisa callback visual / broadcast secara aman
 	for callbackName, callback in pairs(registeredCallbacks) do
 		if callbackName == "SaveToDataStore" then continue end
 
@@ -209,17 +183,14 @@ function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 		end)
 	end
 
-	-- Tandai sudah diproses (database sudah aman tersimpan)
 	markReceiptProcessed(purchaseId)
-	activeProcessing[purchaseId] = nil -- Lepas kunci thread
+	activeProcessing[purchaseId] = nil
 
 	debugLog("RECEIPT", "Receipt selesai diproses dan diberikan PurchaseGranted")
 	return Enum.ProductPurchaseDecision.PurchaseGranted
 end
 
--- ============================================
 -- INITIALIZATION
--- ============================================
 
 function ProcessReceiptHandler:Initialize()
 	if initialized then
@@ -229,15 +200,13 @@ function ProcessReceiptHandler:Initialize()
 
 	initialized = true
 
-	-- Set satu-satunya ProcessReceipt callback
 	MarketplaceService.ProcessReceipt = function(receiptInfo)
 		return self:ProcessReceipt(receiptInfo)
 	end
 
-	-- Cleanup receipt cache secara berkala
 	task.spawn(function()
 		while true do
-			task.wait(600)  -- setiap 10 menit
+			task.wait(600)
 			cleanupOldReceipts()
 		end
 	end)

@@ -10,9 +10,7 @@ local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):W
 local GameConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("GameConfig"))
 local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 
--- ============================================
 -- SETUP REMOTE
--- ============================================
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
 
 local getPlayerInfoRF = remotes:FindFirstChild("GetPlayerInfo")
@@ -22,23 +20,16 @@ if not getPlayerInfoRF then
 	getPlayerInfoRF.Parent = remotes
 end
 
--- ============================================
 -- CONSTANTS
--- ============================================
 
--- roproxy adalah mirror publik API Roblox yang aman dipakai dari dalam game.
--- Roblox memblokir direct call ke *.roblox.com dari HttpService,
--- sehingga roproxy.com digunakan sebagai proxy pass-through.
+-- RoProxy: mirror publik API Roblox karena HttpService memblokir *.roblox.com langsung.
 local BASE_USERS   = "https://users.roproxy.com/v1/users/"
 local BASE_FRIENDS = "https://friends.roproxy.com/v1/users/"
 
--- Cache TTL dalam detik — data disimpan selama 30 menit (menghemat kuota & anti-429).
-local CACHE_TTL       = 1800
-local REQUEST_TIMEOUT = 5  -- detik maksimal menunggu request roproxy
+local CACHE_TTL       = 1800 -- 30 menit
+local REQUEST_TIMEOUT = 5    -- detik
 
--- ============================================
 -- CACHE SYSTEM
--- ============================================
 local cache = {}
 local profileLoadingLocks = {}
 local activeProfileFetches = 0
@@ -48,7 +39,7 @@ local function getCached(userId)
 	local entry = cache[userId]
 	if not entry then return nil end
 	if (os.clock() - entry.timestamp) > CACHE_TTL then
-		cache[userId] = nil  -- expired, hapus
+		cache[userId] = nil
 		return nil
 	end
 	return entry
@@ -65,9 +56,7 @@ local function setCached(userId, rawDescription, friendsCount, followersCount, f
 	}
 end
 
--- ============================================
 -- HTTP HELPER DENGAN GLOBAL PACING & CIRCUIT BREAKER
--- ============================================
 local proxyCircuitOpenUntil = 0
 local consecutiveErrors = 0
 local CIRCUIT_BREAK_DURATION = 30 -- Jeda 30 detik jika proxy down/terkena hard rate limit
@@ -80,7 +69,7 @@ local function httpGet(url)
 		return nil
 	end
 
-	-- 🛡️ GLOBAL PACING: Beri jeda minimal 150ms agar RoProxy tidak memblokir IP Roblox (HTTP 429)
+	-- GLOBAL PACING: Beri jeda minimal 150ms agar RoProxy tidak memblokir IP Roblox (HTTP 429)
 	local timeSinceLast = os.clock() - lastHttpCallTime
 	if timeSinceLast < MIN_HTTP_GAP then
 		task.wait(MIN_HTTP_GAP - timeSinceLast)
@@ -100,13 +89,11 @@ local function httpGet(url)
 			end
 		else
 			local errorStr = tostring(result)
-			-- Jika terkena rate limit (429), jangan retry agresif dan catat error
 			if string.find(errorStr, "429") or string.find(errorStr, "Too Many Requests") then
 				consecutiveErrors += 1
 				if consecutiveErrors >= 4 then
 					proxyCircuitOpenUntil = os.clock() + CIRCUIT_BREAK_DURATION
 				end
-				-- Beri jeda backoff jika 429
 				task.wait(1.5 + math.random() * 0.5)
 				break
 			elseif string.find(errorStr, "Timeout") then
@@ -129,72 +116,33 @@ local function httpGet(url)
 	return nil
 end
 
--- ============================================
 -- API FETCH FUNCTIONS
--- ============================================
 
---[[
-    Endpoint : GET users.roproxy.com/v1/users/{userId}
-    Response :
-    {
-      "description" : "Bio player",
-      "id"          : 123456,
-      "name"        : "Username",
-      "displayName" : "DisplayName",
-      "isBanned"    : false,
-      "created"     : "2015-01-01T00:00:00Z"
-    }
-    Kita ambil field "description" saja.
-]]
+-- GET users.roproxy.com/v1/users/{userId}
 local function fetchDescription(userId)
 	local data = httpGet(BASE_USERS .. userId)
 	return data and tostring(data.description or "") or ""
 end
 
---[[
-    Endpoint : GET friends.roproxy.com/v1/users/{userId}/friends/count
-    Response : { "count": 123 }
-]]
+-- GET friends.roproxy.com/v1/users/{userId}/friends/count
 local function fetchFriendsCount(userId)
 	local data = httpGet(BASE_FRIENDS .. userId .. "/friends/count")
 	return data and (data.count or 0) or 0
 end
 
---[[
-    Endpoint : GET friends.roproxy.com/v1/users/{userId}/followers/count
-    Response : { "count": 4821 }
-]]
+-- GET friends.roproxy.com/v1/users/{userId}/followers/count
 local function fetchFollowersCount(userId)
 	local data = httpGet(BASE_FRIENDS .. userId .. "/followers/count")
 	return data and (data.count or 0) or 0
 end
 
---[[
-    Endpoint : GET friends.roproxy.com/v1/users/{userId}/followings/count
-    Response : { "count": 310 }
-]]
+-- GET friends.roproxy.com/v1/users/{userId}/followings/count
 local function fetchFollowingCount(userId)
 	local data = httpGet(BASE_FRIENDS .. userId .. "/followings/count")
 	return data and (data.count or 0) or 0
 end
 
--- ============================================
--- BIO FILTER
--- ============================================
---[[
-    TextService:FilterStringAsync WAJIB dipakai sesuai Roblox ToS
-    untuk setiap string eksternal sebelum ditampilkan ke player lain.
-
-    - fromUserId  : UserId pemilik teks (userId target profil)
-    - toPlayer    : player yang akan melihat teks ini
-
-    Jika filter gagal → kembalikan string kosong (fail-safe).
-    Lebih aman menampilkan kosong daripada konten yang belum difilter.
-
-    rawBio disimpan di cache dan difilter ulang per caller karena
-    hasil filter bisa berbeda tergantung setting akun penerima
-    (misal akun di bawah 13 tahun mendapat filter lebih ketat).
-]]
+-- Filter teks wajib sesuai ToS Roblox; hasil bergantung pada penerima, jadi filter ulang per caller.
 local function filterBio(rawBio, fromUserId, toPlayer)
 	if rawBio == "" then return "" end
 
@@ -224,28 +172,7 @@ local function filterBio(rawBio, fromUserId, toPlayer)
 	return (okGet and filtered) and filtered or ""
 end
 
--- ============================================
--- MAIN FETCH FUNCTION
--- ============================================
---[[
-    fetchPlayerInfo mengambil semua data sosial secara paralel (task.spawn),
-    lalu menunggu semua selesai sebelum return.
-
-    Paralel vs Sequential:
-    - Sequential : ~3–6 detik (4 request satu per satu)
-    - Paralel    : ~0.5–1.5 detik (4 request bersamaan)
-
-    Return table:
-    {
-        description    : string  (sudah difilter TextService)
-        friendsCount   : number
-        followersCount : number
-        followingCount : number
-    }
---[[
-    Ambil grup utama (Primary Group) atau grup pertama pemain menggunakan GroupService resmi Roblox.
-    GroupService tidak menggunakan roproxy sehingga 100% cepat dan aman dari 429.
-]]
+-- Ambil grup utama; GroupService tidak lewat RoProxy sehingga bebas rate limit.
 local function fetchPrimaryGroup(userId)
 	local ok, groups = pcall(function()
 		return GroupService:GetGroupsAsync(userId)
@@ -287,6 +214,7 @@ local function cachedResponse(cached, userId, callerPlayer)
 	}
 end
 
+-- Ambil profil sosial secara paralel dengan cache, lock, dan batas konkurensi.
 local function fetchPlayerInfo(userId, callerPlayer)
 	-- Cek cache terlebih dahulu
 	local cached = getCached(userId)
@@ -315,7 +243,6 @@ local function fetchPlayerInfo(userId, callerPlayer)
 	activeProfileFetches += 1
 
 	local ok, result = pcall(function()
-		-- Fetch primary group via native GroupService (super fast & reliable)
 		local primaryGroup = fetchPrimaryGroup(userId)
 
 		local rawDescription = ""
@@ -323,7 +250,7 @@ local function fetchPlayerInfo(userId, callerPlayer)
 		local followersCount = 0
 		local followingCount = 0
 
-		-- Cek circuit breaker roproxy
+		-- Cek circuit breaker sebelum request ke RoProxy
 		if os.clock() >= proxyCircuitOpenUntil then
 			local completedTasks = 0
 			task.spawn(function()
@@ -355,7 +282,7 @@ local function fetchPlayerInfo(userId, callerPlayer)
 			end
 		end
 
-		-- Simpan ke cache agar TIDAK PERNAH request berulang kali (Anti-Lag, Anti-429)
+		-- Cache hasil agar request berikutnya tidak menyentuh RoProxy.
 		setCached(userId, rawDescription, friendsCount, followersCount, followingCount, primaryGroup)
 
 		return {
@@ -384,23 +311,15 @@ local function fetchPlayerInfo(userId, callerPlayer)
 	return result
 end
 
--- ============================================
--- ON-DEMAND FETCH ONLY (OPTIMASI 50+ PLAYERS)
--- ============================================
--- Pre-fetch otomatis saat join dinonaktifkan agar server tidak memborbardir Roproxy
--- dengan ratusan request saat 50 pemain bergabung (mencegah HTTP 429 & Timeout).
--- Data hanya di-fetch secara lazy/on-demand saat ada pemain yang membuka menu profil.
+-- Profil hanya di-fetch saat diminta agar join 50+ pemain tidak membanjiri RoProxy.
 
--- ============================================
 -- REMOTE HANDLER
--- ============================================
 getPlayerInfoRF.OnServerInvoke = function(callerPlayer, targetUserId)
-	-- 🔥 SECURITY FIX: Anti-DDoS Rate Limiter untuk Mencegah Server IP diblokir (Error 429) oleh API Roproxy
+	-- Batasi request per pemain agar IP server tidak diblokir RoProxy (429).
 	if not RemoteEventManager.checkRateLimit(callerPlayer, "getPlayerInfo") then
 		return { description = "", friendsCount = 0, followersCount = 0, followingCount = 0 }
 	end
 
-	-- Validasi input
 	if type(targetUserId) ~= "number" or targetUserId <= 0 then
 		warn("[GetPlayerInfo] UserId tidak valid:", tostring(targetUserId))
 		return { description = "", friendsCount = 0, followersCount = 0, followingCount = 0 }
@@ -421,25 +340,16 @@ getPlayerInfoRF.OnServerInvoke = function(callerPlayer, targetUserId)
 	end
 end
 
--- ============================================
--- GARBAGE COLLECTOR (ANTI RAM LEAK)
--- ============================================
--- Membersihkan data cache dari pemain OFFLINE yang tidak terjangkau oleh PlayerRemoving
+-- Bersihkan cache kedaluwarsa setiap 5 menit.
 task.spawn(function()
 	while true do
-		task.wait(300) -- Berpatroli setiap 5 menit
+		task.wait(300)
 		local now = os.clock()
-		local deletedCount = 0
-		
+
 		for uid, entry in pairs(cache) do
 			if now - entry.timestamp > CACHE_TTL then
 				cache[uid] = nil
-				deletedCount += 1
 			end
-		end
-		
-		if deletedCount > 0 then
-			-- print("[GetPlayerInfo] Garbage Collector membersihkan " .. deletedCount .. " cache offline.")
 		end
 	end
 end)

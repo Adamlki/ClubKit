@@ -1,6 +1,4 @@
--- ============================================================
 -- ServerListClient (ClubKit Server Browser Controller)
--- ============================================================
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -39,15 +37,12 @@ local isFetching = false
 local INITIAL_POSITION = UDim2.new(0.5, 0, 0.5, 0)
 mainframe.Position = INITIAL_POSITION
 
--- ============================================================
 -- POSITION RESET & CLOSE LOGIC
--- ============================================================
 mainframe:GetPropertyChangedSignal("Visible"):Connect(function()
 	if mainframe.Visible then
 		mainframe.Position = INITIAL_POSITION
 		searchBox.Text = ""
 		task.spawn(function()
-			-- Refresh servers list when opened
 			task.wait(0.05)
 			fetchAndRenderServers()
 		end)
@@ -63,9 +58,7 @@ closeBtn.MouseButton1Click:Connect(function()
 	mainframe.Visible = false
 end)
 
--- ============================================================
 -- HEADER DRAG LOGIC
--- ============================================================
 local isDragging = false
 local dragStartMouse = nil
 local dragStartFramePos = nil
@@ -107,9 +100,7 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
--- ============================================================
 -- CLEAR SPAWNED CARDS
--- ============================================================
 local function clearCards()
 	for _, card in ipairs(spawnedCards) do
 		if card and card.Parent then
@@ -119,9 +110,7 @@ local function clearCards()
 	spawnedCards = {}
 end
 
--- ============================================================
 -- RENDER SERVER CARDS
--- ============================================================
 local function renderServerCards(filterText)
 	clearCards()
 	local query = filterText and string.lower(string.gsub(filterText, "^%s*(.-)%s*$", "%1")) or ""
@@ -155,7 +144,6 @@ local function renderServerCards(filterText)
 			local bottomRow = card:FindFirstChild("BottomRow")
 			local actionBtn = card:FindFirstChild("ActionButton")
 
-			-- Server Title & Subtitle
 			if title then
 				title.Text = sData.name or "SERVER"
 				if sData.isCurrent then
@@ -169,12 +157,10 @@ local function renderServerCards(filterText)
 				subtitle.Visible = (sData.isCurrent == true)
 			end
 
-			-- Player Count
 			if playerCount then
 				playerCount.Text = "👤 " .. tostring(sData.playing or 0) .. "/" .. tostring(sData.maxPlayers or 80)
 			end
 
-			-- Meta lines
 			if metaList then
 				local loc = metaList:FindFirstChild("MetaLocation")
 				if loc then loc.Text = "Location : " .. (sData.location or "Indonesia") end
@@ -192,7 +178,6 @@ local function renderServerCards(filterText)
 				if crt then crt.Text = "Created : " .. (sData.created or os.date("%d %b %Y")) end
 			end
 
-			-- Avatars in Bottom Row
 			if bottomRow then
 				local avatarsContainer = bottomRow:FindFirstChild("Avatars")
 				if avatarsContainer then
@@ -227,7 +212,6 @@ local function renderServerCards(filterText)
 						hStroke.Parent = headshot
 					end
 
-					-- If more players than shown avatars, add +N pill
 					local extra = (sData.playing or 0) - maxShow
 					if extra > 0 then
 						local extraPill = Instance.new("TextLabel")
@@ -246,7 +230,6 @@ local function renderServerCards(filterText)
 				end
 			end
 
-			-- Action Button Styling & Interaction
 			if actionBtn then
 				if sData.status == "PLAYING" or sData.isCurrent then
 					actionBtn.BackgroundColor3 = Color3.fromRGB(38, 145, 75)
@@ -298,14 +281,11 @@ local function renderServerCards(filterText)
 	end
 end
 
--- ============================================================
 -- FETCH SERVERS FROM BACKEND
--- ============================================================
 function fetchAndRenderServers()
 	if isFetching then return end
 	isFetching = true
 
-	-- Animate refresh button
 	local rotationTween = TweenService:Create(refreshBtn, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
 		Rotation = refreshBtn.Rotation + 360
 	})
@@ -326,7 +306,6 @@ function fetchAndRenderServers()
 	end)
 end
 
--- Refresh Button Click (0.3s debounce)
 local lastRefreshServerClick = 0
 refreshBtn.MouseButton1Click:Connect(function()
 	local now = os.clock()
@@ -336,7 +315,6 @@ refreshBtn.MouseButton1Click:Connect(function()
 	fetchAndRenderServers()
 end)
 
--- Search Box Filtering (debounced; avoids rebuilding every card per keystroke)
 local searchDebounceId = 0
 searchBox:GetPropertyChangedSignal("Text"):Connect(function()
 	searchDebounceId += 1
@@ -347,7 +325,6 @@ searchBox:GetPropertyChangedSignal("Text"):Connect(function()
 	end)
 end)
 
--- Initial Load
 task.defer(function()
 	fetchAndRenderServers()
 end)

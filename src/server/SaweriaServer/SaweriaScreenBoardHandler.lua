@@ -13,9 +13,7 @@ local ServerConfig = require(ServerScriptService:WaitForChild("Config"):WaitForC
 
 local SaweriaScreenBoardHandler = {}
 
--- ============================================
 -- KONFIGURASI SAWERIA SCREEN BOARD
--- ============================================
 local CONFIG = {
 	ENABLED = true,
 	MIN_DONATION = 10000, -- minimal Rp 10.000 untuk tampil di papan (bisa disesuaikan)
@@ -26,16 +24,12 @@ local CONFIG = {
 	FADE_IN_TIME = 0.4,
 }
 
--- ============================================
 -- HELPER FORMAT RUPIAH
--- ============================================
 local function formatRupiah(num)
 	return FormatUtils.formatNumber(num, ".")
 end
 
--- ============================================
 -- REFERENSI WORKSPACE GUI
--- ============================================
 local gui = nil
 local mainframe = nil
 local displayname = nil
@@ -80,9 +74,7 @@ end
 -- Coba dapatkan di awal
 ensureElements()
 
--- ============================================
 -- ANIMASI FADE (Server-side TweenService)
--- ============================================
 local isAnimating = false
 
 local function animateUpdate(newName, newMessage, userId)
@@ -103,7 +95,6 @@ local function animateUpdate(newName, newMessage, userId)
 	end
 	isAnimating = true
 
-	-- Fade out
 	local fadeNameOut = TweenService:Create(
 		displayname,
 		TweenInfo.new(CONFIG.FADE_OUT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
@@ -131,7 +122,6 @@ local function animateUpdate(newName, newMessage, userId)
 		avatarImage.Image = newAvatarThumb
 	end
 
-	-- Fade in
 	local fadeNameIn = TweenService:Create(
 		displayname,
 		TweenInfo.new(CONFIG.FADE_IN_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
@@ -155,9 +145,7 @@ local function animateUpdate(newName, newMessage, userId)
 	isAnimating = false
 end
 
--- ============================================
 -- TEXT FILTERING (Roblox Community Standard)
--- ============================================
 local function filterMessage(message, fromUserId)
 	if not message or #message == 0 then
 		return CONFIG.DEFAULT_MESSAGE
@@ -197,9 +185,7 @@ local function filterMessage(message, fromUserId)
 	return CONFIG.DEFAULT_MESSAGE
 end
 
--- ============================================
 -- RESOLVE USER ID DARI NAMA DONATUR
--- ============================================
 local function resolveUserId(donatorName)
 	if not donatorName or donatorName == "" then return 1 end
 
@@ -233,9 +219,7 @@ local function resolveUserId(donatorName)
 	return 1
 end
 
--- ============================================
 -- MAIN MODULE
--- ============================================
 
 function SaweriaScreenBoardHandler:ShowDonationMessage(donatorName, amount, message)
 	if not CONFIG.ENABLED then return false end
@@ -270,9 +254,7 @@ function SaweriaScreenBoardHandler:ShowDonationMessage(donatorName, amount, mess
 	return true
 end
 
--- ============================================
 -- INISIALISASI DEFAULT SAAT SERVER BOOT
--- ============================================
 task.spawn(function()
 	task.wait(1.5)
 	if ensureElements() then

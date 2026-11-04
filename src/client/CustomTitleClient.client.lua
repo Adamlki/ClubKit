@@ -26,7 +26,6 @@ local redBox         = colorPickFrame:WaitForChild("Red")
 local greenBox       = colorPickFrame:WaitForChild("Green")
 local blueBox        = colorPickFrame:WaitForChild("Blue")
 
--- Instance GUI lama bernama EffectFrame; isinya preset warna, bukan animasi.
 local colorPresetFrame = mainFrame:WaitForChild("EffectFrame")
 
 local liveBanner     = mainFrame:WaitForChild("LiveBanner")
@@ -71,7 +70,7 @@ local function updateChancesUI()
 	local chanceIcon = chancesBadge:FindFirstChild("ChanceIcon")
 	if state.isUnlimited then
 		chancesText.Text = string.format("Kesempatan: Unlimited (Level %d+)", state.unlimitedThreshold)
-		chancesText.TextColor3 = Color3.fromRGB(255, 215, 0) -- Emas / Gold
+		chancesText.TextColor3 = Color3.fromRGB(255, 215, 0) -- Emas
 		if chanceIcon and chanceIcon:IsA("TextLabel") then
 			chanceIcon.Text = "👑"
 		end
@@ -166,7 +165,6 @@ closeBtn.MouseButton1Click:Connect(function()
 	mainFrame.Visible = false
 end)
 
-
 local previewDebounce = false
 local lastPreviewClick = 0
 previewBtn.MouseButton1Click:Connect(function()
@@ -224,7 +222,6 @@ if previewEndedRemote then
 	end)
 end
 
-
 local applyDebounce = false
 local lastApplyClick = 0
 applyBtn.MouseButton1Click:Connect(function()
@@ -273,9 +270,7 @@ applyBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
--- ====================================
 -- LOAD INITIAL DATA
--- ====================================
 local function loadInitialData()
 	if getCustomTitleDataRemote then
 		local ok, data = pcall(function()

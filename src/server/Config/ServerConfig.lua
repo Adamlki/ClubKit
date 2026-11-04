@@ -8,25 +8,19 @@ local PrivateConfig = require(ServerStorage:WaitForChild("Modules"):WaitForChild
 local featureConfig = PrivateConfig.Features or {}
 
 local ServerConfig = {
-	-- Feature toggles
 	Features = {
 		VIPShopEnabled = featureConfig.VIPShopEnabled ~= false, -- default ON
 		VIPGiftEnabled = featureConfig.VIPGiftEnabled == true,  -- default OFF
 		CommunityVIPEnabled = featureConfig.CommunityVIPEnabled ~= false, -- default ON
 	},
 
-	-- Access control dari PrivateConfig
 	OwnerIds = PrivateConfig.OwnerIds or {},
 	AdminIds = PrivateConfig.AdminIds or {},
 	ModeratorIds = PrivateConfig.ModeratorIds or {},
 	GroupId = PrivateConfig.GroupId or 0,
-
-	-- Gamepasses & Products
 	GamePasses = PrivateConfig.GamePasses or {},
 	GiftProducts = PrivateConfig.GiftProducts or {},
 	ActiveGamepasses = PrivateConfig.ActiveGamepasses or {},
-
-	-- API Credentials
 	SaweriaWebhookURL = PrivateConfig.SaweriaWebhookURL or "",
 
 	-- DataStores Registry
@@ -49,7 +43,6 @@ local ServerConfig = {
 	DATASTORE_RETRY_DELAY = 1,
 }
 
---- Memeriksa apakah suatu UserId adalah Owner terdaftar
 function ServerConfig.IsOwner(userId: number): boolean
 	if RunService:IsStudio() then
 		return true
@@ -62,12 +55,10 @@ function ServerConfig.IsOwner(userId: number): boolean
 	return false
 end
 
---- Mendapatkan primary Owner UserId
 function ServerConfig.GetPrimaryOwnerId(): number
 	return ServerConfig.OwnerIds[1] or 0
 end
 
---- Menghasilkan key harian untuk OrderedDataStore (UTC)
 function ServerConfig.GetDailyKey(prefix: string): string
 	return prefix .. "_" .. os.date("!%Y_%m_%d")
 end

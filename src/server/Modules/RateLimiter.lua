@@ -1,13 +1,7 @@
 local RateLimiter = {}
 
--- ============================================
 -- CONFIGURATION
--- ============================================
 local CONFIG = {
-	-- Format: { count = max_requests, window = time_window_seconds }
-	-- count = jumlah maksimal request dalam window
-	-- window = periode waktu dalam detik
-
 	-- Animation & Emotes
 	animationStart = { count = 8, window = 1 },      -- 8 animasi per detik; cukup untuk dance, jauh lebih ringan untuk 100 player
 	changeSpeed = { count = 8, window = 1 },         -- 8 speed change per detik
@@ -58,17 +52,13 @@ local CONFIG = {
 	antiAfkRejoin = { count = 1, window = 30 },
 
 	-- Default untuk remote yang tidak terdaftar
-	default = { count = 10, window = 1 }             -- 10 request per detik
+	default = { count = 10, window = 1 }
 }
 
--- ============================================
 -- STATE STORAGE
--- ============================================
-local playerRequests = {}  -- [userId][actionName] = {timestamps}
+local playerRequests = {}
 
--- ============================================
 -- HELPER FUNCTIONS
--- ============================================
 
 local function getPlayerKey(player)
 	return tostring(player.UserId)
@@ -87,11 +77,8 @@ local function cleanOldRequests(requests, window)
 	return validRequests
 end
 
--- ============================================
 -- MAIN FUNCTIONS
--- ============================================
 
--- Cek apakah player bisa melakukan action
 function RateLimiter.check(player, actionName)
 	if not player then
 		return false, "Invalid player"
@@ -100,11 +87,9 @@ function RateLimiter.check(player, actionName)
 	local playerKey = getPlayerKey(player)
 	local limit = CONFIG[actionName] or CONFIG.default
 	
-	-- 🔥 ARCHITECT FIX: Jika action tidak ada di config, gunakan key tunggal untuk mencegah Memory Exhaustion (DoS)
 	local trackActionName = CONFIG[actionName] and actionName or "default_unknown"
 	local now = os.clock()
 
-	-- Initialize player storage if not exists
 	if not playerRequests[playerKey] then
 		playerRequests[playerKey] = {}
 	end
@@ -113,7 +98,6 @@ function RateLimiter.check(player, actionName)
 		playerRequests[playerKey][trackActionName] = {}
 	end
 
-	-- Clean old requests
 	playerRequests[playerKey][trackActionName] = cleanOldRequests(
 		playerRequests[playerKey][trackActionName],
 		limit.window
@@ -121,18 +105,15 @@ function RateLimiter.check(player, actionName)
 
 	local requests = playerRequests[playerKey][trackActionName]
 
-	-- Check if limit exceeded
 	if #requests >= limit.count then
 		return false, "rate_limited"
 	end
 
-	-- Record new request
 	table.insert(requests, now)
 
 	return true, "allowed"
 end
 
--- Cek dengan informasi tambahan (untuk debugging)
 function RateLimiter.checkWithInfo(player, actionName)
 	local allowed, reason = RateLimiter.check(player, actionName)
 	local limit = CONFIG[actionName] or CONFIG.default
@@ -150,7 +131,6 @@ function RateLimiter.checkWithInfo(player, actionName)
 	}
 end
 
--- Reset limit untuk player tertentu (untuk admin)
 function RateLimiter.reset(player, actionName)
 	if not player then return end
 
@@ -165,12 +145,10 @@ function RateLimiter.reset(player, actionName)
 	end
 end
 
--- Reset semua (untuk admin)
 function RateLimiter.resetAll()
 	playerRequests = {}
 end
 
--- Get current usage untuk player
 function RateLimiter.getUsage(player, actionName)
 	if not player then return 0 end
 
@@ -190,7 +168,6 @@ function RateLimiter.getUsage(player, actionName)
 	return #playerRequests[playerKey][trackActionName], limit.count
 end
 
--- Update config (untuk admin/debug)
 function RateLimiter.setConfig(actionName, count, window)
 	CONFIG[actionName] = { count = count, window = window }
 end
@@ -207,16 +184,13 @@ function RateLimiter.getAllConfigs()
 	return copy
 end
 
--- ============================================
 -- CLEANUP
--- ============================================
 
 game:GetService("Players").PlayerRemoving:Connect(function(player)
 	local playerKey = getPlayerKey(player)
 	playerRequests[playerKey] = nil
 end)
 
--- Periodic cleanup (setiap 60 detik)
 task.spawn(function()
 	while true do
 		task.wait(60)
@@ -225,17 +199,13 @@ task.spawn(function()
 
 		for playerKey, actions in pairs(playerRequests) do
 			for actionName, requests in pairs(actions) do
-				-- 🔥 ARCHITECT FIX: Gunakan window dinamis milik config asli, bukan paksaan angka 10.
 				local limit = CONFIG[actionName] or CONFIG.default
 				actions[actionName] = cleanOldRequests(requests, limit.window)
-
-				-- Remove empty tables
 				if #actions[actionName] == 0 then
 					actions[actionName] = nil
 				end
 			end
 
-			-- Remove empty player entries
 			if next(actions) == nil then
 				playerRequests[playerKey] = nil
 			end
@@ -243,9 +213,7 @@ task.spawn(function()
 	end
 end)
 
--- ============================================
 -- DEBUG FUNCTIONS
--- ============================================
 
 RateLimiter.Debug = {
 	getStats = function()

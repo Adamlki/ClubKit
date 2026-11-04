@@ -3,9 +3,7 @@ local DataStoreEnv = require(script.Parent.Parent:WaitForChild("DataStoreEnv"))
 local MusicFavoriteManager = {}
 MusicFavoriteManager.__index = MusicFavoriteManager
 
--- ====================================
 -- CONFIGURATION
--- ====================================
 local CONFIG = {
 	DATASTORE_NAME = "MusicFavorites_v1",
 	MAX_FAVORITES = 100,
@@ -14,14 +12,10 @@ local CONFIG = {
 	CACHE_DURATION = 300, -- 5 minutes
 }
 
--- ====================================
 -- DATASTORE SETUP
--- ====================================
 local favoritesStore, favoritesWriteStore = DataStoreEnv.Get(CONFIG.DATASTORE_NAME)
 
--- ====================================
 -- INITIALIZATION
--- ====================================
 function MusicFavoriteManager.new()
 	local self = setmetatable({}, MusicFavoriteManager)
 
@@ -45,9 +39,7 @@ function MusicFavoriteManager.new()
 	return self
 end
 
--- ====================================
 -- DATASTORE OPERATIONS (WITH RETRY)
--- ====================================
 local function datastoreGetAsync(key)
 	for attempt = 1, CONFIG.RETRY_ATTEMPTS do
 		local success, result = pcall(function()
@@ -108,9 +100,7 @@ local function datastoreUpdateAsync(key, value, loadedTimestamp)
 	return false, nil
 end
 
--- ====================================
 -- LOAD PLAYER FAVORITES
--- ====================================
 function MusicFavoriteManager:LoadPlayerFavorites(userId)
 	-- Check cache first. Cache yang dirty (ada perubahan lokal) tidak boleh
 	-- ditimpa oleh hasil GetAsync yang lebih lama.
@@ -176,9 +166,7 @@ function MusicFavoriteManager:IsLoaded(userId)
 	return self.loaded[userId] == true
 end
 
--- ====================================
 -- SAVE PLAYER FAVORITES (ON LEAVE ONLY)
--- ====================================
 function MusicFavoriteManager:SavePlayerFavorites(userId)
 	local cached = self.playerFavorites[userId]
 
@@ -214,9 +202,7 @@ function MusicFavoriteManager:SavePlayerFavorites(userId)
 	return false
 end
 
--- ====================================
 -- GET PLAYER FAVORITES (FROM CACHE)
--- ====================================
 function MusicFavoriteManager:GetPlayerFavorites(userId)
 	local cached = self.playerFavorites[userId]
 	if cached then
@@ -226,9 +212,7 @@ function MusicFavoriteManager:GetPlayerFavorites(userId)
 	return {}
 end
 
--- ====================================
 -- ADD FAVORITE (IN-MEMORY ONLY)
--- ====================================
 function MusicFavoriteManager:AddFavorite(userId, musicId)
 	if not self.loaded[userId] then
 		local loaded = self:LoadPlayerFavorites(userId)
@@ -266,9 +250,7 @@ function MusicFavoriteManager:AddFavorite(userId, musicId)
 	return true, "Added to favorites"
 end
 
--- ====================================
 -- REMOVE FAVORITE (IN-MEMORY ONLY)
--- ====================================
 function MusicFavoriteManager:RemoveFavorite(userId, musicId)
 	if not self.loaded[userId] then
 		local loaded = self:LoadPlayerFavorites(userId)
@@ -305,9 +287,7 @@ function MusicFavoriteManager:RemoveFavorite(userId, musicId)
 	return true, "Removed from favorites"
 end
 
--- ====================================
 -- TOGGLE FAVORITE
--- ====================================
 function MusicFavoriteManager:ToggleFavorite(userId, musicId)
 	local favorites = self:GetPlayerFavorites(userId)
 
@@ -323,9 +303,7 @@ function MusicFavoriteManager:ToggleFavorite(userId, musicId)
 	return self:AddFavorite(userId, musicId)
 end
 
--- ====================================
 -- IS FAVORITE
--- ====================================
 function MusicFavoriteManager:IsFavorite(userId, musicId)
 	local favorites = self:GetPlayerFavorites(userId)
 
@@ -338,17 +316,13 @@ function MusicFavoriteManager:IsFavorite(userId, musicId)
 	return false
 end
 
--- ====================================
 -- GET FAVORITE COUNT
--- ====================================
 function MusicFavoriteManager:GetFavoriteCount(userId)
 	local favorites = self:GetPlayerFavorites(userId)
 	return #favorites
 end
 
--- ====================================
 -- CLEAR ALL FAVORITES
--- ====================================
 function MusicFavoriteManager:ClearAllFavorites(userId)
 	local success = self:SavePlayerFavoritesImmediate(userId, {})
 
@@ -384,16 +358,12 @@ function MusicFavoriteManager:SavePlayerFavoritesImmediate(userId, favorites)
 	return false
 end
 
--- ====================================
 -- INVALIDATE CACHE
--- ====================================
 function MusicFavoriteManager:InvalidateCache(userId)
 	self.playerFavorites[userId] = nil
 end
 
--- ====================================
 -- CLEANUP PLAYER DATA (SAVE ON LEAVE)
--- ====================================
 function MusicFavoriteManager:CleanupPlayer(userId)
 	-- Jangan hapus cache sebelum save benar-benar sukses. Jika DataStore
 	-- sedang sibuk, retry beberapa kali agar favorites tidak hilang.
@@ -424,9 +394,7 @@ function MusicFavoriteManager:CleanupPlayer(userId)
 	finalize(1)
 end
 
--- ====================================
 -- GET STATISTICS
--- ====================================
 function MusicFavoriteManager:GetStats()
 	local stats = {
 		cachedPlayers = 0,

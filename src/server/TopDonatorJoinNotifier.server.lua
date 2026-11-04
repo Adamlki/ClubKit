@@ -1,7 +1,5 @@
--- ========================================================
--- ⚙️ PENGATURAN (SETTINGS) - UBAH BEBAS DI SINI
--- ========================================================
-local DEBUG_ENABLED = false -- 🟢 UBAH KE 'true' JIKA INGIN MELIHAT LOG DI CONSOLE
+-- PENGATURAN
+local DEBUG_ENABLED = false -- true untuk melihat log di console
 
 local SETTINGS = {
 	BatasTopRobux   = 10, -- Tampilkan notif untuk Top X donatur Robux
@@ -15,18 +13,14 @@ local SETTINGS = {
 	RemoteEventName = "SultanJoinNotifEvent"
 }
 
--- ========================================================
--- 🛠️ FUNGSI DEBUG KUSTOM (ANTI-SPAM LOG)
--- ========================================================
+-- FUNGSI DEBUG
 local function debugLog(...)
 	if DEBUG_ENABLED then
 		print("[DEBUG NOTIF SERVER]", ...)
 	end
 end
 
--- ========================================================
--- 🚀 SISTEM & FUNGSI UTAMA (DI BAWAH SINI)
--- ========================================================
+-- SISTEM UTAMA
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
@@ -41,8 +35,7 @@ if not NotifEvent then
 	NotifEvent.Parent = ReplicatedStorage
 end
 
--- 2. Gunakan cache terpusat dari LeaderboardRegistry (LeaderboardOrchestrator)
--- FIX QUOTA DATASTORE: Mencegah pembuatan instance DonationLeaderboard ke-2 yang memicu GetSortedAsync ganda
+-- 2. Gunakan cache terpusat dari LeaderboardRegistry agar tidak membuat leaderboard kedua.
 local fallbackRobuxBoard = nil
 
 local function getRobuxRank(userId)
@@ -112,14 +105,12 @@ local function getSaweriaRank(playerName, displayName)
 	return nil
 end
 
--- ========================================================
--- 📡 EVENT KETIKA PLAYER JOIN
--- ========================================================
+-- EVENT KETIKA PLAYER JOIN
 local function onPlayerJoin(player)
 	debugLog("👤 Player Join:", player.Name)
 	task.wait(math.random(3, 12)) -- Tunggu player load
 
-	-- 🔥 UX FIX: Mencegah Notifikasi "Hantu" jika player langsung keluar
+	-- Pastikan player masih ada sebelum memberi notifikasi.
 	if not player or not player.Parent then return end
 
 	debugLog("🔍 Mulai mengecek Rank untuk:", player.DisplayName)

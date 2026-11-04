@@ -1,10 +1,7 @@
 --!native
 --!optimize 2
--- ==============================================================================
--- GLOBAL ANTI-COLLISION SYSTEM (ZERO-LAG ARCHITECTURE)
--- Mengatur CollisionGroup AllPlayers agar pemain tidak saling bertabrakan
--- Menggunakan Singleton Guard & Fast-Filter Property Checking
--- ==============================================================================
+-- GLOBAL ANTI-COLLISION SYSTEM
+-- Mengatur CollisionGroup AllPlayers agar pemain tidak saling bertabrakan.
 
 local ScriptOnce = require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("ScriptOnce"))
 if not ScriptOnce.Claim("GlobalAntiCollision") then return end

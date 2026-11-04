@@ -4,9 +4,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 
--- ============================================================
 -- KONFIGURASI
--- ============================================================
 local IDLE_THRESHOLD_SECONDS = 18 * 60 -- 18 Menit (1080 detik)
 
 local lastActivityTime = os.clock()
@@ -26,16 +24,12 @@ if playerGui then
 	end
 end
 
--- ============================================================
 -- RESET AKTIVITAS
--- ============================================================
 local function resetActivity()
 	lastActivityTime = os.clock()
 end
 
--- ============================================================
 -- EKSEKUSI REJOIN OTOMATIS
--- ============================================================
 local function executeRejoin()
 	if isRejoining then return end
 	isRejoining = true
@@ -49,7 +43,6 @@ local function executeRejoin()
 
 	if antiAFKRejoinEvent then
 		antiAFKRejoinEvent:FireServer()
-		-- ANTI-STUCK: lepas latch jika teleport gagal / simulasi Studio, supaya sistem bisa coba lagi
 		task.delay(90, function()
 			if isRejoining and player.Parent then
 				isRejoining = false
@@ -60,9 +53,7 @@ local function executeRejoin()
 	end
 end
 
--- ============================================================
 -- DETEKSI INPUT AKTIVITAS FISIK PEMAIN
--- ============================================================
 UserInputService.InputBegan:Connect(function()
 	if not isRejoining then
 		resetActivity()
@@ -83,9 +74,7 @@ player.Idled:Connect(function(timeIdled)
 	end
 end)
 
--- ============================================================
--- HEARTBEAT PENGECEKAN IDLE (Setiap 2 detik)
--- ============================================================
+-- HEARTBEAT PENGECEKAN IDLE
 task.spawn(function()
 	while true do
 		task.wait(2)
@@ -99,9 +88,7 @@ task.spawn(function()
 	end
 end)
 
--- ============================================================
 -- TESTING TRIGGER (Developer)
--- ============================================================
 player:GetAttributeChangedSignal("TestAFK"):Connect(function()
 	if player:GetAttribute("TestAFK") == true then
 		player:SetAttribute("TestAFK", nil)

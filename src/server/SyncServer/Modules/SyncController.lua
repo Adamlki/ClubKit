@@ -20,16 +20,12 @@ end
 
 local module = {}
 
--- ============================================
 -- CONFIG
--- ============================================
 local FADE_OUT = 0.1
 local MAX_SYNC_DEPTH = 10
 local DANCE_WALK_SPEED = 5 
 
--- ============================================
--- 🔥 NETWORK FIX: Dirty-Checked SetAttribute
--- ============================================
+-- Set attribute hanya jika nilainya berubah untuk menghemat replikasi.
 local function safeSetAttr(obj, key, value)
 	if obj:GetAttribute(key) ~= value then
 		obj:SetAttribute(key, value)
@@ -48,23 +44,17 @@ function module.clearAllSyncAttributes(character)
 	safeSetAttr(character, "SpamNonce", nil)
 end
 
--- ============================================
-
 local function waitForCharacterReady(player, timeout)
 	if AnimatorUtils.isCharacterReady(player) then return true end
 
-	-- Pengecekan aman tanpa memakan banyak thread CPU server
 	local waited = 0
 	while waited < (timeout or 5) do
 		if AnimatorUtils.isCharacterReady(player) then return true end
-		waited += task.wait(0.2) -- ✅ Dilonggarkan jadi 0.2
+		waited += task.wait(0.2)
 	end
 	return false
 end
 
--- ============================================
--- Core Logic
--- ============================================
 function module.getSyncSource(player, depth, visitedPlayers)
 	depth = depth or 0
 	visitedPlayers = visitedPlayers or {}
@@ -125,26 +115,19 @@ function module.updateLeaderStatus(player)
 	end
 end
 
--- ============================================
--- 🔥 ARCHITECT FIX: O(N) SYSTEM (0% LAG CPU)
--- Memangkas 10.000 perhitungan menjadi cuma 200!
--- ============================================
+-- Hitung follower sekali untuk semua leader (O(N)).
 function module.updateAllLeaderStatus()
-	-- 1. Buat memori sementara (Dictionary Cache)
 	local followerCounts = {}
 
-	-- 2. Baca seluruh data server HANYA 1 KALI 
 	for _, p in ipairs(Players:GetPlayers()) do
 		if p.Character then
 			local target = p.Character:GetAttribute("Syncing")
 			if target and target ~= "" then
-				-- Tambahkan hitungan untuk leader tersebut
 				followerCounts[target] = (followerCounts[target] or 0) + 1
 			end
 		end
 	end
 
-	-- 3. Terapkan hasilnya ke semua player HANYA 1 KALI
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player.Character then
 			local count = followerCounts[player.Name] or 0
@@ -166,8 +149,6 @@ function module.stopAllFollowers(leaderPlayer, loadedAnimations)
 	for _, follower in ipairs(Players:GetPlayers()) do
 		if follower ~= leaderPlayer and follower.Character then
 			if follower.Character:GetAttribute("Syncing") == leaderName then
-				local animator = AnimatorUtils.getAnimator(follower)
-				--if animator then pcall(AnimatorUtils.stopAllDances, animator, loadedAnimations, FADE_OUT) end
 				stoppedCount += 1
 			end
 		end
@@ -179,7 +160,7 @@ function module.forceUnsyncAllFollowers(leaderPlayer, loadedAnimations)
 	if not leaderPlayer then return end
 	local leaderName = leaderPlayer.Name
 
-	task.spawn(function() -- ✅ BUNGKUS DI LUAR LOOP
+	task.spawn(function()
 		for _, follower in ipairs(Players:GetPlayers()) do
 			if follower ~= leaderPlayer and follower.Character then
 				if follower.Character:GetAttribute("Syncing") == leaderName then
@@ -194,11 +175,6 @@ function module.forceUnsyncAllFollowers(leaderPlayer, loadedAnimations)
 end
 
 function module.unsyncPlayer(player, loadedAnimations)
-	local animator = AnimatorUtils.getAnimator(player)
-	if animator then
-		--pcall(AnimatorUtils.stopAllDances, animator, loadedAnimations, FADE_OUT)
-		-- HAPUS: task.wait(FADE_OUT)
-	end
 	if player.Character then
 		safeSetAttr(player.Character, "Syncing", nil)
 		safeSetAttr(player.Character, "CurrentDanceID", nil)
@@ -208,10 +184,7 @@ function module.unsyncPlayer(player, loadedAnimations)
 	for _, otherPlayer in ipairs(Players:GetPlayers()) do
 		if otherPlayer ~= player and otherPlayer.Character then
 			if otherPlayer.Character:GetAttribute("Syncing") == playerName then
-				local oa = AnimatorUtils.getAnimator(otherPlayer)
-				if oa then --pcall(AnimatorUtils.stopAllDances, oa, loadedAnimations, FADE_OUT)
-				end
-				otherPlayer.Character:SetAttribute("Syncing", nil) -- Tetap direct karena memang harus berubah
+				otherPlayer.Character:SetAttribute("Syncing", nil)
 			end
 		end
 	end
@@ -233,15 +206,13 @@ function module.wouldCreateCircular(player, targetPlayer)
 	return false
 end
 
--- ============================================
 -- Handle Sync Request
--- ============================================
 function module.handleSyncRequest(player, targetPlayer, condition, loadedAnimations)
 	if not targetPlayer or typeof(targetPlayer) ~= "Instance" or not targetPlayer:IsA("Player") then return end
 	if not waitForCharacterReady(player, 3) then return end
 	if condition and not waitForCharacterReady(targetPlayer, 3) then return end
 
-	-- 🔥 VALIDASI ASINKRON: Pastikan kedua player belum keluar server saat Yielding 3 detik
+	-- Pastikan kedua player masih ada setelah yield.
 	if not player or not player.Parent or not targetPlayer or not targetPlayer.Parent then return end
 	
 	local char = player.Character
@@ -287,8 +258,7 @@ function module.handleSyncRequest(player, targetPlayer, condition, loadedAnimati
 			local oldTargetName = player.Character and player.Character:GetAttribute("Syncing")
 
 			if player.Character then
-				-- FIX 100+ PLAYERS SYNC DANCE: Bersihkan CurrentDanceID/DanceStartTime/DanceSpeed pada Follower
-				-- agar Single Source of Truth selalu dibaca langsung dari karakter Leader saat Leader ganti dance/speed!
+				-- Follower membaca state dance langsung dari leader.
 				safeSetAttr(player.Character, "CurrentDanceID", nil)
 				safeSetAttr(player.Character, "DanceStartTime", nil)
 				safeSetAttr(player.Character, "DanceSpeed", nil)
@@ -324,4 +294,3 @@ function module.handleSyncRequest(player, targetPlayer, condition, loadedAnimati
 end
 
 return module
-

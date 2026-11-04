@@ -2,7 +2,6 @@ local NametagDisabler = {}
 local nametagConnections = {}
 
 function NametagDisabler:Init()
-	-- Module initialized
 end
 
 function NametagDisabler:DisableNametag(player, character)

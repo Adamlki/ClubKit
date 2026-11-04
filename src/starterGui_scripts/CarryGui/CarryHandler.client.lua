@@ -1,4 +1,4 @@
--- CarryHandler.lua (LocalScript)
+-- CARRY GUI CONTROLLER
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -32,7 +32,7 @@ if not gui then
 	return
 end
 
--- UI Elements
+-- UI ELEMENTS
 local mainFrame         = gui:WaitForChild("MainFrame")
 local notificationFrame = gui:WaitForChild("NotificationFrame")
 local getDownBtn        = gui:WaitForChild("GetDownBtn")
@@ -53,9 +53,7 @@ local pasakalBtn        = mainFrame:FindFirstChild("PasakalStyle", true)
 local piggyBackBtn      = mainFrame:FindFirstChild("PiggyBackStyle", true)
 local piggyUpperBackBtn = mainFrame:FindFirstChild("PiggyUpperBackStyle", true)
 
--- ============================================
--- BUTTON HOVER TWEENS (MODERN UI FEEL)
--- ============================================
+-- BUTTON HOVER TWEENS
 local function setupHover(btn, normalBg, hoverBg, normalStroke, hoverStroke)
 	if not btn then return end
 	local stroke = btn:FindFirstChildOfClass("UIStroke")
@@ -73,7 +71,6 @@ local function setupHover(btn, normalBg, hoverBg, normalStroke, hoverStroke)
 	end)
 end
 
--- Setup style buttons hover
 local styleButtons = { bridalBtn, coupleHugBtn, pasakalBtn, piggyBackBtn, piggyUpperBackBtn }
 for _, btn in ipairs(styleButtons) do
 	setupHover(btn, 
@@ -84,7 +81,6 @@ for _, btn in ipairs(styleButtons) do
 	)
 end
 
--- Close button hover
 if closeBtn then
 	setupHover(closeBtn,
 		Color3.fromRGB(28, 28, 34),
@@ -111,10 +107,8 @@ setupHover(rejectBtn,
 	Color3.fromRGB(255, 110, 110)
 )
 
--- GetDownBtn: default neutral styling, no hover color change
--- ============================================
+-- GetDownBtn memakai styling netral tanpa hover.
 -- STATE
--- ============================================
 local currentState      = "idle"
 local selectedTarget    = nil
 local pendingCarrier    = nil
@@ -124,16 +118,14 @@ local currentAnimTracks = {}
 local loadedAnimationsCache = {}
 local styleTimeoutToken = 0
 
--- ============================================
 -- HELPER FUNCTIONS
--- ============================================
 local function getHumanoid()
 	local char = player.Character
 	return char and char:FindFirstChildOfClass("Humanoid")
 end
 
 local function stopAllAnimations()
-	-- FIX MEMORY LEAK: Hentikan dan Destroy AnimationTrack agar tidak menumpuk di Animator
+	-- Hentikan dan destroy track agar tidak menumpuk di Animator.
 	for _, track in pairs(currentAnimTracks) do
 		if track then
 			pcall(function()
@@ -193,9 +185,7 @@ local function cleanupState()
 	stopAllAnimations()
 end
 
--- ============================================
 -- UI FLOW CONTROLLERS
--- ============================================
 local function showStyleSelection(target)
 	if not target or not target:IsA("Player") then return end
 	if not mainFrame or not mainFrame.Parent then return end
@@ -270,9 +260,7 @@ local function hideGetDownButton()
 	end
 end
 
--- ============================================
 -- STYLE BUTTON HANDLERS
--- ============================================
 local function handleStyleSelection(styleName)
 	if currentState ~= "selecting_style" or not selectedTarget then return end
 	if not CarryConfig.isValidStyle(styleName) then return end
@@ -294,9 +282,7 @@ if pasakalBtn then pasakalBtn.MouseButton1Click:Connect(function() handleStyleSe
 if piggyBackBtn then piggyBackBtn.MouseButton1Click:Connect(function() handleStyleSelection("piggyback") end) end
 if piggyUpperBackBtn then piggyUpperBackBtn.MouseButton1Click:Connect(function() handleStyleSelection("piggyupperback") end) end
 
--- ============================================
 -- NOTIFICATION BUTTON HANDLERS
--- ============================================
 acceptBtn.MouseButton1Click:Connect(function()
 	if currentState ~= "pending_response" or not pendingCarrier then return end
 
@@ -315,9 +301,7 @@ rejectBtn.MouseButton1Click:Connect(function()
 	ResponseRemote:FireServer({ cmd = "RejectCarry" })
 end)
 
--- ============================================
 -- GET DOWN BUTTON HANDLER
--- ============================================
 getDownBtn.MouseButton1Click:Connect(function()
 	if currentState ~= "being_carried" and currentState ~= "carrying" then return end
 
@@ -327,9 +311,7 @@ getDownBtn.MouseButton1Click:Connect(function()
 	currentState = "idle"
 end)
 
--- ============================================
 -- REMOTE EVENT HANDLERS
--- ============================================
 RequestRemote.OnClientEvent:Connect(function(data)
 	if not data or type(data) ~= "table" then return end
 
@@ -385,9 +367,7 @@ EndRemote.OnClientEvent:Connect(function(data)
 	end
 end)
 
--- ============================================
 -- CONTEXT MENU INTEGRATION
--- ============================================
 local carryEventConnection = nil
 
 local function setupCarryEventListener()
@@ -428,9 +408,7 @@ end
 
 carryEventConnection = setupCarryEventListener()
 
--- ============================================
 -- RESPAWN HANDLING
--- ============================================
 player.CharacterAdded:Connect(function()
 	hideAllFrames()
 	cleanupState()
@@ -453,9 +431,7 @@ player.CharacterAdded:Connect(function()
 	carryEventConnection = setupCarryEventListener()
 end)
 
--- ============================================
 -- CLEANUP ON LEAVE
--- ============================================
 Players.PlayerRemoving:Connect(function(leavingPlayer)
 	if leavingPlayer == player then
 		if carryEventConnection then carryEventConnection:Disconnect() end
@@ -479,8 +455,6 @@ Players.PlayerRemoving:Connect(function(leavingPlayer)
 	end
 end)
 
--- ============================================
 -- INITIALIZATION
--- ============================================
 hideAllFrames()
 CarryConfig.debugPrint("UI", "Carry UI Initialized")

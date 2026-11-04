@@ -3,12 +3,9 @@ local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChil
 
 local MessageConfig = {}
 
--- ====================================
 -- ACCESS CONFIGURATION
--- ====================================
 MessageConfig.Access = {
-	-- Role minimum yang boleh mengirim broadcast
-	MinimumRole = "Moderator",
+	MinimumRole = "Moderator", -- Role minimum yang boleh mengirim broadcast
 
 	-- Hierarki role (semakin besar angka = semakin tinggi)
 	RoleHierarchy = {
@@ -20,11 +17,7 @@ MessageConfig.Access = {
 	}
 }
 
--- ====================================
 -- TIMER CONFIGURATION
--- Per-role cooldown sebelum bisa broadcast lagi.
--- Owner, Admin, Moderator = 0 (tidak ada cooldown)
--- ====================================
 MessageConfig.Timer = {
 	Durations = {
 		Owner     = 0,
@@ -33,14 +26,10 @@ MessageConfig.Timer = {
 		VIP       = 120,  -- VIP harus tunggu 120 detik
 		Player    = 360
 	},
-
-	-- Tampilkan notifikasi sisa waktu ke pengirim
-	ShowNotification = true
+	ShowNotification = true -- Tampilkan notifikasi sisa waktu ke pengirim
 }
 
--- ====================================
 -- ROLE DISPLAY CONFIGURATION
--- ====================================
 MessageConfig.RoleDisplay = {
 	Owner = {
 		Text  = "Owner",
@@ -64,22 +53,16 @@ MessageConfig.RoleDisplay = {
 	}
 }
 
--- ====================================
 -- MESSAGE VALIDATION
--- ====================================
 MessageConfig.Validation = {
 	MinLength          = 1,
 	MaxLength          = 200,
 	Cooldown           = 3,   -- detik antar pesan umum
 	MaxMessagesPerMin  = 10,
-
-	-- Selalu aktif — wajib per aturan Roblox
 	EnableFilter       = true
 }
 
--- ====================================
 -- NOTIFICATION CONFIGURATION (Client)
--- ====================================
 MessageConfig.Notification = {
 	Duration   = 8,
 	MaxVisible = 4,
@@ -96,9 +79,7 @@ MessageConfig.Notification = {
 	}
 }
 
--- ====================================
 -- UI CONFIGURATION
--- ====================================
 MessageConfig.UI = {
 	Icon = {
 		Image = AssetConfig.Images.AdminNotification,

@@ -8,9 +8,7 @@ local replicatedStorage = game:GetService("ReplicatedStorage")
 local Events = replicatedStorage:WaitForChild("Remotes")
 local updateFavoritedAnimationsEvent = Events:WaitForChild("updateFavoritedAnimationsEvent")
 
--- ============================================
 -- HELPER: set/get data StringValue
--- ============================================
 local function getSavedData(player)
 	local stringVal = player:FindFirstChild("SavedFavoritedAnimations")
 	return stringVal and stringVal.Value or nil
@@ -26,9 +24,7 @@ local function setSavedData(player, data)
 	stringVal.Value = data
 end
 
--- ============================================
 -- DIRTY TRACKING & ACTIVE SAVES LOCK (ANTI-RACE CONDITION KELUAR-MASUK)
--- ============================================
 local isDirty = {}
 local activeSaves = {}
 
@@ -62,9 +58,7 @@ local function savePlayerData(player, snapshotData)
 	end
 end
 
--- ============================================
 -- PLAYER ADDED: Staggered Load agar 100 pemain masuk barengan tidak membebani DataStore detik ke-0
--- ============================================
 Players.PlayerAdded:Connect(function(player)
 	-- Beri jeda acak 2-6 detik agar kuota detik pertama fokus ke Role & Level
 	task.wait(math.random(20, 60) / 10)
@@ -104,9 +98,7 @@ Players.PlayerAdded:Connect(function(player)
 	end
 end)
 
--- ============================================
 -- PLAYER REMOVING: Save data ke DataStore
--- ============================================
 local lastUpdate = {}
 
 Players.PlayerRemoving:Connect(function(player)
@@ -115,9 +107,7 @@ Players.PlayerRemoving:Connect(function(player)
 	savePlayerData(player, snapshot)
 end)
 
--- ============================================
 -- BindToClose sebagai backup saat Server Shutdown
--- ============================================
 game:BindToClose(function()
 	local playerList = Players:GetPlayers()
 	local totalPlayers = #playerList
@@ -141,9 +131,7 @@ game:BindToClose(function()
 	end
 end)
 
--- ============================================
 -- UPDATE FAVORITES dari client
--- ============================================
 updateFavoritedAnimationsEvent.OnServerEvent:Connect(function(player, jsonData)
 	local now = os.clock()
 	if lastUpdate[player] and (now - lastUpdate[player]) < 2 then

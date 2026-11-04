@@ -23,25 +23,19 @@ function MusicPlayerManager.new(config, managers, dispatcher)
 	return self
 end
 
--- ====================================
 -- PLAYER VALIDATION (SIMPLE)
--- ====================================
 local function validatePlayer(player)
 	return player and player:IsDescendantOf(Players)
 end
 
--- ====================================
 -- PLAYER ADDED
--- ====================================
 function MusicPlayerManager:OnPlayerAdded(player)
 	RoleSystem:InitializePlayer(player)
 
-	-- Load favorites SEBELUM SyncToPlayer. Sebelumnya load ditunda 5-12 detik
-	-- sehingga sync pertama selalu mengirim daftar kosong; jika pemain menekan
-	-- Favorite sebelum load selesai, daftar lama bisa tertimpa.
+	-- Load favorit sebelum sync agar daftar tidak tertimpa.
 	self.favoriteManager:LoadPlayerFavorites(player.UserId)
 
-	-- Jika load gagal, coba ulang di background dan kirim hasilnya setelah sukses.
+	-- Retry di background jika load gagal.
 	task.spawn(function()
 		for _ = 1, 3 do
 			if self.favoriteManager:IsLoaded(player.UserId) then break end
@@ -85,9 +79,7 @@ function MusicPlayerManager:OnPlayerAdded(player)
 	self:SetupAdminCommands(player)
 end
 
--- ====================================
 -- PLAYER REMOVING
--- ====================================
 function MusicPlayerManager:OnPlayerRemoving(player)
 	local userId = player.UserId
 
@@ -109,15 +101,13 @@ function MusicPlayerManager:OnPlayerRemoving(player)
 	self.favoriteManager:CleanupPlayer(userId)
 	self.cooldownService:CleanupPlayer(userId)
 
-	-- FIX KELUAR BARENGAN 100 PEMAIN: Hanya broadcast SyncQueueOnly ke semua klien jika pemain yang keluar memang punya lagu di antrean!
+	-- Broadcast queue hanya jika ada lagu yang benar-benar dihapus.
 	if removedSongs and removedSongs > 0 then
 		self.dispatcher:SyncQueueOnly()
 	end
 end
 
--- ====================================
 -- ADMIN COMMANDS
--- ====================================
 function MusicPlayerManager:SetupAdminCommands(player)
 	player.Chatted:Connect(function(message)
 		local role = RoleSystem:GetPlayerRole(player)
@@ -139,9 +129,7 @@ function MusicPlayerManager:SetupAdminCommands(player)
 	end)
 end
 
--- ====================================
 -- RETRY PLAYER (UI SYNC ONLY - NO AUDIO RELOAD)
--- ====================================
 function MusicPlayerManager:HandleRetryPlayer(player, targetName)
 	local targetPlayer = self:FindPlayerByName(targetName)
 
@@ -161,9 +149,7 @@ function MusicPlayerManager:HandleRetryPlayer(player, targetName)
 	end)
 end
 
--- ====================================
 -- RETRY ALL (UI SYNC ONLY - NO AUDIO RELOAD)
--- ====================================
 function MusicPlayerManager:HandleRetryAll(player)
 	local playerCount = #Players:GetPlayers()
 
@@ -178,9 +164,7 @@ function MusicPlayerManager:HandleRetryAll(player)
 	end)
 end
 
--- ====================================
 -- UTILITY: FIND PLAYER BY NAME
--- ====================================
 function MusicPlayerManager:FindPlayerByName(targetName)
 	local targetPlayer = nil
 	local matches = {}

@@ -1,6 +1,4 @@
--- ============================================================
 -- CUSTOM TITLE SERVER (PLAYER SELF-CUSTOMIZATION)
--- ============================================================
 
 local Players           = game:GetService("Players")
 local TextService       = game:GetService("TextService")
@@ -19,9 +17,7 @@ pcall(function()
 	LevelSystem = require(ServerStorage.Modules.LevelSystem)
 end)
 
--- ====================================
 -- CONFIGURATION
--- ====================================
 local CONFIG = {
 	MAX_CHANCES                = 3,
 	MAX_TITLE_LENGTH           = 50,
@@ -31,9 +27,7 @@ local CONFIG = {
 	UNLIMITED_LEVEL_THRESHOLD  = 50, -- Level 50+ mendapat custom title unlimited
 }
 
--- ====================================
 -- LEVEL CHECK HELPER
--- ====================================
 local function getPlayerLevel(player)
 	if not player then return 1 end
 	if LevelSystem and LevelSystem.GetPlayerLevel then
@@ -54,9 +48,7 @@ local function hasUnlimitedTitle(player)
 	return getPlayerLevel(player) >= CONFIG.UNLIMITED_LEVEL_THRESHOLD
 end
 
--- ====================================
 -- DATASTORE & CACHE
--- ====================================
 local chancesStore, chancesWriteStore = DataStoreEnv.Get(CONFIG.CHANCES_DATASTORE)
 local playerChancesCache = {}
 local activePreviews = {} -- [userId] = previewToken
@@ -81,7 +73,6 @@ local function getPlayerChances(userId)
 		playerChancesCache[userId] = CONFIG.MAX_CHANCES
 		return CONFIG.MAX_CHANCES
 	end
-
 
 	warn("[CustomTitle] Gagal memuat kesempatan untuk", userId, ":", val)
 	return nil
@@ -138,9 +129,7 @@ local function consumePlayerChance(userId, expectedChances)
 	return false, nil
 end
 
--- ====================================
 -- REMOTE SETUP
--- ====================================
 local titleRemotes = ReplicatedStorage:FindFirstChild("TitleRemotes")
 if not titleRemotes then
 	titleRemotes = Instance.new("Folder")
@@ -163,9 +152,7 @@ local previewCustomTitleRemote = getOrCreateRemote("RemoteEvent", "PreviewCustom
 local previewEndedRemote       = getOrCreateRemote("RemoteEvent", "PreviewEnded")
 local applyCustomTitleRemote   = getOrCreateRemote("RemoteFunction", "ApplyCustomTitle")
 
--- ====================================
 -- REMOTE: GET DATA (CHANCES & CURRENT TITLE)
--- ====================================
 getCustomTitleDataRemote.OnServerInvoke = function(player)
 	if not player then return nil end
 	if not RemoteEventManager.checkRateLimit(player, "customTitleAction") then return nil end
@@ -190,9 +177,7 @@ getCustomTitleDataRemote.OnServerInvoke = function(player)
 	}
 end
 
--- ====================================
 -- REMOTE: PREVIEW TITLE (CEK DULU - 5 DETIK)
--- ====================================
 previewCustomTitleRemote.OnServerEvent:Connect(function(player, titleData)
 	if not player or not player.Parent then return end
 	if not RemoteEventManager.checkRateLimit(player, "customTitleAction") then return end
@@ -269,9 +254,7 @@ previewCustomTitleRemote.OnServerEvent:Connect(function(player, titleData)
 	end)
 end)
 
--- ====================================
 -- REMOTE: APPLY TITLE (MEMOTONG 1 KESEMPATAN)
--- ====================================
 applyCustomTitleRemote.OnServerInvoke = function(player, titleData)
 	if not player or not player.Parent then
 		return false, "Player tidak valid."
@@ -368,9 +351,7 @@ applyCustomTitleRemote.OnServerInvoke = function(player, titleData)
 	return true, successMsg, remaining, isUnlimited
 end
 
--- ====================================
 -- CLEANUP
--- ====================================
 Players.PlayerRemoving:Connect(function(player)
 	playerChancesCache[player.UserId] = nil
 	activePreviews[player.UserId] = nil

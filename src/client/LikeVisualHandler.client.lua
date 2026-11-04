@@ -6,13 +6,11 @@ local Debris = game:GetService("Debris")
 local RemotesFolder = ReplicatedStorage:WaitForChild("Remotes")
 local LikeVisualEffectRemote = RemotesFolder:WaitForChild("LikeVisualEffect")
 
--- Fungsi Bezier Curve untuk membuat efek melengkung saat terbang
 local function quadraticBezier(t, p0, p1, p2)
 	return (1 - t)^2 * p0 + 2 * (1 - t) * t * p1 + t^2 * p2
 end
 
 local function playLoveEffect(senderPlayer, targetPlayer)
-	-- Pastikan karakter masih ada di map
 	local senderChar = senderPlayer.Character
 	local targetChar = targetPlayer.Character
 	if not senderChar or not targetChar then return end
@@ -21,7 +19,6 @@ local function playLoveEffect(senderPlayer, targetPlayer)
 	local targetHead = targetChar:FindFirstChild("Head")
 	if not senderHead or not targetHead then return end
 
-	-- Ambil template dari ReplicatedStorage
 	local effectTemplate = ReplicatedStorage:FindFirstChild("LoveVisualEffect")
 	
 	local effectPart = Instance.new("Part")
@@ -35,27 +32,23 @@ local function playLoveEffect(senderPlayer, targetPlayer)
 	
 	if effectTemplate then
 		if effectTemplate:IsA("BasePart") then
-			-- Jika user menyimpan Part utuh
-			effectPart:Destroy() -- Ganti dengan clone
+			effectPart:Destroy()
 			effectPart = effectTemplate:Clone()
 			effectPart.Anchored = true
 			effectPart.CanCollide = false
 			effectPart.CFrame = senderHead.CFrame
 			effectPart.Parent = workspace
 		elseif effectTemplate:IsA("ParticleEmitter") or effectTemplate:IsA("Attachment") then
-			-- Jika user hanya menyimpan ParticleEmitter atau Attachment
 			local cloneItem = effectTemplate:Clone()
 			cloneItem.Parent = effectPart
 		end
 		
-		-- Pastikan semua ParticleEmitter aktif saat mulai terbang
 		for _, child in pairs(effectPart:GetDescendants()) do
 			if child:IsA("ParticleEmitter") then
 				child.Enabled = true
 			end
 		end
 	else
-		-- Fallback default jika tidak ada di ReplicatedStorage
 		local billboard = Instance.new("BillboardGui")
 		billboard.Size = UDim2.new(2, 0, 2, 0)
 		billboard.AlwaysOnTop = true
@@ -69,10 +62,8 @@ local function playLoveEffect(senderPlayer, targetPlayer)
 		heartImage.Parent = billboard
 	end
 
-	-- Konfigurasi Animasi Terbang
 	local startPos = senderHead.Position + Vector3.new(0, 2, 0)
 	
-	-- Posisi agar terlihat oleh pengirim (diri sendiri)
 	if senderPlayer == game:GetService("Players").LocalPlayer then
 		local camera = workspace.CurrentCamera
 		if camera then
@@ -82,10 +73,8 @@ local function playLoveEffect(senderPlayer, targetPlayer)
 	
 	local endPos = targetHead.Position + Vector3.new(0, 2, 0)
 	
-	-- Titik melengkung di tengah
 	local midPoint = startPos:Lerp(endPos, 0.5) + Vector3.new(0, math.random(4, 8), 0)
 
-	-- Value palsu untuk menjalankan tween
 	local tweenVal = Instance.new("NumberValue")
 	tweenVal.Value = 0
 
@@ -101,18 +90,15 @@ local function playLoveEffect(senderPlayer, targetPlayer)
 
 	tweenAnim:Play()
 
-	-- Setelah selesai terbang
 	tweenAnim.Completed:Once(function()
 		connection:Disconnect()
 		
-		-- Matikan semua ParticleEmitter agar tidak mengeluarkan hati baru, tapi biarkan hati yang sudah ada menghilang perlahan
 		for _, child in pairs(effectPart:GetDescendants()) do
 			if child:IsA("ParticleEmitter") then
 				child.Enabled = false
 			end
 		end
 		
-		-- Beri jeda 3 detik agar semua sisa partikel love di udara selesai menghilang secara natural sebelum part dihapus
 		task.delay(3, function()
 			if effectPart then
 				effectPart:Destroy()
@@ -122,5 +108,4 @@ local function playLoveEffect(senderPlayer, targetPlayer)
 	end)
 end
 
--- Dengarkan panggilan dari server
 LikeVisualEffectRemote.OnClientEvent:Connect(playLoveEffect)

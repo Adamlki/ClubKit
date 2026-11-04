@@ -6,18 +6,14 @@ local AssetConfig = require(ConfigFolder:WaitForChild("AssetConfig"))
 
 local ClientConfig = {}
 
--- ============================================
 -- DEBUG
--- ============================================
 ClientConfig.DEBUG = {
 	ENABLED      = false,
 	SHOW_EVENTS  = true,
 	SHOW_ERRORS  = true,
 }
 
--- ============================================
 -- UI SETTINGS
--- ============================================
 ClientConfig.UI = {
 	BUTTON_SPACING      = 5,
 	BUTTON_CREATE_DELAY = 0.03,
@@ -25,9 +21,7 @@ ClientConfig.UI = {
 	PROCESSING_TEXT     = "Processing...",
 }
 
--- ============================================
 -- MESSAGE SETTINGS
--- ============================================
 ClientConfig.MESSAGE = {
 	MIN_DONATION    = 11,
 	MAX_LENGTH      = 200,
@@ -35,9 +29,7 @@ ClientConfig.MESSAGE = {
 	DEFAULT_MESSAGE = GameConfig.Branding.WelcomeMessage,
 }
 
--- ============================================
 -- NOTIFICATION SETTINGS
--- ============================================
 ClientConfig.NOTIFICATION = {
 	ENABLED          = true,
 	MIN_DONATION     = 11,
@@ -50,9 +42,7 @@ ClientConfig.NOTIFICATION = {
 	SHAKE_DURATION   = 0.15,
 }
 
--- ============================================
 -- DONATION COLORS (by tier, descending)
--- ============================================
 ClientConfig.DONATION_COLORS = {
 	{min = 2000, color = Color3.fromRGB(230, 33,  23),  name = "Legendary"}, 
 	{min = 1000, color = Color3.fromRGB(233, 30,  99),  name = "Epic"},      
@@ -64,9 +54,7 @@ ClientConfig.DONATION_COLORS = {
 	{min = 0,    color = Color3.fromRGB(76,  175, 80),  name = "Thanks"},    
 }
 
--- ============================================
 -- CHAT MESSAGES
--- ============================================
 ClientConfig.CHAT_MESSAGES = {
 	{min = 10000, messages = {
 		"WOAHH! %s has donated %s Robux!",

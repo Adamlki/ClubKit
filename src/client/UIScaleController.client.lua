@@ -10,14 +10,12 @@ local StarterGui = game:GetService("StarterGui")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-
 local BASE_X = 1366
 local BASE_Y = 768
 local MIN_SCALE = 0.6
 local MAX_SCALE = 1
 local HARD_MIN_SCALE = 0.4
 local FIT_MARGIN = 0.95
-
 
 local GAME_GUI_NAMES = {}
 for _, child in ipairs(StarterGui:GetChildren()) do
@@ -35,13 +33,11 @@ local pendingRefresh = {}
 local cameraConnection = nil
 local fullscreenSizes = setmetatable({}, { __mode = "k" })
 
-
 local function getDesignSize(screenGui, viewport, currentScale)
 	local maxW, maxH = 0, 0
 	for _, child in ipairs(screenGui:GetChildren()) do
 		if child:IsA("GuiObject") then
 			local size = child.Size
-			-- Container fullscreen (backdrop) selalu muat, jangan dihitung
 			local fullscreen = size.X.Scale >= 0.98 and size.Y.Scale >= 0.98
 			if not fullscreen then
 				local designW, designH
@@ -66,9 +62,6 @@ local function getGlobalScale(viewport)
 end
 
 local function updateFullscreenChildren(screenGui, scale)
-	-- UIScale under a ScreenGui also scales fullscreen backdrops/effects.
-	-- Counter-scale only direct fullscreen children so they still cover the
-	-- viewport; normal windows keep their responsive scale.
 	for _, child in ipairs(screenGui:GetChildren()) do
 		if child:IsA("GuiObject") and child.Size.X.Scale >= 0.98 and child.Size.Y.Scale >= 0.98 then
 			local original = fullscreenSizes[child]
@@ -107,7 +100,6 @@ local function updateGui(screenGui)
 
 	local scale = getGlobalScale(viewport)
 
-
 	local designW, designH = getDesignSize(screenGui, viewport, currentScale)
 	if designW > 0 and designH > 0 then
 		local fitScale = math.min(
@@ -141,11 +133,9 @@ end
 local function registerScreenGui(child)
 	if not child:IsA("ScreenGui") then return end
 
-
 	if not GAME_GUI_NAMES[child.Name] then return end
 	if EXTERNALLY_SCALED[child.Name] then return end
 
-	-- Pakai UIScale yang sudah ada atau buat baru
 	local uiScale = child:FindFirstChildOfClass("UIScale")
 	if not uiScale then
 		uiScale = Instance.new("UIScale")

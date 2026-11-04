@@ -12,9 +12,7 @@ local ClientState = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChi
 
 local ClientUI = {}
 
--- ============================================
 -- DEBUG
--- ============================================
 local function debugLog(category, ...)
 	if not ClientConfig.DEBUG.ENABLED then return end
 	local show = (category == "UI"    and ClientConfig.DEBUG.SHOW_EVENTS)
@@ -27,9 +25,7 @@ local function debugLog(category, ...)
 	end
 end
 
--- ============================================
 -- UTILITY
--- ============================================
 
 function ClientUI.notify(title, text, duration)
 	pcall(function()
@@ -49,9 +45,7 @@ local function sanitizeHtml(text)
 	return StringUtils.sanitizeHtml(text)
 end
 
--- ============================================
 -- LOADING INDICATOR
--- ============================================
 
 function ClientUI.setLoading(container, show, text)
 	local loading = container:FindFirstChild("LoadingLabel")
@@ -100,9 +94,7 @@ function ClientUI.hideError(container)
 	end
 end
 
--- ============================================
 -- DONATION COLORS
--- ============================================
 
 function ClientUI.getDonationColor(amount)
 	for _, tier in ipairs(ClientConfig.DONATION_COLORS) do
@@ -114,9 +106,7 @@ function ClientUI.getDonationColor(amount)
 	return default.color, default.name
 end
 
--- ============================================
 -- CHAT MESSAGE SYSTEM
--- ============================================
 
 local function colorToHex(color)
 	if not color then return "FFFFFF" end
@@ -168,9 +158,7 @@ end
 
 local Debris = game:GetService("Debris")
 
--- ============================================
 -- NOTIFICATION BANNER (ROBUX - ORANGE THEME)
--- ============================================
 
 local activeNotificationTween = nil
 local NOTIF_DISPLAY_TIME = 10

@@ -1,7 +1,5 @@
--- ====================================
--- CHAT BADGE SERVER (OPTIMIZED)
--- Script (ServerScriptService)
--- ====================================
+-- CHAT BADGE SERVER
+-- Letak: ServerScriptService
 
 local Players       = game:GetService("Players")
 local Teams         = game:GetService("Teams")
@@ -9,9 +7,7 @@ local ServerStorage = game:GetService("ServerStorage")
 
 local RoleSystem = require(ServerStorage:WaitForChild("Modules"):WaitForChild("RoleSystem"))
 
--- ====================================
 -- CONFIGURATION
--- ====================================
 local CONFIG = {
 	BADGES = {
 		Owner     = { text = "Owner",      color = Color3.fromRGB(255, 0,   0),    priority = 6 },
@@ -24,9 +20,7 @@ local CONFIG = {
 	DEBUG = false,
 }
 
--- ====================================
 -- INTERNAL
--- ====================================
 local function debugLog(message)
 	if CONFIG.DEBUG then print("[ChatBadge Debug]", message) end
 end
@@ -92,16 +86,13 @@ refreshBadge = function(player)
 		debugLog(string.format("Role badge: %s → [%s] (no team)", player.Name, tostring(badgeText)))
 	end
 
-	-- Set Attributes
 	player:SetAttribute("BadgeText",     badgeText)
 	player:SetAttribute("BadgeColor",    badgeColor)
 	player:SetAttribute("BadgePriority", badgePriority)
 	player:SetAttribute("PlayerRole",    RoleSystem:GetPlayerRole(player))
 end
 
--- ====================================
 -- PLAYER SETUP & EVENT BINDINGS
--- ====================================
 local function setupPlayer(player)
 	debugLog(string.format("Player setup: %s", player.Name))
 
@@ -127,25 +118,17 @@ for _, player in ipairs(Players:GetPlayers()) do
 	task.spawn(setupPlayer, player)
 end
 
--- ====================================
 -- PLAYER REMOVING
--- ====================================
 Players.PlayerRemoving:Connect(function(player)
 	refreshDebounce[player.UserId] = nil
 	-- Tidak perlu repot-repot menghapus Attribute, karena player-nya toh akan hancur dari game.
 end)
 
--- ====================================
 -- ROLE CHANGED
--- ====================================
 RoleSystem.RoleChanged:Connect(function(player, oldRole, newRole)
 	debugLog(string.format("Role changed: %s → %s → %s", player.Name, oldRole, newRole))
 	-- EVENT-DRIVEN: Hanya update badge saat ROLE BERUBAH
 	refreshBadgeDebounced(player)
 end)
 
--- ====================================
 -- GLOBAL HELPERS
--- ====================================
--- Tidak ada lagi registry _G. Badge di-refresh lewat event RoleChanged,
--- PlayerAdded, dan jalur internal script ini.

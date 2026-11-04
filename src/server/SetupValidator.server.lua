@@ -53,9 +53,7 @@ local donationConfig = safeRequire(
 	"DonationConfig"
 )
 
--- ============================================
 -- IDENTITAS & AKSES
--- ============================================
 if privateConfig then
 	local owners = privateConfig.OwnerIds or {}
 	if #owners == 0 or (owners[1] or 0) <= 0 then
@@ -103,9 +101,7 @@ if privateConfig then
 	end
 end
 
--- ============================================
 -- PRODUK DONASI
--- ============================================
 if donationConfig then
 	local products = donationConfig.PRODUCTS or {}
 	if #products == 0 then
@@ -122,18 +118,14 @@ if donationConfig then
 	end
 end
 
--- ============================================
 -- ASET WAJIB
--- ============================================
 if assetConfig then
 	if assetConfig.Sounds == nil or assetConfig.Images == nil or assetConfig.Animations == nil then
 		warnSetup("AssetConfig tidak lengkap. Periksa Sounds, Images, dan Animations.")
 	end
 end
 
--- ============================================
 -- INSTANCE WAJIB
--- ============================================
 local requiredInstances = {
 	{ StarterGui, "PlayerMenuHandler" },
 	{ StarterGui, "SettingGui" },
@@ -167,9 +159,7 @@ if Workspace:FindFirstChild("Kohl's Admin") == nil
 	warnSetup("Kohl's Admin tidak ditemukan di Workspace maupun ServerScriptService.")
 end
 
--- ============================================
 -- HTTP
--- ============================================
 local httpOk, httpEnabled = pcall(function()
 	return HttpService.HttpEnabled
 end)

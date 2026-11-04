@@ -26,7 +26,6 @@ if not RequestDonationState then
 end
 
 RequestDonationState.OnServerEvent:Connect(function(player)
-	-- CinematicRemote is live-only
 end)
 
 local CONFIG = {

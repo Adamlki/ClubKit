@@ -1,4 +1,3 @@
-
 local FormatUtils = {}
 
 function FormatUtils.formatNumber(num: number | string, delimiter: string?): string

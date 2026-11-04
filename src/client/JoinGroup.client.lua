@@ -8,9 +8,7 @@ local GameConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild
 local player = Players.LocalPlayer
 local GROUP_ID = GameConfig.GroupId
 
--- ====================================
 -- NOTIFICATION HELPER
--- ====================================
 local function showNotify(title, text, duration)
 	pcall(function()
 		StarterGui:SetCore("SendNotification", {
@@ -21,9 +19,7 @@ local function showNotify(title, text, duration)
 	end)
 end
 
--- ====================================
 -- REMOTE CHECK GROUP VIP
--- ====================================
 local function requestVIPRole()
 	local remotes = ReplicatedStorage:WaitForChild("Remotes", 10)
 	if remotes then
@@ -40,9 +36,7 @@ local function requestVIPRole()
 	return false, nil
 end
 
--- ====================================
 -- PROMPT HANDLER FUNCTION
--- ====================================
 local promptDebounce = false
 local function handleJoinCommunityInteraction()
 	if promptDebounce then return end
@@ -87,9 +81,7 @@ local function handleJoinCommunityInteraction()
 	end)
 end
 
--- ====================================
--- HOOK IN-WORLD OBJECT (JOINKOMUN.joingrup)
--- ====================================
+-- HOOK IN-WORLD OBJECT
 task.spawn(function()
 	local joinkomun = workspace:WaitForChild("JOINKOMUN", 20)
 	if joinkomun then
@@ -117,9 +109,7 @@ task.spawn(function()
 	end
 end)
 
--- ====================================
 -- AUTO-PROMPT AFTER 60 SECONDS (IF NOT IN GROUP)
--- ====================================
 task.delay(60, function() 
 	local success, isInGroup = pcall(function()
 		return player:IsInGroup(GROUP_ID)
@@ -141,9 +131,7 @@ task.delay(60, function()
 	end
 end)
 
--- ====================================
 -- DUMMY LISTENER FOR UPDATELEADERSTATUS
--- ====================================
 -- Dummy listener for UpdateLeaderStatus to prevent Remote Event Queue Exhausted error
 local remotes = ReplicatedStorage:WaitForChild("Remotes", 5)
 if remotes then

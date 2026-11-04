@@ -11,9 +11,7 @@ local DebugHooks = require(ServerStorage:WaitForChild("Modules"):WaitForChild("D
 local ServerConfig = require(ServerScriptService:WaitForChild("Config"):WaitForChild("ServerConfig"))
 local DonationConfig = require(script.Parent.DonationConfig)
 
--- ============================================
--- REFERENSI WORKSPACE GUI (server side — selalu ketemu)
--- ============================================
+-- REFERENSI WORKSPACE GUI
 local gui = nil
 local mainframe = nil
 local displayname = nil
@@ -57,10 +55,6 @@ end
 
 ensureElements()
 
--- ============================================
--- REMOTE (tetap dibuat agar tidak error, tapi tidak dipakai untuk sync)
--- Anti-exploit: kick siapapun yang coba fire dari client
--- ============================================
 local screenBoardRemote = ReplicatedStorage:FindFirstChild("UpdateScreenBoard")
 	or (function()
 		local r    = Instance.new("RemoteEvent")
@@ -75,23 +69,17 @@ if RunService:IsServer() and RunService:IsRunning() then
 	end)
 end
 
--- ============================================
 -- DEBUG
--- ============================================
 local function debugLog(...)
 	if DonationConfig.DEBUG.ENABLED and DonationConfig.DEBUG.SHOW_BROADCAST then
 		print("[ScreenBoard]", ...)
 	end
 end
 
--- ============================================
 -- STATE
--- ============================================
 local isAnimating = false
 
--- ============================================
--- ANIMASI FADE (server-side TweenService)
--- ============================================
+-- ANIMASI FADE
 local FADE_OUT_TIME = 0.3
 local FADE_IN_TIME  = 0.4
 
@@ -110,7 +98,6 @@ local function animateUpdate(newName, newMessage, userId)
 	end
 	isAnimating = true
 
-	-- Fade out
 	local fadeNameOut = TweenService:Create(displayname, TweenInfo.new(FADE_OUT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 1})
 	local fadeMsgOut = TweenService:Create(displaymessage, TweenInfo.new(FADE_OUT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 1})
 	local fadeAvatarOut = avatarImage and TweenService:Create(avatarImage, TweenInfo.new(FADE_OUT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {ImageTransparency = 1})
@@ -120,14 +107,12 @@ local function animateUpdate(newName, newMessage, userId)
 	if fadeAvatarOut then fadeAvatarOut:Play() end
 	task.wait(FADE_OUT_TIME + 0.05)
 
-	-- Update konten
 	displayname.Text    = newName
 	displaymessage.Text = newMessage
 	if avatarImage and newAvatarThumb then
 		avatarImage.Image = newAvatarThumb
 	end
 
-	-- Fade in
 	local fadeNameIn = TweenService:Create(displayname, TweenInfo.new(FADE_IN_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {TextTransparency = 0})
 	local fadeMsgIn = TweenService:Create(displaymessage, TweenInfo.new(FADE_IN_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {TextTransparency = 0})
 	local fadeAvatarIn = avatarImage and TweenService:Create(avatarImage, TweenInfo.new(FADE_IN_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {ImageTransparency = 0})
@@ -140,9 +125,7 @@ local function animateUpdate(newName, newMessage, userId)
 	isAnimating = false
 end
 
--- ============================================
 -- TEXT FILTERING
--- ============================================
 local function filterMessage(message, fromPlayer)
 	if not message or #message == 0 then
 		return DonationConfig.SCREEN_BOARD.DEFAULT_MESSAGE
@@ -180,12 +163,6 @@ local function filterMessage(message, fromPlayer)
 	return trimmed
 end
 
--- ============================================
--- RESOLVE NAMA PLAYER
--- Online  -> DisplayName
--- Offline -> Username via API
--- Gagal   -> "User_<userId>"
--- ============================================
 local function getPlayerDisplayName(userId)
 	local player = Players:GetPlayerByUserId(userId)
 	if player then
@@ -205,9 +182,7 @@ local function getPlayerDisplayName(userId)
 	return "User_" .. userId
 end
 
--- ============================================
 -- MAIN
--- ============================================
 local ScreenBoardHandler = {}
 
 function ScreenBoardHandler:ShowDonationMessage(player, amount, message)
@@ -221,7 +196,6 @@ function ScreenBoardHandler:ShowDonationMessage(player, amount, message)
 	local username        = player.Name or ("user_" .. tostring(player.UserId))
 	local displayNameText = string.format("%s (@%s)", resolvedName, username)
 
-	-- Animasi dan update dijalankan di server — direplikasi otomatis ke semua client
 	task.spawn(function()
 		animateUpdate(displayNameText, filtered, player.UserId)
 	end)
@@ -230,9 +204,6 @@ function ScreenBoardHandler:ShowDonationMessage(player, amount, message)
 	return true
 end
 
--- ============================================
--- INISIALISASI: Tampilkan pesan default saat server start
--- ============================================
 task.spawn(function()
 	task.wait(1.5)
 	if ensureElements() then
@@ -248,7 +219,6 @@ task.spawn(function()
 	end
 end)
 
--- Debug shortcut dari console/command bar
 local function testRobuxScreen(name, amount, msg)
 	ScreenBoardHandler:ShowDonationMessage(
 		{ UserId = 1, Name = name or "AdamRobux", DisplayName = name or "AdamRobux" },

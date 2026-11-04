@@ -39,9 +39,7 @@ function UINotificationManager.new(components)
 	return self
 end
 
--- ====================================
 -- CLEANUP TWEEN
--- ====================================
 function UINotificationManager:CleanupTween()
 	if self.nowPlayingTween then
 		self.nowPlayingTween:Cancel()
@@ -59,9 +57,7 @@ function UINotificationManager:CleanupTween()
 	end
 end
 
--- ====================================
 -- NOTIFICATIONS
--- ====================================
 function UINotificationManager:ShowNotification(message)
 	self.notificationText.Text = message
 	self.notificationFrame.Visible = true
@@ -72,9 +68,7 @@ function UINotificationManager:ShowNotification(message)
 	end)
 end
 
--- ====================================
 -- NOW PLAYING POPUP (WITH PROPER CLEANUP & DEBOUNCE)
--- ====================================
 local lastPopupSongId = nil
 local lastPopupTime = 0
 
@@ -175,9 +169,7 @@ function UINotificationManager:ShowNowPlayingPopup(musicData, uploaderName)
 	end)
 end
 
--- ====================================
 -- SKIP VOTE UI
--- ====================================
 function UINotificationManager:SetupSkipVoteButtons()
 	local lastVoteClick = 0
 	self.sfAcceptBtn.MouseButton1Click:Connect(function()
@@ -242,16 +234,12 @@ function UINotificationManager:ShowSkipVoteResult(passed)
 	self:ShowNotification(message)
 end
 
--- ====================================
 -- CLEANUP
--- ====================================
 function UINotificationManager:Cleanup()
 	self:CleanupTween()
 end
 
--- ====================================
 -- CALLBACK SETTER
--- ====================================
 function UINotificationManager:OnSkipVoteResponse(callback)
 	self.onSkipVoteResponseCallback = callback
 end

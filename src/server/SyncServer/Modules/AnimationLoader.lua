@@ -9,15 +9,11 @@ local AnimationRegistry = require(ServerModules:WaitForChild("AnimationRegistry"
 
 local module = {}
 
--- ============================================
 -- CACHE (prevents recreation on subsequent calls)
--- ============================================
 local animationCache = {}
 local emotesFolder = nil
 
--- ============================================
 -- CREATE ANIMATION INSTANCE FROM ID
--- ============================================
 local function createAnimationInstance(name, animationId)
 	local anim = Instance.new("Animation")
 	anim.Name = name
@@ -25,9 +21,7 @@ local function createAnimationInstance(name, animationId)
 	return anim
 end
 
--- ============================================
 -- MAIN: Initialize Emotes Folder
--- ============================================
 function module.initializeEmotesFolder()
 	if emotesFolder then
 		return emotesFolder
@@ -41,7 +35,6 @@ function module.initializeEmotesFolder()
 		emotesFolder.Parent = ReplicatedStorage
 	end
 
-	-- Create Pose subfolder
 	local poseFolder = emotesFolder:FindFirstChild("Pose")
 	if not poseFolder then
 		poseFolder = Instance.new("Folder")
@@ -64,7 +57,6 @@ function module.initializeEmotesFolder()
 
 	local animCount = 0
 
-	-- Load Dance animations
 	for name, id in pairs(AnimationRegistry.Dances) do
 		local anim = createAnimationInstance(name, id)
 		anim.Parent = emotesFolder
@@ -72,7 +64,6 @@ function module.initializeEmotesFolder()
 		animCount = animCount + 1
 	end
 
-	-- Load Pose animations
 	for name, id in pairs(AnimationRegistry.Poses) do
 		local anim = createAnimationInstance(name, id)
 		anim.Parent = poseFolder
@@ -80,22 +71,12 @@ function module.initializeEmotesFolder()
 		animCount = animCount + 1
 	end
 
-	-- ============================================
-	-- PRELOAD DIHAPUS DARI SERVER
-	-- Server tidak merender animasi, jadi PreloadAsync di sini hanya membuang resource HTTP
-	-- dan menyebabkan delay (seperti yang terlihat di Developer Console).
-	-- ============================================
-	-- if animCount > 0 then
-	-- 	... dihapus ...
-	-- end
+	-- Preload hanya di client; server tidak merender animasi.
 
 	return emotesFolder
 end
 
-
--- ============================================
 -- BUILD ANIMATION TABLE (For AnimationController)
--- ============================================
 function module.loadAnimations()
 	if not emotesFolder then
 		module.initializeEmotesFolder()
@@ -103,7 +84,6 @@ function module.loadAnimations()
 
 	local animations = {}
 
-	-- Load from cache
 	for name, anim in pairs(animationCache) do
 		animations[name] = anim
 	end
@@ -111,11 +91,8 @@ function module.loadAnimations()
 	return animations
 end
 
--- ============================================
 -- HELPER: Get animation by name
--- ============================================
 function module.getAnimation(animName)
-	-- Try cache first
 	if animationCache[animName] then
 		return animationCache[animName]
 	end
@@ -126,13 +103,11 @@ function module.getAnimation(animName)
 		return nil
 	end
 
-	-- Check Dance animations
 	local anim = emotesFolder:FindFirstChild(animName)
 	if anim and anim:IsA("Animation") then
 		return anim
 	end
 
-	-- Check Pose animations
 	local poseFolder = emotesFolder:FindFirstChild("Pose")
 	if poseFolder then
 		anim = poseFolder:FindFirstChild(animName)
@@ -144,16 +119,12 @@ function module.getAnimation(animName)
 	return nil
 end
 
--- ============================================
 -- HELPER: Get category
--- ============================================
 function module.getAnimationCategory(animName)
 	return AnimationRegistry.getCategory(animName) or "Dance"
 end
 
--- ============================================
 -- HELPER: Get all by category
--- ============================================
 function module.getAnimationsByCategory(category)
 	local results = {}
 
@@ -177,16 +148,11 @@ function module.getAnimationsByCategory(category)
 	return results
 end
 
--- ============================================
--- VALIDATE: Check if animation ID exists in registry
--- ============================================
+-- VALIDATE
 function module.validateAnimation(animName)
 	return AnimationRegistry.exists(animName)
 end
 
--- ============================================
--- SECURITY: Get animation only if valid
--- ============================================
 function module.getValidatedAnimation(animName)
 	if not module.validateAnimation(animName) then
 		warn("[AnimLoader] Security: Attempted to load invalid animation:", animName)
@@ -196,9 +162,7 @@ function module.getValidatedAnimation(animName)
 	return module.getAnimation(animName)
 end
 
--- ============================================
 -- GET TOTAL COUNT
--- ============================================
 function module.getCount()
 	return AnimationRegistry.getCount()
 end

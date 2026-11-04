@@ -7,7 +7,7 @@ local ShopHandler = require(script:WaitForChild("ShopHandler"))
 local Player = game.Players.LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- 🔥 INTEGRASI MODULE ANIMASI
+-- INTEGRASI MODULE ANIMASI
 local UIAnimator = require(ReplicatedStorage:WaitForChild("UIAnimator"))
 
 local gui = script.Parent
@@ -52,7 +52,6 @@ mainframe:GetPropertyChangedSignal("Visible"):Connect(function()
 		ShopHandler:LoadShopData()
 	end
 end)
-
 
 closeBtn.MouseButton1Click:Connect(function()
 	UIAnimator.Close(mainframe)

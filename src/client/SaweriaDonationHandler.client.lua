@@ -17,9 +17,7 @@ local playerGui = player:WaitForChild("PlayerGui")
 -- TopbarPlus
 local Icon = require(ReplicatedStorage:WaitForChild("Icon"))
 
--- ==============================================================================
 -- UI REFERENCES (Membaca GUI Fisik dari StarterGui / PlayerGui)
--- ==============================================================================
 local gui = playerGui:WaitForChild("SaweriaDonationGui", 30)
 if not gui then
 	warn("[SaweriaDonationHandler] SaweriaDonationGui tidak ditemukan di PlayerGui dalam 30 detik!")
@@ -48,9 +46,7 @@ local copyLinkBtn = rightCol:WaitForChild("CopyLinkBtn")
 local instructionsLabel = rightCol:WaitForChild("InstructionsLabel")
 local usernameHighlight = rightCol:WaitForChild("UsernameHighlight")
 
--- ==============================================================================
 -- STATE & FORMATTING
--- ==============================================================================
 local isOpen = false
 local saweriaIcon
 local TopbarPanelRegistry = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("TopbarPanelRegistry"))
@@ -59,9 +55,7 @@ local function formatNumber(num)
 	return FormatUtils.formatNumber(num, ".")
 end
 
--- ==============================================================================
 -- UPDATE STATS & DATA PEMAIN
--- ==============================================================================
 local function updateStats()
 	avatarImage.Image = string.format("rbxthumb://type=AvatarHeadShot&id=%d&w=150&h=150", player.UserId)
 	displayNameLabel.Text = player.DisplayName
@@ -78,8 +72,6 @@ local function updateStats()
 	)
 
 	usernameHighlight.Text = string.format("Username : <font color=\"rgb(235, 50, 50)\"><b>%s</b></font>", player.Name)
-
-	-- Ambil total donasi riil pemain dari server
 	local getStatsRemote = ReplicatedStorage:FindFirstChild("GetPlayerDonationStats")
 	if getStatsRemote and getStatsRemote:IsA("RemoteFunction") then
 		task.spawn(function()
@@ -96,9 +88,7 @@ local function updateStats()
 	end
 end
 
--- ==============================================================================
 -- OPEN & CLOSE CONTROLLER (Instan Tanpa Animasi Sesuai Permintaan)
--- ==============================================================================
 local function openSaweria()
 	if isOpen then return end
 	isOpen = true
@@ -133,10 +123,7 @@ end
 ClientState.registerAction("OpenSaweria", openSaweria)
 ClientState.registerAction("CloseSaweria", closeSaweria)
 
--- ==============================================================================
 -- EVENT BINDINGS
--- ==============================================================================
--- Inisialisasi awal: pastikan tertutup saat pertama join
 mainCard.Visible = false
 
 local lastCloseSaweriaClick = 0
@@ -149,7 +136,6 @@ end
 
 closeBtn.MouseButton1Click:Connect(debouncedCloseSaweria)
 
--- Animasi Tombol Close
 closeBtn.MouseEnter:Connect(function()
 	TweenService:Create(closeBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(245, 70, 70)}):Play()
 end)
@@ -157,7 +143,6 @@ closeBtn.MouseLeave:Connect(function()
 	TweenService:Create(closeBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(220, 55, 55)}):Play()
 end)
 
--- Tombol Copy Link
 copyLinkBtn.MouseEnter:Connect(function()
 	TweenService:Create(copyLinkBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(68, 64, 80)}):Play()
 end)
@@ -193,9 +178,7 @@ copyLinkBtn.MouseButton1Click:Connect(function()
 	end)
 end)
 
--- ==============================================================================
 -- TOPBAR PLUS INTEGRATION (Icon Saweria Mandiri)
--- ==============================================================================
 pcall(function()
 	if Icon.getIcon and Icon.getIcon("SaweriaDonationIcon") then
 		return

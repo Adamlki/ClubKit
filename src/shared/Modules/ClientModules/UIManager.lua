@@ -30,9 +30,7 @@ local function bindDebouncedClick(btn, delay, callback)
 	end)
 end
 
--- ====================================
 -- OBJECT POOL FOR QUEUE ITEMS
--- ====================================
 local QueueItemPool = {}
 QueueItemPool.__index = QueueItemPool
 
@@ -89,9 +87,7 @@ function QueueItemPool:Clear()
 	self.inactiveItems = {}
 end
 
--- ====================================
 -- UI MANAGER INITIALIZATION
--- ====================================
 function UIManager.new(gui)
 	local self = setmetatable({}, UIManager)
 

@@ -1,7 +1,4 @@
--- ========================================
--- DONATION SYSTEM (WITH DEBUG LOGS)
--- Put in ServerScriptService
--- ========================================
+-- Saweria donation polling dan notifikasi.
 
 local HttpService = game:GetService("HttpService")
 local MemoryStoreService = game:GetService("MemoryStoreService")
@@ -17,9 +14,7 @@ local ServerConfig = require(ServerScriptService:WaitForChild("Config"):WaitForC
 local SaweriaScreenBoardHandler = require(script.Parent:WaitForChild("SaweriaScreenBoardHandler"))
 local FormatUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("FormatUtils"))
 
--- ========================================
 -- CONFIG & DEBUG SETTINGS
--- ========================================
 local IS_STUDIO = RunService:IsStudio()
 local DEBUG_ENABLED = IS_STUDIO -- Otomatis aktif saat di Roblox Studio
 local DEBUG_PREFIX = "[DonasiSaweria]"
@@ -32,9 +27,7 @@ local function debugWarn(...)
 	if DEBUG_ENABLED then warn(DEBUG_PREFIX, ...) end
 end
 
--- ========================================
--- TEXT FILTERING HELPERS (ROBLOX COMPLIANCE)
--- ========================================
+-- TEXT FILTERING HELPERS
 local function getSafeContextUserId(preferredUserId)
 	if preferredUserId and type(preferredUserId) == "number" and preferredUserId > 0 then
 		return preferredUserId
@@ -77,14 +70,13 @@ local function filterBroadcastText(rawText, contextUserId, defaultFallback)
 	return defaultFallback
 end
 
--- Di Studio cek setiap 30 detik; live 60 detik.
+-- Interval polling: 30 detik di Studio, 60 detik di live.
 local CHECK_INTERVAL = IS_STUDIO and 30 or 60
 local MAX_DONATIONS = 50
 
--- DEDUPE LINTAS-SERVER (MemoryStore)
--- Donasi yang sama tidak boleh diumumkan dua kali oleh server berbeda
+-- DEDUPE LINTAS-SERVER: satu donasi hanya diumumkan sekali.
 local DEDUP_MAP_NAME = "SaweriaDedup_v1"
-local DEDUP_TTL = 7 * 24 * 60 * 60 -- 7 hari (maksimum MemoryStore: 45 hari)
+local DEDUP_TTL = 7 * 24 * 60 * 60
 local MAX_PROCESSED_IDS = 500
 
 local JOB_ID = game.JobId
@@ -115,16 +107,12 @@ end
 
 debugPrint("✅ Donation system initialized")
 
--- ========================================
 -- FORMAT RUPIAH
--- ========================================
 local function formatRupiah(amount)
 	return FormatUtils.formatRupiah(amount)
 end
 
--- ========================================
 -- GENERATE UNIQUE DONATION ID
--- ========================================
 local function getDonationUniqueId(donation, index)
 	local rawId = donation.id or donation.Id
 	if rawId and rawId ~= "" and rawId ~= "N/A" and rawId ~= "null" and rawId ~= "00000000-0000-0000-0000-000000000000" then
@@ -141,19 +129,14 @@ local function getDonationUniqueId(donation, index)
 	return string.format("%s_%s_%s_%s", dName, dAmt, dMsg, tostring(index or 1))
 end
 
--- ========================================
--- DEDUPE HELPERS
--- ========================================
--- Return true HANYA untuk satu server di seluruh universe per uniqueId.
--- Fail-open saat MemoryStore error: lebih baik notif dobel daripada donasi hilang.
+-- Klaim donasi hanya untuk satu server; fail-open jika MemoryStore error.
 local function claimDonationCrossServer(uniqueId)
 	if not seenMap then
 		return true
 	end
 
 	local success, result = pcall(function()
-		-- UpdateAsync mengembalikan nilai terakhir dari transform function:
-		-- JOB_ID = kita yang klaim; nil = sudah diklaim server lain (update dibatalkan)
+		-- JOB_ID berarti klaim berhasil; nil berarti sudah diklaim server lain.
 		return seenMap:UpdateAsync(uniqueId, function(current)
 			if current ~= nil then
 				return nil
@@ -181,9 +164,7 @@ local function markProcessed(uniqueId)
 	end
 end
 
--- ========================================
 -- GET TOP DONATORS
--- ========================================
 local function getTopDonators(limit)
 	local donorTotals = {}
 	for _, donation in ipairs(allDonations) do
@@ -205,9 +186,7 @@ local function getTopDonators(limit)
 	return result
 end
 
--- ========================================
 -- UPDATE BOARD GUI
--- ========================================
 local function updateBoard()
 	local folder = workspace:FindFirstChild("Leaderboard")
 	local boardModel = (folder and (folder:FindFirstChild("BoardSaweria") or folder:FindFirstChild("Saweria")))
@@ -242,9 +221,7 @@ local function parseAmount(val)
 	return tonumber(clean) or 0
 end
 
--- ============================================================
--- ID-BASED QUEUE READER (FIXED UNTUK GOOGLE SHEETS)
--- ============================================================
+-- Baca data donasi dari SaweriaAPI.
 local function fetchDonationData()
 	local donationArray = SaweriaAPI:GetDonationData()
 	if type(donationArray) ~= "table" then return end
@@ -253,8 +230,7 @@ local function fetchDonationData()
 	local hasNewData = false
 
 	if isFirstLoad then
-		-- Load awal data dari Google Sheets:
-		-- Tandai SEMUA donasi yang sudah ada di spreadsheet sebagai sudah diproses
+		-- Tandai donasi lama sebagai sudah diproses agar tidak muncul saat boot.
 		for i, donation in ipairs(donationArray) do
 			local currentId = getDonationUniqueId(donation, i)
 			markProcessed(currentId)
@@ -267,7 +243,6 @@ local function fetchDonationData()
 
 		pcall(updateBoard)
 
-		-- Gunakan template default seperti sistem donate Robux jika belum ada donasi baru di server ini
 		pcall(function()
 			SaweriaScreenBoardHandler:ResetToDefault()
 		end)
@@ -299,7 +274,7 @@ local function fetchDonationData()
 		for _, entry in ipairs(broadcastQueue) do
 			local currentDonation = entry.donation
 
-			-- Klaim lintas-server tepat sebelum broadcast: cegah dua server mengumumkan donasi yang sama
+			-- Klaim lintas-server sebelum broadcast.
 			if not claimDonationCrossServer(entry.id) then
 				debugPrint("⏭️ Skip donasi yang sudah diumumkan server lain: " .. tostring(entry.id))
 				continue
@@ -348,13 +323,12 @@ local function fetchDonationData()
 			end
 			debugPrint(string.format("🚀 Mengirim notifikasi: %s | Rp %d | Pesan: '%s'", filteredDonator, rpAmount, filteredMessage))
 
-			-- Cek pengaturan sorot kamera donor
+			-- Sorot kamera donatur jika memenuhi threshold.
 			local spotlightSettings = ReplicatedStorage:FindFirstChild("DonationSpotlightSettings")
 			local isSpotlightOn = (spotlightSettings and spotlightSettings:GetAttribute("Enabled") == true)
 			local minSaweria = spotlightSettings and spotlightSettings:GetAttribute("MinSaweria") or 50000
 			local shouldSpotlight = isSpotlightOn and (rpAmount >= minSaweria)
 
-			-- Trigger animasi kamera sorot donor ke semua client jika memenuhi syarat
 			if shouldSpotlight then
 				local DonorSpotlightRemote = ReplicatedStorage:FindFirstChild("DonorSpotlightRemote")
 				if DonorSpotlightRemote then
@@ -371,7 +345,6 @@ local function fetchDonationData()
 			end
 			SaweriaEffectEvent:Fire(filteredDonator, rpAmount, shouldSpotlight)
 
-			-- Update ScreenTextSaweria di Workspace
 			pcall(function()
 				SaweriaScreenBoardHandler:ShowDonationMessage(filteredDonator, rpAmount, filteredMessage)
 			end)
@@ -381,9 +354,7 @@ local function fetchDonationData()
 	end
 end
 
--- ========================================
--- TEST HELPER UNTUK ROBLOX STUDIO / ADMIN
--- ========================================
+-- TEST HELPERS
 local function testSaweria(donatorName, amount, message)
 	donatorName = tostring(donatorName or "TestDonator")
 	amount = tostring(amount or 50000)
@@ -421,7 +392,7 @@ local function testSaweria(donatorName, amount, message)
 		remoteEvent:FireAllClients(notifData)
 	end
 
-	-- Cek spotlight untuk testing
+	-- Sorot kamera untuk testing.
 	local spotlightSettings = ReplicatedStorage:FindFirstChild("DonationSpotlightSettings")
 	local isSpotlightOn = (spotlightSettings and spotlightSettings:GetAttribute("Enabled") == true)
 	local minSaweria = spotlightSettings and spotlightSettings:GetAttribute("MinSaweria") or 50000
@@ -473,13 +444,11 @@ DebugHooks.Register("TestSmite", testSmite)
 DebugHooks.Register("TestBlackHole", testBlackHole)
 DebugHooks.Register("TestStarfall", testStarfall)
 
--- ========================================
 -- MAIN LOOP
--- ========================================
 debugPrint("✅ SAWERIA DONATION SYSTEM STARTED")
 updateBoard()
 
--- Load awal secara asinkron segera saat server boot (tanpa menunggu CHECK_INTERVAL pertama)
+-- Load awal secara asinkron agar tidak menunggu interval pertama.
 task.spawn(function()
 	local success, err = pcall(fetchDonationData)
 	if not success then
@@ -487,12 +456,12 @@ task.spawn(function()
 	end
 end)
 
-local isFetchingAPI = false -- Gembok Anti-Thread Bomb
+local isFetchingAPI = false -- Cegah polling ganda.
 
 while true do
 	task.wait(CHECK_INTERVAL)
 	
-	-- 💡 SMART QUOTA SAVER: Jika server sedang kosong (0 pemain), lewati polling untuk menghemat kuota Google Sheets
+	-- SMART QUOTA SAVER: Jika server sedang kosong (0 pemain), lewati polling untuk menghemat kuota Google Sheets
 	if #Players:GetPlayers() == 0 then
 		continue
 	end

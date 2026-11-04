@@ -105,7 +105,6 @@ function GlobalEffectManager:_setupRemotes()
 	end)
 	
 	self.ToggleFollowEvent.OnServerEvent:Connect(function(player, isFollowing)
-		-- SECURITY FIX (Anti-Type Spoofing)
 		if type(isFollowing) ~= "boolean" then return end
 		
 		player:SetAttribute("FollowGlobalEffect", isFollowing)
@@ -240,7 +239,6 @@ function GlobalEffectManager:_onCharacterAdded(character)
 	end)
 	
 	character:GetAttributeChangedSignal("RefreshTrigger"):Connect(function()
-		-- 🔥 FIX: Hancurkan state lama, buat ulang, dan patuhi status FollowGlobalEffect (Unfollow) pemain!
 		if self.PlayerStates[player] then
 			self.PlayerStates[player]:Destroy()
 			self.PlayerStates[player] = nil
@@ -309,8 +307,7 @@ function GlobalEffectManager:_setupEvents()
 			end
 		end
 
-		-- 🔥 FIX MEMORY LEAK: Hapus state SETELAH ClearAllEffects()
-		-- agar fungsi UpdateAllPlayers() tidak membuat State baru untuk player yang akan keluar!
+		-- Destroy state setelah ClearAllEffects agar tidak dibuat ulang.
 		if self.PlayerStates[player] then
 			self.PlayerStates[player]:Destroy()
 			self.PlayerStates[player] = nil
@@ -365,7 +362,7 @@ function GlobalEffectManager:UpdatePlayerEffects(player)
 							if self.NotificationEvent then
 								self.NotificationEvent:FireClient(player, "Global Effect Aktif", "Carry otomatis dilepas karena efek sedang aktif!", 3)
 							end
-							task.wait(0.1) -- Beri waktu fisika Roblox untuk update setelah weld hancur
+							task.wait(0.1)
 						end
 					end)
 				end

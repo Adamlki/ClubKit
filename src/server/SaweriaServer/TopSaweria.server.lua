@@ -1,6 +1,4 @@
--- ========================================
--- SAWERIA SERVER LOGIC (ENTERPRISE OPTIMIZED)
--- ========================================
+-- SAWERIA LEADERBOARD SERVER
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -18,8 +16,7 @@ local IS_STUDIO = RunService:IsStudio()
 local UPDATE_INTERVAL = IS_STUDIO and 60 or 90 -- Hindari lonjakan HTTP/network dan micro-freeze
 local TOP_COUNT = 10
 
--- BoardSaweria dirender oleh LeaderboardsClient. Jangan render ulang dari server;
--- sebelumnya server dan client sama-sama membuat row ke SurfaceGui yang sama.
+-- BoardSaweria dirender oleh LeaderboardsClient; server tidak render ulang.
 local RENDER_BOARD_ON_SERVER = false
 
 local GetTopSaweriaFunc = ServerStorage:FindFirstChild("GetTopSaweriaFunc") or Instance.new("BindableFunction")
@@ -30,7 +27,7 @@ local UpdateSaweriaEvent = ReplicatedStorage:FindFirstChild("UpdateSaweriaTopBoa
 UpdateSaweriaEvent.Name = "UpdateSaweriaTopBoard"
 UpdateSaweriaEvent.Parent = ReplicatedStorage
 
--- 🟡 FIX: CACHE SYSTEM LIMITER (500 entri agar tidak terus-menerus reset cache di tengah buildList)
+-- Batasi cache user ID agar tidak tumbuh tanpa batas.
 local userIdCache = {} 
 local cacheCount = 0
 local MAX_CACHE_LIMIT = 500
@@ -125,9 +122,7 @@ GetTopSaweriaFunc.OnInvoke = function()
 	return {}
 end
 
--- ========================================
 -- DYNAMIC BOARD FINDER (Mencari di Workspace dengan Cache)
--- ========================================
 local cachedRoot, cachedGui, cachedComp = nil, nil, nil
 
 local function findBoardComponents()
@@ -317,7 +312,6 @@ local function updateUIs()
 	local function resolveUserId(dName)
 		if userIdCache[dName] then return userIdCache[dName] end
 
-		-- Cek apakah donatur sedang online di server (0 network call)
 		local onlinePlayer = Players:FindFirstChild(dName)
 		if onlinePlayer then
 			userIdCache[dName] = onlinePlayer.UserId

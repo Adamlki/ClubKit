@@ -275,7 +275,6 @@ function StatueRenderer:_connectRemote()
 			self:Update(data)
 		end)
 
-
 		task.spawn(function()
 			task.wait(1)
 			remote:FireServer()

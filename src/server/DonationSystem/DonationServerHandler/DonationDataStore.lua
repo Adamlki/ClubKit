@@ -3,13 +3,12 @@ local DonationConfig   = require(script.Parent.DonationConfig)
 
 local DonationDataStore = {}
 
--- DATASTORE INSTANCES
 local dataStore = DataStoreService:GetDataStore(
 	DonationConfig.DATASTORE.NAME,
 	DonationConfig.DATASTORE.SCOPE
 )
 
--- 🔥 ARCHITECT FIX: ORDERED DATA STORE (Khusus untuk Papan Leaderboard 3D)
+-- ORDERED DATA STORE (Khusus untuk Papan Leaderboard 3D)
 local orderedDataStore = DataStoreService:GetOrderedDataStore("DonationBoard_Ordered_V2", "global")
 
 local PlayerDataCache = {}
@@ -57,18 +56,13 @@ function DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
 	end
 
 	local userIdStr = "Player_" .. tostring(player.UserId)
-	
-	-- 🔥 ARCHITECT FIX: Cache info penting SEBELUM yield (UpdateAsync).
-	-- Jika pemain leave saat loading, object player akan terhapus dan error!
 	local safeUserId = tostring(player.UserId)
 	local safePlayerName = player.Name
 	local safeDisplayName = player.DisplayName
-	
 	local saveSuccess = false
 	local isNewReceipt = true
 	local totalAmount = 0
 
-	-- 1. Simpan ke Database asli (Synchronous agar bisa return sukses/gagal ke ProcessReceipt)
 	for attempt = 1, 3 do
 		local ok, updatedData = pcall(function()
 			return dataStore:UpdateAsync(userIdStr, function(current)
@@ -81,15 +75,12 @@ function DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
 				}
 				current.ProcessedReceipts = current.ProcessedReceipts or {}
 
-				-- IDEMPOTENSI: Jika receipt sudah ada di DataStore, abaikan penambahan amount
 				if receiptInfo and receiptInfo.PurchaseId then
 					if current.ProcessedReceipts[receiptInfo.PurchaseId] then
 						isNewReceipt = false
 						return current
 					end
 					current.ProcessedReceipts[receiptInfo.PurchaseId] = os.time()
-
-					-- Hapus receipt lama (3 hari) agar batas kuota DataStore tidak jebol
 					local now = os.time()
 					for pid, time in pairs(current.ProcessedReceipts) do
 						if now - time > 86400 * 3 then
@@ -118,7 +109,6 @@ function DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
 	end
 
 	if saveSuccess then
-		-- Update Memory Cache & Papan Peringkat HANYA jika ini adalah transaksi baru (Bukan retry)
 		if isNewReceipt then
 			local cache = PlayerDataCache[userIdStr]
 			if cache then
@@ -126,7 +116,6 @@ function DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
 				cache[DonationConfig.DONATION_FIELD] = (cache[DonationConfig.DONATION_FIELD] or 0) + amount
 			end
 
-			-- 2. Papan Peringkat 3D (All Time & Daily)
 			pendingBoardWrites += 1
 			task.spawn(function()
 				local safeAmount = math.floor(totalAmount)
@@ -138,7 +127,6 @@ function DonationDataStore:UpdatePlayerDonation(player, amount, receiptInfo)
 					task.wait(2)
 				end
 
-				-- Daily OrderedDataStore (Hanya ditambah jika receipt baru)
 				local dailyKey = "DonationDaily_" .. os.date("!%Y_%m_%d")
 				local dailyStore = DataStoreService:GetOrderedDataStore(dailyKey, "global")
 				for attempt = 1, 3 do

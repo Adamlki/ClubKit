@@ -6,7 +6,7 @@ local CONFIG = {
 		DefaultVolume = 0.60, -- Headroom aman (~ -4.4 dB) agar lagu keras tidak pernah menyentuh digital clipping / keprek
 		DefaultPlaybackSpeed = 1.0
 	},
-	-- 🎧 ROBLOX CLUB MASTER AUDIO SYSTEM
+	-- ROBLOX CLUB MASTER AUDIO SYSTEM
 	-- Standar sound system club/nightclub: bass empuk nendang, snare lembut anti-cempreng,
 	-- compressor peak limiter anti-pecah/keprek, dan akustik ruang club yang megah.
 	ClubAudio = {
@@ -35,17 +35,10 @@ local CONFIG = {
 	}
 }
 
--- ====================================
--- OPTIMIZED: Removed MIRROR SOUND
--- Mirror sound was not being used (no PlaybackLoudness detection)
--- This saves memory by not creating duplicate sound objects
--- ====================================
-
 function ServerMusicAudioHandler.new()
 	local self = setmetatable({}, ServerMusicAudioHandler)
 
 	self.serverSound  = nil
-	-- OPTIMIZED: Removed mirrorSound - was not being used
 	self.musicGroup   = nil
 	self.currentSoundId = nil
 	self.isPlaying    = false
@@ -80,13 +73,11 @@ function ServerMusicAudioHandler:CreateMusicGroup()
 		end
 	end
 
-	-- =========================================================================
-	-- 🎛️ EFEK MASTER CLUB AUDIO (ROBLOX NIGHTCLUB SOUND SYSTEM PRESET)
+	-- EFEK MASTER CLUB AUDIO (ROBLOX NIGHTCLUB SOUND SYSTEM PRESET)
 	-- Mengatasi:
 	-- 1. Snare "Cempreng" -> Dipangkas lewat ClubEQ (MidGain -3.5 dB & HighGain -3.5 dB)
 	-- 2. Suara Keras "Pecah / Keprek" -> Diredam lewat ClubCompressor (Peak Limiter)
 	-- 3. Suara Kering/Kaku -> Dihaluskan lewat ClubReverb (Ambience Hall VIP Club)
-	-- =========================================================================
 
 	-- 1. CLUB EQUALIZER (V-Curve Tone: Bass Bulat Nendang, Snare Empuk Anti-Cempreng)
 	local eq = musicGroup:FindFirstChild("ClubEQ")
@@ -178,9 +169,7 @@ function ServerMusicAudioHandler:CreateServerSound()
 	return existingSound
 end
 
--- ====================================
--- THE AAA NETWORK BUFFER (PRELOAD)
--- ====================================
+-- PRELOAD
 function ServerMusicAudioHandler:Preload(soundId)
 	if not self.serverSound or not self.serverSound.Parent then
 		self:CreateServerSound()
@@ -195,15 +184,7 @@ function ServerMusicAudioHandler:Preload(soundId)
 	end
 end
 
-
--- ====================================
--- OPTIMIZED: Removed CreateMirrorSound and GetMirrorSound
--- These were not being used and wasted memory
--- ====================================
-
--- ====================================
 -- AUTO DETECT SONG TITLE FROM SOUND
--- ====================================
 function ServerMusicAudioHandler:TryDetectSongTitle()
 	local success, title = pcall(function()
 		if not self.serverSound then return nil end
@@ -225,9 +206,7 @@ function ServerMusicAudioHandler:TryDetectSongTitle()
 	return nil
 end
 
--- ====================================
 -- PLAYBACK WITH SPEED SUPPORT
--- ====================================
 -- Tambahkan parameter 'pitchOctave' di ujungnya
 function ServerMusicAudioHandler:Play(soundId, timePosition, playbackSpeed, pitchOctave)
 	if not self.serverSound or not self.serverSound.Parent then
@@ -250,7 +229,7 @@ function ServerMusicAudioHandler:Play(soundId, timePosition, playbackSpeed, pitc
 		self.serverSound.SoundGroup = self.musicGroup
 	end
 
-	-- Atur PitchShift (Hanya buat jika ada perubahan nada non-standar, hapus total jika nada normal 1.0)
+	-- PitchShift hanya dibuat untuk nada non-standar.
 	local pitchShift = self.serverSound:FindFirstChild("ConcertPitchShift")
 	local octave = tonumber(pitchOctave) or 1.0
 	if math.abs(octave - 1.0) > 0.005 then
@@ -289,7 +268,6 @@ function ServerMusicAudioHandler:Stop()
 		self.serverSound:Stop()
 	end)
 
-	-- OPTIMIZED: Removed mirror sound stop
 
 	self.isPlaying = false
 	self.isPaused = false
@@ -303,7 +281,6 @@ function ServerMusicAudioHandler:Pause()
 		self.serverSound:Pause()
 	end)
 
-	-- OPTIMIZED: Removed mirror sound pause
 
 	self.isPaused = true
 end
@@ -315,14 +292,10 @@ function ServerMusicAudioHandler:Resume()
 		self.serverSound:Resume()
 	end)
 
-	-- OPTIMIZED: Removed mirror sound resume
 
 	self.isPaused = false
 end
 
--- ====================================
--- RELOAD AUDIO (FOR RETRY)
--- ====================================
 function ServerMusicAudioHandler:Reload()
 	if not self.serverSound or not self.currentSoundId then
 		return false
@@ -361,16 +334,13 @@ function ServerMusicAudioHandler:Reload()
 			self.serverSound:Play()
 			self.isPlaying = true
 
-			-- OPTIMIZED: Removed mirror sound sync
 		end
 	end)
 
 	return true
 end
 
--- ====================================
 -- VOLUME & SPEED CONTROL
--- ====================================
 function ServerMusicAudioHandler:SetVolume(volume)
 	if not self.serverSound then return end
 	volume = math.clamp(volume, 0, 1)
@@ -393,9 +363,7 @@ function ServerMusicAudioHandler:GetPlaybackSpeed()
 	return self.serverSound.PlaybackSpeed
 end
 
--- ====================================
 -- STATE GETTERS
--- ====================================
 function ServerMusicAudioHandler:IsPlaying()
 	return self.isPlaying and self.serverSound and self.serverSound.IsPlaying
 end
@@ -422,9 +390,7 @@ function ServerMusicAudioHandler:GetSound()
 	return self.serverSound
 end
 
--- ====================================
 -- CLEANUP
--- ====================================
 function ServerMusicAudioHandler:Cleanup()
 	if self.serverSound then
 		pcall(function()
@@ -434,7 +400,6 @@ function ServerMusicAudioHandler:Cleanup()
 		self.serverSound = nil
 	end
 
-	-- OPTIMIZED: Removed mirror sound cleanup
 end
 
 return ServerMusicAudioHandler

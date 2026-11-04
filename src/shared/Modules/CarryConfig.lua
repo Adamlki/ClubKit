@@ -2,9 +2,7 @@
 --!optimize 2
 local CarryConfig = {}
 
--- ============================================
 -- DEBUG SETTINGS
--- ============================================
 
 CarryConfig.DEBUG_ENABLED = false
 CarryConfig.DEBUG_PREFIX = "[CARRY]"
@@ -14,17 +12,13 @@ function CarryConfig.debugPrint(category, ...)
 	print(CarryConfig.DEBUG_PREFIX, "[" .. category .. "]", ...)
 end
 
--- ============================================
 -- SYSTEM SETTINGS
--- ============================================
 
 CarryConfig.REMOTE_FOLDER = "CarryRemotes"
 CarryConfig.REQUEST_TIMEOUT = 10
 CarryConfig.MAX_DISTANCE = 20
 
--- ============================================
 -- AVATAR SCALING & METRICS HELPER
--- ============================================
 
 function CarryConfig.getAvatarMetrics(char)
 	if not char then
@@ -77,9 +71,7 @@ function CarryConfig.getAvatarMetrics(char)
 	}
 end
 
--- ============================================
 -- CARRY STYLES
--- ============================================
 
 CarryConfig.STYLES = {
 	piggyback = {
@@ -171,9 +163,7 @@ CarryConfig.STYLES = {
 	}
 }
 
--- ============================================
 -- STYLE UTILITIES
--- ============================================
 
 function CarryConfig.getStyle(styleName)
 	return CarryConfig.STYLES[styleName]

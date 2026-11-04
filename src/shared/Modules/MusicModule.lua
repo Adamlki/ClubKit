@@ -1,33 +1,15 @@
--- ==============================================================================
 -- MUSIC MODULE - RASA NADA
--- ==============================================================================
--- Modul konfigurasi & database musik.
--- 
--- 💡 CARA MENAMBAH / MENGUBAH LAGU:
--- 1. Buka kategori playlist di bawah (PLAYLIST 1, PLAYLIST 2, BREAKBEAT, dll).
--- 2. Tambahkan satu baris baru, contoh:
---    { id = "1234567890", judul = "Nama Artis - Judul Lagu" },
---    atau jika lagunya dipercepat / diperlambat:
---    { id = "1234567890", judul = "Nama Artis - Judul Lagu", speed = 0.9 },
---    atau jika ada pitch khusus:
---    { id = "1234567890", judul = "Nama Artis - Judul Lagu", speed = 0.7, pitch = 1.1 },
--- 
--- 🎨 FITUR OTOMATIS:
--- * Gambar cover (sampul) otomatis mengikuti gambar cover playlist masing-masing.
--- * Album otomatis terisi sesuai kategori tempat lagu diletakkan.
--- * Durasi lagu otomatis dideteksi saat diputar.
--- ==============================================================================
+-- Tambahkan lagu ke kategori playlist dengan format:
+-- { id = "1234567890", judul = "Artis - Judul", speed = 0.9, pitch = 1.1 }
+-- speed dan pitch opsional; cover, album, dan durasi mengikuti data lagu.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 
 local MusicModule = {}
 
--- ==============================================================================
 -- 1. ALBUM / PLAYLIST COVER CONFIGURATION
--- Gambar cover ini otomatis dipakai di menu Playlist, Album, dan popup NowPlaying.
--- Ubah rbxassetid di bawah ini jika ingin mengganti gambar cover playlist tertentu.
--- ==============================================================================
+-- Ganti rbxassetid untuk mengganti cover playlist.
 MusicModule.ALBUM_COVERS = {
 	["All Songs"]      = "rbxassetid://100674441262590", -- Cover RASA NADA Utama
 	["My Favorites"]   = "rbxassetid://113553647698301", -- Icon Hati / Love
@@ -42,14 +24,10 @@ MusicModule.ALBUM_COVERS = {
 	-- ["FUNKOT STYLE"]   = "rbxassetid://99989680726270",  -- Party / Dance Icon
 }
 
--- ==============================================================================
 -- 2. PLAYLIST DATABASE
 -- Semua lagu dikelompokkan per playlist agar rapi dan mudah dicari/diedit.
--- ==============================================================================
 MusicModule.PLAYLISTS = {
-	-- ==========================================================
 	-- PLAYLIST 1 (175 Lagu)
-	-- ==========================================================
 	["PLAYLIST 1"] = {
 		{ id = "125646898891578", judul = "I Want It That Way - Backstreet Boys", speed = 0.43 },
 		{ id = "100783222387599", judul = "Merry Christmas, i miss you", speed = 0.43 },
@@ -154,9 +132,7 @@ MusicModule.PLAYLISTS = {
 		{ id = "116457204192670", judul = "BTS (방탄소년단) '2.0'", speed = 0.43 },
 	},
 
-	-- ==========================================================
 	-- PLAYLIST 2 (102 Lagu - Split Seimbang & Lagu Baru)
-	-- ==========================================================
 	["PLAYLIST 2"] = {
 		-- Lagu Baru
 		{ id = "118329838572289", judul = "MOJANG PRIANGAN", speed = 0.43 },
@@ -301,9 +277,7 @@ MusicModule.PLAYLISTS = {
 		{ id = "70882327880546", judul = "Last Christmas - Wham!", speed = 0.43 },
 	},
 
-	-- ==========================================================
 	-- BREAKBEAT (115 Lagu)
-	-- ==========================================================
 	["BREAKBEAT"] = {
 		{ id = "72668014512344", judul = "GOD IS A GIRL BKB", speed = 0.43 },
 		{ id = "93322287577293", judul = "IN AND OUT OF LOVE BKB", speed = 0.43 },
@@ -422,9 +396,7 @@ MusicModule.PLAYLISTS = {
 		{ id = "139178389984286", judul = "ZUMI ZA BKB", speed = 0.43 },
 	},
 
-	-- ==========================================================
 	-- EDM (48 Lagu)
-	-- ==========================================================
 	["EDM"] = {
 		{ id = "136414098503960", judul = "Turn The Lights Off - KATO", speed = 0.43 },
 		{ id = "129805097312205", judul = "Save My Love (Remix) - Kygo", speed = 0.43 },
@@ -476,9 +448,7 @@ MusicModule.PLAYLISTS = {
 		{ id = "120524521249674", judul = "Makeba - Jain", speed = 0.43 },
 	},
 
-	-- ==========================================================
 	-- AMAPIANO (103 Lagu)
-	-- ==========================================================
 	["AMAPIANO"] = {
 		{ id = "95448356878813", judul = "Pilé - Mauvais Djo", speed = 0.43 },
 		{ id = "87980444422764", judul = "Fire Fire - Unknown", speed = 0.43 },
@@ -582,17 +552,13 @@ MusicModule.PLAYLISTS = {
 		{ id = "111850113533465", judul = "Lupa Nama Ingat Rasa (Amapiano) - OKAAY", speed = 0.43 },
 	},
 
-	-- ==========================================================
 	-- DJ (2 Lagu)
-	-- ==========================================================
 	["DJ"] = {
 		{ id = "132376300924608", judul = "My Mine Gue - DJ Remix", speed = 0.43 },
 		{ id = "110762245924608", judul = "Apa Artinya Cinta - DJ Remix", speed = 0.43 },
 	},
 
-	-- ==========================================================
 	-- KOPLO & JAWA (32 Lagu)
-	-- ==========================================================
 	["KOPLO & JAWA"] = {
 		{ id = "99566872218628", judul = "Sayang 2 - Nella Kharisma", speed = 0.43 },
 		{ id = "98786527040927", judul = "Mangku Purel - Om Adella", speed = 0.43 },
@@ -632,9 +598,7 @@ MusicModule.PLAYLISTS = {
 	-- ["FUNKOT STYLE"] = {},
 }
 
--- ==============================================================================
 -- 3. ALBUM COVER RESOLVER
--- ==============================================================================
 function MusicModule:GetAlbumCover(albumName)
 	if albumName and self.ALBUM_COVERS and self.ALBUM_COVERS[albumName] then
 		return self.ALBUM_COVERS[albumName]
@@ -642,10 +606,8 @@ function MusicModule:GetAlbumCover(albumName)
 	return self.ALBUM_COVERS["All Songs"] or AssetConfig.Music.DefaultCover
 end
 
--- ==============================================================================
 -- 4. DATABASE COMPILER & O(1) LOOKUP CACHE
 -- Otomatis menyusun MusicDatabase flat array & index O(1) untuk performa server & client.
--- ==============================================================================
 local MusicDatabase = {}
 local MusicById     = {}
 
@@ -727,9 +689,7 @@ end
 
 rebuildDatabase()
 
--- ==============================================================================
 -- 5. PUBLIC API
--- ==============================================================================
 
 -- Mengambil seluruh lagu di database
 function MusicModule:GetAllMusic()

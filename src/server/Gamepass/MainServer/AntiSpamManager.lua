@@ -1,6 +1,4 @@
--- ====================================
--- ANTI-SPAM MANAGER (FIXED)
--- ====================================
+-- ANTI-SPAM MANAGER
 local Config = require(script.Parent.Config)
 local Logger = require(script.Parent.Logger)
 
@@ -14,10 +12,8 @@ function AntiSpamManager:IsSpamming(player, actionType)
 	local userId = player.UserId
 	local currentTime = tick()
 
-	-- Create unique key per action type
 	local cooldownKey = userId .. "_" .. (actionType or "generic")
 
-	-- Check cooldown untuk action ini
 	if self.playerCooldowns[cooldownKey] then
 		if currentTime - self.playerCooldowns[cooldownKey] < Config.AntiSpam.CooldownTime then
 			Logger:Debug(string.format("Player %s is spamming action: %s (cooldown)", 
@@ -26,7 +22,6 @@ function AntiSpamManager:IsSpamming(player, actionType)
 		end
 	end
 
-	-- Check request count per minute (global)
 	if not self.playerRequestCounts[userId] then
 		self.playerRequestCounts[userId] = {count = 0, resetTime = currentTime + 60}
 	end
@@ -46,7 +41,6 @@ function AntiSpamManager:IsSpamming(player, actionType)
 		return true
 	end
 
-	-- Set cooldown untuk action ini
 	self.playerCooldowns[cooldownKey] = currentTime
 
 	Logger:Debug(string.format("Player %s request OK: %s (%d/%d)", 
@@ -57,7 +51,6 @@ function AntiSpamManager:IsSpamming(player, actionType)
 end
 
 function AntiSpamManager:CleanupPlayer(userId)
-	-- Cleanup all cooldowns untuk user ini
 	for key in pairs(self.playerCooldowns) do
 		if key:match("^" .. userId .. "_") then
 			self.playerCooldowns[key] = nil

@@ -12,11 +12,8 @@ local ORDERED_DATASTORE_NAME = "PlayerLikes_Ordered_v1"
 local MAX_PLAYERS = 30
 local REFRESH_INTERVAL = 120
 
--- Harus memakai DataStoreEnv agar prefix buyer dan aturan Studio konsisten
--- dengan LikeManager yang menulis data likes.
 local OrderedLikesStore = DataStoreEnv.GetOrdered(ORDERED_DATASTORE_NAME)
 
--- Buat RemoteEvent untuk Update Client
 local updateLikeBoardRemote = ReplicatedStorage:FindFirstChild("UpdateLikeBoard")
 if not updateLikeBoardRemote then
 	updateLikeBoardRemote = Instance.new("RemoteEvent")
@@ -24,7 +21,6 @@ if not updateLikeBoardRemote then
 	updateLikeBoardRemote.Parent = ReplicatedStorage
 end
 
--- Cache untuk UserInfo (DisplayName & Username)
 local userInfoCache = {}
 local userInfoCacheCount = 0
 local MAX_USERINFO_CACHE = 500
@@ -35,7 +31,6 @@ local cachedTopLikes = {
 }
 
 local function resolveUserInfos(userIds)
-	-- 24/7 Memory Guard: Reset cache jika sudah melebihi batas agar RAM tidak bengkak setelah berhari-hari
 	if userInfoCacheCount > MAX_USERINFO_CACHE then
 		table.clear(userInfoCache)
 		userInfoCacheCount = 0
@@ -190,7 +185,6 @@ local function updateLeaderboardBoard()
 		updateLikeBoardRemote:FireAllClients(cachedTopLikes)
 	end
 
-	-- 100-PLAYER OPTIMIZATION: Staggered update (10 player per batch) agar tidak menyebabkan spike di Heartbeat
 	task.spawn(function()
 		local success2, OverheadManager = pcall(function()
 			return require(game:GetService("ServerScriptService").OverheadSystem.OverheadSystemServer.OverheadManager)
@@ -212,9 +206,7 @@ local function updateLeaderboardBoard()
 	return true
 end
 
--- ============================================
--- KETIKA CLIENT MEMINTA DATA (Saat Baru Masuk - Rate Limited)
--- ============================================
+-- KETIKA CLIENT MEMINTA DATA
 local requestCooldowns = {}
 local REQUEST_COOLDOWN = 5
 
@@ -223,7 +215,6 @@ updateLikeBoardRemote.OnServerEvent:Connect(function(player)
 
 	local now = os.clock()
 	if now - (requestCooldowns[player.UserId] or 0) < REQUEST_COOLDOWN then
-		-- Throttle the reply itself, not only the DataStore fetch.
 		if cachedTopLikes and cachedTopLikes.AllTime and #cachedTopLikes.AllTime > 0 then
 			pcall(function()
 				updateLikeBoardRemote:FireClient(player, cachedTopLikes)
@@ -252,7 +243,6 @@ Players.PlayerRemoving:Connect(function(player)
 	requestCooldowns[player.UserId] = nil
 end)
 
--- Export ke LeaderboardRegistry & LeaderboardOrchestrator
 local function refreshLikeLeaderboard()
 	pcall(updateLeaderboardBoard)
 end

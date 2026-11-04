@@ -11,9 +11,7 @@ local MessageConfig = require(script.AdminNotifConfig)
 local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 local StringUtils   = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("StringUtils"))
 
--- ====================================
 -- REMOTE SETUP
--- ====================================
 local RemoteFolder = ReplicatedStorage:FindFirstChild("Message")
 	or Instance.new("Folder")
 RemoteFolder.Name   = "Message"
@@ -34,9 +32,7 @@ local ReceiveMessageRemote = getOrCreate(RemoteFolder, "RemoteEvent",    "Receiv
 local CheckTimerRemote     = getOrCreate(RemoteFolder, "RemoteFunction", "CheckTimer")
 local CheckAccessRemote    = getOrCreate(RemoteFolder, "RemoteFunction", "CheckAccess")
 
--- ====================================
 -- PLAYER DATA & CHAT PERMISSION CACHE
--- ====================================
 local PlayerData = {}
 
 local function initPlayerData(userId)
@@ -65,9 +61,7 @@ local function cleanPlayerData(userId)
 	PlayerData[userId] = nil
 end
 
--- ====================================
 -- ROLE HELPERS
--- ====================================
 local function hasAccess(player)
 	local role       = RoleSystem:GetPlayerRole(player)
 	local minRole    = MessageConfig.Access.MinimumRole
@@ -94,9 +88,7 @@ local function getRemainingTime(player, role)
 	return math.max(0, duration - elapsed)
 end
 
--- ====================================
 -- TIMER & ACCESS REMOTES
--- ====================================
 CheckTimerRemote.OnServerInvoke = function(player)
 	if not RemoteEventManager.checkRateLimit(player, "adminNotifCheck") then return {} end
 
@@ -117,9 +109,7 @@ CheckAccessRemote.OnServerInvoke = function(player)
 	return ok
 end
 
--- ====================================
 -- TEXT FILTERING (Roblox-compliant)
--- ====================================
 local function filterText(message, fromPlayer)
 	if not MessageConfig.Validation.EnableFilter then
 		return message
@@ -152,9 +142,7 @@ local function filterText(message, fromPlayer)
 	return filteredText
 end
 
--- ====================================
 -- MESSAGE VALIDATION
--- ====================================
 local function formatWaitTime(seconds)
 	local m = math.floor(seconds / 60)
 	local s = math.floor(seconds % 60)
@@ -222,9 +210,7 @@ local function broadcastToServerClients(messageData)
 	end
 end
 
--- ====================================
 -- SEND MESSAGE HANDLER
--- ====================================
 SendMessageRemote.OnServerEvent:Connect(function(player, message, isGlobal)
 	if not RemoteEventManager.checkRateLimit(player, "adminNotifSend") then return end
 
@@ -294,9 +280,7 @@ SendMessageRemote.OnServerEvent:Connect(function(player, message, isGlobal)
 	end
 end)
 
--- ====================================
 -- MESSAGING SERVICE SUBSCRIBER
--- ====================================
 local subscribeSuccess, subscribeErr = pcall(function()
 	MessagingService:SubscribeAsync("GlobalAdminMessage", function(message)
 		local messageData = message.Data
@@ -311,9 +295,7 @@ if not subscribeSuccess then
 	warn("[MessageServer] Gagal subscribe ke GlobalAdminMessage:", subscribeErr)
 end
 
--- ====================================
 -- PLAYER LIFECYCLE
--- ====================================
 Players.PlayerAdded:Connect(function(player)
 	initPlayerData(player.UserId)
 end)

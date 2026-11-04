@@ -1,6 +1,4 @@
--- ============================================================
 -- ServerListManager (ClubKit Server Discovery & Teleportation)
--- ============================================================
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -78,9 +76,7 @@ local function getCurrentServerData()
 	}
 end
 
--- ============================================================
 -- MEMORY STORE REGISTRATION (Cross-server discovery)
--- ============================================================
 local memoryMap = nil
 pcall(function()
 	memoryMap = MemoryStoreService:GetSortedMap("ClubKit_ActiveServers_v1")

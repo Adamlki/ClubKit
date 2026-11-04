@@ -4,9 +4,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local Player = Players.LocalPlayer
 
--- ============================================
 -- REFRESH COMMAND SUPPORT
--- ============================================
 local refreshEvent = nil
 
 local function initRefreshEvent()
@@ -22,9 +20,7 @@ local function requestRefresh()
 	end
 end
 
--- ============================================
 -- UTILITY FUNCTIONS
--- ============================================
 local function colorToHex(color)
 	if not color then return "FFFFFF" end
 	local r = math.floor(color.R * 255)
@@ -33,9 +29,7 @@ local function colorToHex(color)
 	return string.format("%02X%02X%02X", r, g, b)
 end
 
--- ============================================
 -- MAIN CHAT MESSAGE HANDLER
--- ============================================
 if TextChatService then
 	initRefreshEvent()
 
@@ -48,21 +42,16 @@ if TextChatService then
 		local player = Players:GetPlayerByUserId(source.UserId)
 		if not player then return properties end
 
-		-- ============================================
 		-- COMMAND DETECTION (Hanya /re dan /refresh)
-		-- ============================================
 		if source.UserId == Player.UserId then
 			local messageText = string.lower(message.Text)
 
-			-- Menghapus ;re agar tidak terjadi double trigger/kepental
 			if messageText == "/re" or messageText == "/refresh" then
 				requestRefresh()
 			end
 		end
 
-		-- ============================================
 		-- BADGE DISPLAY
-		-- ============================================
 		local badgeText = player:GetAttribute("BadgeText")
 		local badgeColor = player:GetAttribute("BadgeColor")
 

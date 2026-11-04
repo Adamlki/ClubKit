@@ -1,4 +1,3 @@
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 
@@ -11,7 +10,6 @@ local GLITCH_DURATION = 0.35
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local ContentProvider = game:GetService("ContentProvider")
-
 
 local function normalizeAssetId(raw)
 	if not raw then return "" end

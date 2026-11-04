@@ -15,8 +15,6 @@ event.OnClientEvent:Connect(function()
 	local t1 = tween:Create(cam, TweenInfo.new(0.25, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {FieldOfView = boosted})
 	t1:Play()
 	
-	-- 🔥 FIX: Jangan gunakan Wait() yang membuat script stuck.
-	-- Gunakan delay dan pastikan animasinya tidak diganggu oleh boost baru.
 	task.delay(0.25, function()
 		if version == currentAnimVersion then
 			local t2 = tween:Create(cam, TweenInfo.new(0.55, Enum.EasingStyle.Sine, Enum.EasingDirection.In), {FieldOfView = normal})

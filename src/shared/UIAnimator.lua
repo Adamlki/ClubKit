@@ -1,6 +1,4 @@
--- ====================================
 -- UI ANIMATOR
--- ====================================
 local UIAnimator = {}
 
 function UIAnimator.Open(frame)

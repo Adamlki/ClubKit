@@ -1,10 +1,5 @@
 --!native
 --!optimize 2
--- ============================================================
--- CarrySystemServer (Server Controller)
--- Coordinates carry requests, responses, and session lifecycles
--- Refactored for SOLID (SRP) using CarryState & CarryPhysics
--- ============================================================
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -17,9 +12,7 @@ local RateLimiter = require(ServerScriptService:WaitForChild("Modules"):WaitForC
 local CarryState = require(script.Parent:WaitForChild("Modules"):WaitForChild("CarryState"))
 local CarryPhysics = require(script.Parent:WaitForChild("Modules"):WaitForChild("CarryPhysics"))
 
--- ============================================
 -- REMOTES SETUP
--- ============================================
 local remoteFolder = ReplicatedStorage:FindFirstChild(CarryConfig.REMOTE_FOLDER)
 if not remoteFolder then
 	remoteFolder = Instance.new("Folder")
@@ -41,9 +34,7 @@ local RequestRemote = getOrCreateRemote("CarryRequest")
 local ResponseRemote = getOrCreateRemote("CarryResponse")
 local EndRemote = getOrCreateRemote("CarryEnd")
 
--- ============================================
 -- CORE CARRY ACTIONS
--- ============================================
 
 local function endCarry(player1: Player?, player2: Player?)
 	local function cleanupPlayer(p: Player?)
@@ -125,9 +116,8 @@ local function startCarry(carrier: Player, target: Player, style: string): (bool
 
 		CarryState.setActiveCarry(carrier.UserId, target.UserId)
 
-		-- Network ownership is given to the carrier for smooth carrying.
-		-- Re-check distance/alive so a malicious client cannot drag the victim
-		-- far beyond the allowed range.
+		-- Network ownership diberikan ke carrier; jarak dan status hidup dicek ulang
+		-- agar client tidak bisa menyeret korban di luar jangkauan.
 		task.spawn(function()
 			while CarryState.getActivePartner(carrier.UserId) == target.UserId do
 				task.wait(0.2)
@@ -195,9 +185,7 @@ local function startCarry(carrier: Player, target: Player, style: string): (bool
 	return true
 end
 
--- ============================================
 -- PLAYER SETUP
--- ============================================
 
 local function onPlayerAdded(plr: Player)
 	local canAskCarry = plr:FindFirstChild("CanAskCarry") :: BoolValue? or Instance.new("BoolValue")
@@ -233,9 +221,7 @@ for _, plr in ipairs(Players:GetPlayers()) do
 end
 Players.PlayerAdded:Connect(onPlayerAdded)
 
--- ============================================
 -- PENDING REQUESTS TIMEOUT LOOP
--- ============================================
 
 task.spawn(function()
 	while true do
@@ -255,9 +241,7 @@ task.spawn(function()
 	end
 end)
 
--- ============================================
 -- REMOTE EVENT LISTENERS
--- ============================================
 
 RequestRemote.OnServerEvent:Connect(function(carrier, data)
 	local allowed = RateLimiter.check(carrier, "carryRequest")
@@ -390,9 +374,7 @@ EndRemote.OnServerEvent:Connect(function(player, _data)
 	endCarry(player, partner)
 end)
 
--- ============================================
 -- PLAYER REMOVING & CLEANUP
--- ============================================
 
 Players.PlayerRemoving:Connect(function(player)
 	CarryState.removePending(player.UserId)
@@ -418,9 +400,7 @@ Players.PlayerRemoving:Connect(function(player)
 	CarryPhysics.cleanupPlayer(player.UserId)
 end)
 
--- ============================================
 -- GLOBAL BINDABLES
--- ============================================
 local CarryEventsFolder = ServerStorage:FindFirstChild("CarryEvents")
 if not CarryEventsFolder then
 	CarryEventsFolder = Instance.new("Folder")

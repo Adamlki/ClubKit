@@ -11,9 +11,7 @@ local SyncController = require(ServerModules:WaitForChild("SyncController"))
 
 local module = {}
 
--- ============================================
 -- CONFIG & ANTI-SPAM
--- ============================================
 local FADE_OUT = 0.1
 local DANCE_WALK_SPEED = 5
 local ANIMATION_PRIORITY = Enum.AnimationPriority.Action4
@@ -21,17 +19,13 @@ local ANIMATION_PRIORITY = Enum.AnimationPriority.Action4
 local processingRequests = setmetatable({}, { __mode = "k" })
 local lastRequestTime = setmetatable({}, { __mode = "k" })
 local spamNonceCooldown = {}
-local MIN_REQUEST_INTERVAL = 0.05 -- 50ms (Agar spam dance dari leader langsung tersinkron ke followers 0 delay)
+local MIN_REQUEST_INTERVAL = 0.05
 
 Players.PlayerRemoving:Connect(function(player)
 	spamNonceCooldown[player.UserId] = nil
 end)
 
--- ============================================
--- 🔥 NETWORK FIX: Dirty-Checked SetAttribute
--- Hanya memanggil SetAttribute jika value BERUBAH.
--- Menghilangkan replication packet yang tidak perlu.
--- ============================================
+-- Set attribute hanya jika nilainya berubah untuk menghemat replikasi.
 local function safeSetAttr(obj, key, value)
 	if obj:GetAttribute(key) ~= value then
 		obj:SetAttribute(key, value)
@@ -61,9 +55,7 @@ local function endProcessing(player)
 	processingRequests[player] = false
 end
 
--- ============================================
 -- EXECUTE ANIMATION
--- ============================================
 function module.executeAnimation(player, animation, shouldPlay, speed, loadedAnimations, isSpam, clientStartTime)
 	if not canProcessRequest(player) then return "rate_limited" end -- Berlaku untuk Play DAN Stop!
 	startProcessing(player)
@@ -87,7 +79,6 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 
 	-- === STOP LOGIC ===
 	if not shouldPlay then
-		--AnimatorUtils.stopAllDances(animator, loadedAnimations, FADE_OUT)
 		if character then
 			safeSetAttr(character, "Syncing", nil)
 			clearDanceState(character)
@@ -164,17 +155,14 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 	return "playing"
 end
 
--- ============================================
--- ADJUST ANIMATION SPEED (PURE MATH TIME-WARP FIX)
--- ============================================
+-- ADJUST ANIMATION SPEED
 function module.adjustAnimationSpeed(player, speed, loadedAnimations)
-	-- Perlindungan Spam/DDoS
 	if not canProcessRequest(player) then return "rate_limited" end
 	startProcessing(player)
 
 	local character = player.Character
 	if not character or character:GetAttribute("Syncing") then 
-		endProcessing(player) -- Jangan lupa dilepas!
+		endProcessing(player)
 		return "syncing" 
 	end
 
@@ -184,7 +172,7 @@ function module.adjustAnimationSpeed(player, speed, loadedAnimations)
 	end
 	speed = math.clamp(numSpeed, 0.1, 3)
 
-	-- FIX TIME-WARP SERVER: Sesuaikan DanceStartTime saat DanceSpeed berubah agar pemain yang baru join tetap presisi
+	-- Sesuaikan DanceStartTime agar posisi dance tetap presisi saat speed berubah.
 	local oldSpeed = character:GetAttribute("DanceSpeed") or 1
 	local oldStartTime = character:GetAttribute("DanceStartTime")
 	if oldStartTime and oldSpeed > 0 and speed > 0 and oldSpeed ~= speed then
@@ -205,4 +193,3 @@ Players.PlayerRemoving:Connect(function(player)
 end)
 
 return module
-

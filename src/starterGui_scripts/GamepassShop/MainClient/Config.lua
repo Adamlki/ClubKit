@@ -1,6 +1,4 @@
--- ====================================
 -- CLIENT CONFIGURATION (SIMPLIFIED)
--- ====================================
 local Config = {
 	Debug = false, -- Set false untuk production
 	StartVisible = false,

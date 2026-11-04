@@ -235,8 +235,7 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 	end
 
 	local baseDuration = songData.Duration or musicData.Duration or self.config.DEFAULT_SONG_DURATION
-	-- MusicModule menyimpan kecepatan sebagai `speed` (dan pitch sebagai `pitch`).
-	-- Sebelumnya field itu tidak pernah dibaca sehingga semua lagu diputar di 1.0x.
+	-- Baca speed dari field speed (default 1.0).
 	local playbackSpeed = math.clamp(
 		musicData.PlaybackSpeed or musicData.speed or CONFIG.DEFAULT_PLAYBACK_SPEED,
 		0.1,

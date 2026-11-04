@@ -247,7 +247,6 @@ local function getOrCreatePool(scroll, template, targetCount)
 		table.insert(pool, clone)
 	end
 
-	-- Jika pool lama lebih besar dari batas baru, sembunyikan sisanya.
 	for i = target + 1, #pool do
 		pool[i].Visible = false
 	end

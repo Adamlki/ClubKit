@@ -10,18 +10,14 @@ local CustomTeams = require(ServerStorage.Modules.CustomTeams)
 
 local SULTAN_REQUIREMENT = 10000
 
--- ============================================================
--- 1. SAAT PLAYER JOIN: Bikin Leaderstat & Cek History (Optimized)
--- ============================================================
+-- Setup leaderstat donasi saat player join.
 local function setupPlayer(player)
-	-- Tunggu folder leaderstats dari LevelSystem selesai dibuat
 	local leaderstats = player:WaitForChild("leaderstats", 15)
 	if not leaderstats then return end
 
-	-- Tunggu "Level" selesai dibuat dulu (Biar Level di Kiri, Donation di Kanan)
+	-- Pastikan Level dibuat lebih dulu agar urutan leaderstat rapi.
 	leaderstats:WaitForChild("Level", 10)
 
-	-- Buat Nilai "Donation"
 	local donationStat = leaderstats:FindFirstChild("Donation") or Instance.new("IntValue")
 	donationStat.Name = "Donation"
 	if not donationStat.Parent then
@@ -29,12 +25,10 @@ local function setupPlayer(player)
 		donationStat.Parent = leaderstats
 	end
 
-	-- 🔥 ARCHITECT FIX: Ambil data spesifik player dari Cache (Anti-Lag)
 	task.spawn(function()
-		-- GANTI GetAllDonations menjadi LoadPlayerDonation
 		local myData = DonationDataStore:LoadPlayerDonation(player)
 
-		-- Cek eksistensi SEBELUM menyentuh UI dan Properties
+		-- Pastikan player masih ada sebelum update UI.
 		if not player or not player.Parent then return end
 
 		local totalDonated = 0
@@ -75,9 +69,7 @@ Players.PlayerRemoving:Connect(function(player)
 	setupStarted[player] = nil
 end)
 
--- ============================================================
 -- 2. SAAT PLAYER DONASI: Update Leaderstat secara Real-time
--- ============================================================
 ProcessReceiptHandler:RegisterCallback("UpdateSultanLeaderstat", function(player, productId, amount, receiptInfo)
 	local RunService = game:GetService("RunService")
 	if RunService:IsStudio() then return true end

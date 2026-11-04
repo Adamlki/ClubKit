@@ -8,9 +8,7 @@ local LeaderboardRegistry = require(ServerScriptService:WaitForChild("Modules"):
 
 local OverheadManager = {}
 
--- ====================================
 -- PENGATURAN DEBUG (ANTI-SPAM LOG)
--- ====================================
 local DEBUG_ENABLED = false
 
 local function debugLog(...)
@@ -33,9 +31,7 @@ local DonaturRankSystem   = nil
 local TitleDataManager    = nil
 local DebugSystem         = nil
 
--- ====================================
 -- 100-PLAYER OPTIMIZATION: DIRTY-CHECK & SHORT CACHE
--- ====================================
 local function safeSetAttr(player, key, value)
 	if player and player.Parent and player:GetAttribute(key) ~= value then
 		player:SetAttribute(key, value)
@@ -83,9 +79,7 @@ local function getTopRobuxList()
 	return cachedRobuxTop
 end
 
--- ====================================
 -- INIT
--- ====================================
 function OverheadManager:Init(config, roleSystem, levelSystem, titleDataManager, donaturRankSystem)
 	CONFIG             = config
 	RoleSystem         = roleSystem
@@ -95,9 +89,7 @@ function OverheadManager:Init(config, roleSystem, levelSystem, titleDataManager,
 	DebugSystem        = require(script.Parent.DebugSystem)
 end
 
--- ====================================
 -- FUNGSI GET SAWERIA
--- ====================================
 local function getSaweriaRank(player)
 	local topList = getTopSaweriaList()
 	if type(topList) == "table" then
@@ -113,9 +105,7 @@ local function getSaweriaRank(player)
 	return nil
 end
 
--- ====================================
 -- UPDATE ATTRIBUTES
--- ====================================
 function OverheadManager:UpdateAllAttributes(player)
 	if not player or not player.Parent then return end
 
@@ -213,9 +203,7 @@ function OverheadManager:UpdateAllAttributes(player)
 	safeSetAttr(player, "Overhead_HasVIP", hasVIP)
 end
 
--- ====================================
 -- EXPOSED UPDATE METHODS FOR INIT.SERVER.LUA
--- ====================================
 function OverheadManager:CreateOverhead(player, character)
 	self:UpdateAllAttributes(player)
 end

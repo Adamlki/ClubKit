@@ -18,17 +18,15 @@ local playerLoadedFlags = {} -- Mencegah data loss jika GetAsync gagal
 local playerDirtyFlags = {} -- Dirty checking untuk TotalLikes penerima like
 local cooldownDirtyFlags = {} -- Dirty checking untuk cooldown pengirim like
 
--- Untuk mencegah Bug Race Condition saat pemain keluar-masuk terlalu cepat di server yang sama
+-- Cegah race condition saat pemain keluar-masuk cepat.
 local activeSaves = {}
 
--- ==========================================
 -- COOLDOWN SYSTEM
--- ==========================================
 function LikeManager.LoadPlayerCooldowns(player)
 	local success, data = pcall(function()
 		return CooldownsStore:GetAsync(tostring(player.UserId))
 	end)
-	-- FIX KELUAR-MASUK KILAT: Jangan simpan ke cache jika pemain sudah keluar saat GetAsync sedang berjalan
+	-- Jangan simpan ke cache jika pemain sudah keluar saat GetAsync berjalan.
 	if not player or not player.Parent then return end
 	
 	if success then
@@ -73,14 +71,12 @@ function LikeManager.SavePlayerCooldowns(player)
 	return saved
 end
 
--- ==========================================
--- LIKES SYSTEM (OPTIMIZED)
--- ==========================================
+-- LIKES SYSTEM
 function LikeManager.LoadTotalLikes(player)
 	local success, totalLikes = pcall(function()
 		return LikesStore:GetAsync(tostring(player.UserId))
 	end)
-	-- FIX KELUAR-MASUK KILAT: Jangan isi cache jika pemain sudah disconnect saat GetAsync berjalan
+	-- Jangan isi cache jika pemain sudah disconnect saat GetAsync berjalan.
 	if not player or not player.Parent then return end
 	
 	totalLikes = totalLikes or 0
@@ -96,7 +92,7 @@ end
 
 function LikeManager.SaveTotalLikes(player)
 	local userId = player.UserId
-	-- Hanya save JIKA data pemain sudah berhasil di-load saat dia masuk (Mencegah Data Loss Bug)
+	-- Save hanya jika data berhasil dimuat agar tidak menimpa DataStore dengan nilai kosong.
 	if playerLoadedFlags[userId] and playerDirtyFlags[userId] then
 		local likesToSave = playerLikesCache[userId]
 		if likesToSave ~= nil then
@@ -121,9 +117,7 @@ function LikeManager.SaveTotalLikes(player)
 	return true
 end
 
--- ==========================================
 -- LIKE LOGIC
--- ==========================================
 function LikeManager.CanLikePlayer(liker, targetPlayer)
 	local likerId = liker.UserId
 	local targetId = tostring(targetPlayer.UserId)
@@ -163,18 +157,14 @@ function LikeManager.ProcessLike(liker, targetPlayer)
 	local likerId = liker.UserId
 	local targetId = tostring(targetPlayer.UserId)
 	
-	-- 1. Terapkan Cooldown ke pengirim
 	playerCooldownsCache[likerId][targetId] = os.time() + COOLDOWN_DURATION
-	
-	-- 2. Increment total likes untuk penerima
 	playerLikesCache[targetPlayer.UserId] = (playerLikesCache[targetPlayer.UserId] or 0) + 1
 	targetPlayer:SetAttribute("TotalLikes", playerLikesCache[targetPlayer.UserId])
 	
-	-- FIX QUOTA DATASTORE: Jangan set playerDirtyFlags[likerId] = true karena TotalLikes pengirim tidak berubah!
+	-- Cooldown pengirim berubah; TotalLikes pengirim tidak.
 	cooldownDirtyFlags[likerId] = true
 	playerDirtyFlags[targetPlayer.UserId] = true
 
-	-- Increment Daily Likes OrderedDataStore
 	task.spawn(function()
 		local dailyKey = "PlayerLikes_Daily_" .. os.date("!%Y_%m_%d")
 		local _, dailyWriteStore = DataStoreEnv.GetOrdered(dailyKey)
@@ -197,15 +187,13 @@ function LikeManager.GetCooldownEndTime(liker, targetPlayer)
 	return 0
 end
 
--- ==========================================
 -- EVENTS
--- ==========================================
 Players.PlayerAdded:Connect(function(player)
-	-- FIX MASUK BARENGAN 100 PEMAIN: Beri jeda acak 1-4 detik agar tidak tabrakan dengan GetAsync Role & Level di detik ke-0
+	-- Jeda acak agar GetAsync tidak bertabrakan saat 100 pemain join bersamaan.
 	task.wait(math.random(10, 40) / 10)
 	if not player or not player.Parent then return end
 
-	-- Jika pemain keluar dan masuk dengan sangat cepat, tunggu sampai proses save sebelumnya selesai
+	-- Tunggu save sebelumnya selesai jika pemain keluar-masuk cepat.
 	local waited = 0
 	while activeSaves[player.UserId] and waited < 10 do
 		waited += task.wait(0.1)

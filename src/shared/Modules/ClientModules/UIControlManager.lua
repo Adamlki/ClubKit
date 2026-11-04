@@ -40,9 +40,7 @@ function UIControlManager.new(components)
 	return self
 end
 
--- ====================================
 -- SETUP CONNECTIONS
--- ====================================
 function UIControlManager:SetupConnections()
 	-- Skip button (0.3s debounce)
 	if self.skipBtn then
@@ -87,9 +85,7 @@ function UIControlManager:SetupConnections()
 	end
 end
 
--- ====================================
 -- VOLUME SLIDER SYSTEM
--- ====================================
 function UIControlManager:SetupVolumeSlider()
 	local dragging = false
 	local volumeBg = self.volumeFrameBg
@@ -186,9 +182,7 @@ function UIControlManager:SetVolume(volumePercent)
 	self.volumeValue = percent
 end
 
--- ====================================
 -- TIME FORMATTER (MM:SS)
--- ====================================
 local function formatTime(seconds)
 	if not seconds or seconds < 0 or seconds ~= seconds then
 		return "00:00"
@@ -198,9 +192,7 @@ local function formatTime(seconds)
 	return string.format("%02d:%02d", mins, secs)
 end
 
--- ====================================
 -- UPDATE PROGRESS
--- ====================================
 function UIControlManager:UpdateProgress(progress, currentTime, totalTime)
 	progress = math.clamp(progress or 0, 0, 1)
 	self.targetProgress = progress
@@ -230,9 +222,7 @@ function UIControlManager:UpdateSongDuration(duration)
 	end
 end
 
--- ====================================
 -- ADMIN CONTROLS
--- ====================================
 function UIControlManager:UpdateAdminButtonState(isModerator)
 	if self.adminBtn then
 		self.adminBtn.Visible = isModerator
@@ -255,9 +245,7 @@ function UIControlManager:UpdateAdminButtonText(text)
 	end
 end
 
--- ====================================
 -- CALLBACKS
--- ====================================
 function UIControlManager:OnNext(callback)
 	self.onNextCallback = callback
 end

@@ -8,9 +8,7 @@ local trackCache = setmetatable({}, { __mode = "k" })
 -- Reference ke AnimationPreloader (di-set oleh EmoteHandler di client)
 module.AnimationPreloader = nil
 
--- ============================================
 -- Animation Set untuk O(1) lookup isDanceTrack
--- ============================================
 local function animationSetFrom(loadedAnimations)
 	if not loadedAnimations then return nil end
 	if loadedAnimations.__asSet then return loadedAnimations.__asSet end
@@ -26,9 +24,7 @@ local function animationSetFrom(loadedAnimations)
 	return set
 end
 
--- ============================================
 -- Check apakah track adalah dance track
--- ============================================
 local function isDanceTrack(track, loadedAnimations)
 	if not track or not loadedAnimations then return false end
 	if not track.Animation then return false end
@@ -40,9 +36,7 @@ local function isDanceTrack(track, loadedAnimations)
 	return false
 end
 
--- ============================================
 -- Character Readiness Check
--- ============================================
 function module.isCharacterReady(player)
 	if not player or not player.Parent then return false end
 	if not player.Character or not player.Character.Parent then return false end
@@ -65,9 +59,7 @@ function module.getAnimator(player)
 	return humanoid:FindFirstChildOfClass("Animator")
 end
 
--- ============================================
 -- Get or Create Animation Track
--- ============================================
 function module.getOrCreateTrack(animator, animation)
 	if not animator or not animation then return nil end
 	if not animator.Parent or not animator.Parent.Parent then return nil end
@@ -104,7 +96,7 @@ function module.getOrCreateTrack(animator, animation)
 		pcall(function()
 			isValid = track.Parent == animator 
 				and track.Animation ~= nil
-				and typeof(track.Length) == "number" -- ✅ Pastikan track belum ter-destroy secara instance!
+				and typeof(track.Length) == "number" -- Pastikan track belum ter-destroy secara instance!
 		end)
 
 		if not isValid then
@@ -129,9 +121,7 @@ function module.getOrCreateTrack(animator, animation)
 	return track
 end
 
--- ============================================
 -- Get Currently Playing Dance Track
--- ============================================
 function module.getPlayingDanceTrack(animator, loadedAnimations)
 	if not animator or not animator.Parent then return nil end
 
@@ -158,9 +148,7 @@ function module.getPlayingDanceTrack(animator, loadedAnimations)
 	return nil
 end
 
--- ============================================
 -- Stop All Dance Tracks
--- ============================================
 function module.stopAllDances(animator, loadedAnimations, fadeOut)
 	if not animator or not animator.Parent then return end
 	fadeOut = (fadeOut ~= nil) and fadeOut or 0.5
@@ -175,16 +163,14 @@ function module.stopAllDances(animator, loadedAnimations, fadeOut)
 	for _, t in ipairs(tracks) do
 		if isDanceTrack(t, loadedAnimations) or t.Priority == Enum.AnimationPriority.Action4 then
 			pcall(function() 
-				t:AdjustSpeed(1) -- ✅ UNFREEZE SEBELUM STOP (Mencegah Zombie)
+				t:AdjustSpeed(1) -- UNFREEZE SEBELUM STOP (Mencegah Zombie)
 				t:Stop(fadeOut) 
 			end)
 		end
 	end
 end
 
--- ============================================
 -- Stop all dances EXCEPT specified track
--- ============================================
 function module.stopOtherDances(animator, excludeTrack, loadedAnimations, fadeOut)
 	if not animator or not animator.Parent then return end
 	fadeOut = (fadeOut ~= nil) and fadeOut or 0.06
@@ -203,9 +189,7 @@ function module.stopOtherDances(animator, excludeTrack, loadedAnimations, fadeOu
 	end
 end
 
--- ============================================
 -- Clear Cache (panggil saat karakter mati)
--- ============================================
 function module.clearCacheForPlayer(player)
 	if not player or not player.Character then return end
 	local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
@@ -223,17 +207,13 @@ function module.clearCacheForPlayer(player)
 	trackCache[animator] = nil
 end
 
--- ============================================
 -- Strip AnimationId ke angka saja
--- ============================================
 function module.stripAnimationId(id)
 	if not id then return "" end
 	return string.match(id, "%d+") or ""
 end
 
--- ============================================
 -- Auto-Cleanup Event (Mencegah Memory Leak)
--- ============================================
 local Players = game:GetService("Players")
 
 local function setupAutoCleanup(player)

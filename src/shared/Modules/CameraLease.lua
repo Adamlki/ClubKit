@@ -1,7 +1,4 @@
--- CameraLease: one owner for scripted camera effects.
--- Higher priority may take over; the original camera is restored only when
--- the current owner releases the lease.
-
+-- CameraLease: satu pemilik untuk efek kamera; prioritas lebih tinggi boleh mengambil alih.
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 

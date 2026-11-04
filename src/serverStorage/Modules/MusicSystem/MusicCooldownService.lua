@@ -10,9 +10,7 @@ function MusicCooldownService.new(config)
 	return self
 end
 
--- ====================================
 -- COOLDOWN CHECK
--- ====================================
 function MusicCooldownService:CheckCooldown(player, roleCooldowns)
 	local userId = player.UserId
 	local RoleSystem = require(game:GetService("ServerStorage").Modules.RoleSystem)
@@ -48,9 +46,7 @@ function MusicCooldownService:UpdateCooldown(player)
 	self.playerCooldowns[player.UserId] = tick()
 end
 
--- ====================================
 -- CLEANUP
--- ====================================
 function MusicCooldownService:CleanupPlayer(userId)
 	self.playerCooldowns[userId] = nil
 end

@@ -1,6 +1,4 @@
--- ========================================================
 -- SAWERIA API MODULE
--- ========================================================
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 

@@ -99,7 +99,6 @@ function ShopHandler:HandlePurchaseFinished(player, purchasedPassID, purchaseSuc
 		return
 	end
 
-	-- Determine gamepass type
 	local gamepassType = nil
 	local vipIds = self.roleSystem.Config.GamePasses.VIP
 
@@ -117,28 +116,19 @@ function ShopHandler:HandlePurchaseFinished(player, purchasedPassID, purchaseSuc
 
 	Logger:Success(string.format("%s purchased %s Pass!", player.Name, gamepassType))
 
-	-- Use callback system untuk handle verification
 	self.roleSystem:GivePassToPlayer(
 		player.UserId,
 		gamepassType,
-		0, -- 0 = self purchase
+		0,
 		function(success, result)
 			if success then
 				Logger:Success(string.format("Successfully saved %s purchase for %s", 
 					gamepassType, player.Name))
-
-				-- Get role AFTER verification
 				local newRole = self.roleSystem:GetPlayerRole(player)
-
-				-- Notify client
 				self:NotifyPurchaseComplete(player, gamepassType, newRole)
-
-				-- Additional role update dengan proper delay
 				if Config.AutoUpdateRole then
 					task.spawn(function()
 						task.wait(Config.UpdateDelay)
-
-						-- 🔥 VALIDASI: Cek eksistensi pemain setelah jeda (yield)
 						if player and player.Parent == game:GetService("Players") then
 							local finalRole = self:UpdatePlayerRole(player)
 							if finalRole then
@@ -165,18 +155,14 @@ function ShopHandler:UpdatePlayerRole(player)
 
 	task.wait(Config.UpdateDelay)
 
-	-- 🔥 VALIDASI: Cek eksistensi pemain lagi setelah jeda (yield)
 	if not player or player.Parent ~= game:GetService("Players") then 
 		return nil 
 	end
 
-	-- FIX: Jangan panggil InvalidateOwnershipCache secara buta karena GivePassToPlayer sudah mengupdate cache di memori,
-	-- dan menghapus cache akan me-reset pemilik VIP via Website menjadi Player biasa sementara antrean async berjalan.
 	local newRole = self.roleSystem:UpdatePlayerRole(player)
 
 	Logger:Info(string.format("Role updated for %s: %s", player.Name, newRole))
 
-	-- Broadcast if enabled
 	if Config.BroadcastRoleChange then
 		self:NotifyRoleUpdate(player, newRole)
 	end
@@ -184,7 +170,6 @@ function ShopHandler:UpdatePlayerRole(player)
 	return newRole
 end
 
--- Simple notification functions (no RemoteHandler needed)
 function ShopHandler:NotifyPurchaseComplete(player, gamepassType, role)
 	local remote = game.ReplicatedStorage.Gamepass:FindFirstChild("PlayerDataUpdated")
 	if remote then
@@ -211,4 +196,3 @@ function ShopHandler:NotifyRoleUpdate(player, newRole)
 end
 
 return ShopHandler
-

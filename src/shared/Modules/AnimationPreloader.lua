@@ -5,9 +5,7 @@ local ContentProvider = game:GetService("ContentProvider")
 local player = Players.LocalPlayer
 local module = {}
 
--- ============================================
 -- CONFIG
--- ============================================
 local CONFIG = {
 	DEBUG_ENABLED = false,
 	PRELOAD_ON_SPAWN = false,
@@ -15,23 +13,17 @@ local CONFIG = {
 	MAX_PRELOAD = 180, -- Remaining tracks are loaded lazily on first use
 }
 
--- ============================================
 -- CACHE
--- ============================================
 local isPreloaded = false
 
--- ============================================
 -- DEBUG
--- ============================================
 local function debug(...)
 	if CONFIG.DEBUG_ENABLED then
 		print("[AnimPreloader]", ...)
 	end
 end
 
--- ============================================
 -- GET ANIMATOR
--- ============================================
 local function getAnimator()
 	if not player.Character then return nil end
 
@@ -47,12 +39,7 @@ local function getAnimator()
 	return animator
 end
 
--- ============================================
--- 🚀 HIGH-PERFORMANCE PRELOADER (0ms INSTANT PLAYBACK)
--- ============================================
--- Melakukan background streaming aset secara bertahap (batching)
--- agar saat pemain mengklik dance atau sync ke leader,
--- animasinya LANGSUNG berputar 0ms tanpa freeze "diem dulu"!
+-- Preload aset di background agar dance/sync langsung diputar.
 function module.preloadAnimations(animationFolder)
 	if isPreloaded then
 		return true
@@ -76,8 +63,7 @@ function module.preloadAnimations(animationFolder)
 
 		debug("Starting background preload for", #animationsToPreload, "animations...")
 
-		-- Download aset dalam batch 25 item dengan jeda non-blocking
-		-- agar tidak membebani network / CPU thread saat baru join
+		-- Preload per batch agar tidak membebani network saat join.
 		local BATCH_SIZE = 25
 		for i = 1, #animationsToPreload, BATCH_SIZE do
 			local batch = {}
@@ -96,9 +82,7 @@ function module.preloadAnimations(animationFolder)
 	return true
 end
 
--- ============================================
--- 🔄 GET PRELOADED TRACK (Persistent Fast Cache)
--- ============================================
+-- GET PRELOADED TRACK
 local loadedTrackCache = setmetatable({}, { __mode = "k" })
 
 function module.getPreloadedTrack(animation)
@@ -125,7 +109,6 @@ function module.getPreloadedTrack(animation)
 		end
 	end
 
-	-- Buat AnimationTrack dan simpan di cache agar pemanggilan berikutnya 0ms
 	local success, track = pcall(function()
 		return animator:LoadAnimation(animation)
 	end)
@@ -139,9 +122,7 @@ function module.getPreloadedTrack(animation)
 	end
 end
 
--- ============================================
--- 🗑️ INVALIDATE TRACK (CLEANUP)
--- ============================================
+-- INVALIDATE TRACK
 function module.invalidateTrack(animation)
 	local animator = getAnimator()
 	if animator and loadedTrackCache[animator] then
@@ -156,16 +137,12 @@ function module.invalidateTrack(animation)
 	end
 end
 
--- ============================================
 -- CHECK IF PRELOADED
--- ============================================
 function module.isPreloaded()
 	return isPreloaded
 end
 
--- ============================================
 -- CLEAR CACHE (Call on character death/respawn)
--- ============================================
 function module.clearCache()
 	debug("🗑️ Clearing preload state...")
 	for animator, perAnimator in pairs(loadedTrackCache) do
@@ -184,9 +161,7 @@ function module.clearCache()
 	debug("✅ State cleared & tracks destroyed")
 end
 
--- ============================================
 -- AUTO PRELOAD ON CHARACTER SPAWN
--- ============================================
 if CONFIG.PRELOAD_ON_SPAWN then
 	local function setupPreload()
 		if not player.Character then

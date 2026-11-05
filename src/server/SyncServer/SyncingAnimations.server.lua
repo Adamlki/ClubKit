@@ -49,11 +49,12 @@ for _, anim in pairs(loadedAnimations) do
 end
 
 -- REMOTE HANDLERS
-animationStartRE.OnServerEvent:Connect(function(player, animationId, shouldPlay, speed, clientFadeTime, isSpam, clientStartTime)
+animationStartRE.OnServerEvent:Connect(function(player, animationId, shouldPlay, speed, clientFadeTime, isSpam, clientStartTime, clientPosition)
 	-- Validasi tipe dan nilai dari client.
 	if animationId ~= nil and type(animationId) ~= "string" and type(animationId) ~= "number" then return end
 	if type(shouldPlay) ~= "boolean" then return end
 	if speed ~= nil and (type(speed) ~= "number" or speed ~= speed) then return end
+	if clientPosition ~= nil and (type(clientPosition) ~= "number" or clientPosition ~= clientPosition) then return end
 	if not RemoteEventManager.checkRateLimit(player, "animationStart") then return end
 	speed = math.clamp(speed or 1, 0.1, 3.0)
 
@@ -62,6 +63,7 @@ animationStartRE.OnServerEvent:Connect(function(player, animationId, shouldPlay,
 	if type(clientStartTime) ~= "number" or clientStartTime ~= clientStartTime or math.abs(nowServer - clientStartTime) > 10 then
 		clientStartTime = nowServer
 	end
+	clientPosition = math.clamp(tonumber(clientPosition) or 0, 0, 600)
 
 	local animation = nil
 	if animationId then
@@ -80,17 +82,34 @@ animationStartRE.OnServerEvent:Connect(function(player, animationId, shouldPlay,
 			return
 		end
 	end
-	AnimationController.executeAnimation(player, animation, shouldPlay, speed, loadedAnimations, isSpam, clientStartTime)
+	AnimationController.executeAnimation(
+		player,
+		animation,
+		shouldPlay,
+		speed,
+		loadedAnimations,
+		isSpam,
+		clientStartTime,
+		clientPosition
+	)
 end)
 
-changeSpeedRE.OnServerEvent:Connect(function(player, speed)
+changeSpeedRE.OnServerEvent:Connect(function(player, speed, clientAnchorTime, clientPosition)
 	-- speed ~= speed mendeteksi NaN.
 	if type(speed) ~= "number" or speed ~= speed then return end
+	if clientAnchorTime ~= nil and (type(clientAnchorTime) ~= "number" or clientAnchorTime ~= clientAnchorTime) then return end
+	if clientPosition ~= nil and (type(clientPosition) ~= "number" or clientPosition ~= clientPosition) then return end
 	speed = math.clamp(speed, 0.1, 3.0)
 
 	if not RemoteEventManager.checkRateLimit(player, "changeAnimationSpeed") then return end
 
-	AnimationController.adjustAnimationSpeed(player, speed, loadedAnimations)
+	AnimationController.adjustAnimationSpeed(
+		player,
+		speed,
+		loadedAnimations,
+		clientAnchorTime,
+		clientPosition
+	)
 end)
 
 startSyncRE.OnServerEvent:Connect(function(player, target, condition)
@@ -151,6 +170,7 @@ local function setupPlayerRespawnHandler(player)
 		character:SetAttribute("IsLeader", nil)
 		character:SetAttribute("FollowerCount", nil)
 		character:SetAttribute("CurrentDanceID", nil)
+		character:SetAttribute("DanceSnapshot", nil)
 		queueLeaderUpdate()
 	end)
 

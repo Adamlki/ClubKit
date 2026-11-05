@@ -4,26 +4,30 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
-local AnimatorUtils = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("AnimatorUtils"))
+local SharedModules = ReplicatedStorage:WaitForChild("Modules")
+local AnimatorUtils = require(SharedModules:WaitForChild("AnimatorUtils"))
+local DanceState = require(SharedModules:WaitForChild("DanceState"))
+
 local SyncServer = ServerScriptService:WaitForChild("SyncServer")
 local ServerModules = SyncServer:WaitForChild("Modules")
 local SyncController = require(ServerModules:WaitForChild("SyncController"))
 
 local module = {}
 
--- CONFIG & ANTI-SPAM
+-- CONFIG
 local FADE_OUT = 0.1
-local DANCE_WALK_SPEED = 5
-local ANIMATION_PRIORITY = Enum.AnimationPriority.Action4
+local MIN_REQUEST_INTERVAL = 0.01
+local MAX_ANCHOR_POSITION = 600
 
 local processingRequests = setmetatable({}, { __mode = "k" })
 local lastRequestTime = setmetatable({}, { __mode = "k" })
-local spamNonceCooldown = {}
-local MIN_REQUEST_INTERVAL = 0.05
 
-Players.PlayerRemoving:Connect(function(player)
-	spamNonceCooldown[player.UserId] = nil
-end)
+local function finiteNumber(value)
+	return type(value) == "number"
+		and value == value
+		and value ~= math.huge
+		and value ~= -math.huge
+end
 
 -- Set attribute hanya jika nilainya berubah untuk menghemat replikasi.
 local function safeSetAttr(obj, key, value)
@@ -32,10 +36,15 @@ local function safeSetAttr(obj, key, value)
 	end
 end
 
+local function readSnapshot(character)
+	return DanceState.decode(character:GetAttribute("DanceSnapshot"))
+end
+
 local function clearDanceState(character)
 	safeSetAttr(character, "CurrentDanceID", nil)
 	safeSetAttr(character, "DanceStartTime", nil)
 	safeSetAttr(character, "DanceSpeed", nil)
+	safeSetAttr(character, "DanceSnapshot", nil)
 	safeSetAttr(character, "SpamNonce", nil)
 end
 
@@ -55,14 +64,51 @@ local function endProcessing(player)
 	processingRequests[player] = false
 end
 
+local function sanitizeAnchor(clientTime, clientPosition)
+	local now = workspace:GetServerTimeNow()
+
+	local anchorTime = now
+	if finiteNumber(clientTime) and math.abs(now - clientTime) <= 10 then
+		anchorTime = clientTime
+	end
+
+	local anchorPosition = 0
+	if finiteNumber(clientPosition) then
+		anchorPosition = math.clamp(clientPosition, 0, MAX_ANCHOR_POSITION)
+	end
+
+	return anchorTime, anchorPosition
+end
+
+-- Tulis snapshot baru secara atomik. version selalu naik agar client bisa
+-- mengabaikan update lama yang datang tidak berurutan.
+local function writeSnapshot(character, animationId, anchorTime, anchorPosition, speed, isRestart)
+	local current = readSnapshot(character)
+	local restartSeq = current and current.restartSeq or 0
+	if isRestart then
+		restartSeq += 1
+	end
+
+	local version = (current and current.version or 0) + 1
+	local snapshot = DanceState.encode(animationId, anchorTime, anchorPosition, speed, restartSeq, version)
+
+	safeSetAttr(character, "CurrentDanceID", animationId)
+	safeSetAttr(character, "DanceStartTime", anchorTime - (anchorPosition / speed))
+	safeSetAttr(character, "DanceSpeed", speed)
+	safeSetAttr(character, "DanceSnapshot", snapshot)
+
+	return snapshot
+end
+
 -- EXECUTE ANIMATION
-function module.executeAnimation(player, animation, shouldPlay, speed, loadedAnimations, isSpam, clientStartTime)
-	if not canProcessRequest(player) then return "rate_limited" end -- Berlaku untuk Play DAN Stop!
+function module.executeAnimation(player, animation, shouldPlay, speed, loadedAnimations, isSpam, clientStartTime, clientPosition)
+	if not canProcessRequest(player) then return "rate_limited" end
 	startProcessing(player)
 
 	local animator = AnimatorUtils.getAnimator(player)
 	if not animator or not animator.Parent or not animator.Parent.Parent then
-		endProcessing(player) return "error"
+		endProcessing(player)
+		return "error"
 	end
 
 	speed = math.clamp(tonumber(speed) or 1, 0.1, 3)
@@ -73,7 +119,12 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 		if syncTarget and syncTarget ~= "" then
 			safeSetAttr(character, "Syncing", nil)
 			safeSetAttr(character, "CurrentDanceID", nil)
-			task.delay(FADE_OUT, function() SyncController.updateLeaderStatus(player) end)
+			safeSetAttr(character, "DanceSnapshot", nil)
+			task.defer(function()
+				if player and player.Parent then
+					SyncController.updateLeaderStatus(player)
+				end
+			end)
 		end
 	end
 
@@ -89,7 +140,7 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 		return "stopped"
 	end
 
-	-- === PLAY & SPAM LOGIC ===
+	-- === PLAY & RESTART LOGIC ===
 	if character then
 		if character:GetAttribute("GlobalEffectActive") then
 			local GlobalEffectRemotes = ReplicatedStorage:FindFirstChild("GlobalEffectRemotes")
@@ -102,7 +153,7 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 			endProcessing(player)
 			return "blocked"
 		end
-		
+
 		local carryable = character:FindFirstChild("Carryable")
 		if carryable and carryable.Value == false then
 			local GlobalEffectRemotes = ReplicatedStorage:FindFirstChild("GlobalEffectRemotes")
@@ -115,39 +166,25 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 			endProcessing(player)
 			return "blocked"
 		end
-		
+
+		if not animation then
+			endProcessing(player)
+			return "invalid_animation"
+		end
+
 		safeSetAttr(character, "Syncing", nil)
 
-		local currentDanceId = character:GetAttribute("CurrentDanceID")
-		local sameDance = animation ~= nil and currentDanceId == animation.AnimationId
-		local spamOnSameDance = isSpam == true and sameDance
+		local anchorTime, anchorPosition = sanitizeAnchor(clientStartTime, clientPosition)
+		writeSnapshot(character, animation.AnimationId, anchorTime, anchorPosition, speed, true)
 
-		if animation and not sameDance then
-			safeSetAttr(character, "CurrentDanceID", animation.AnimationId)
-		end
-
-		-- Spam on the same dance must not rewrite the start time every click.
-		-- That was replicating 3-4 attributes to every client per request.
-		if not spamOnSameDance then
-			local validStartTime = workspace:GetServerTimeNow()
-			if type(clientStartTime) == "number" and clientStartTime == clientStartTime and math.abs(validStartTime - clientStartTime) <= 10 then
-				validStartTime = clientStartTime
-			end
-			character:SetAttribute("DanceStartTime", validStartTime)
-		end
-
-		if character:GetAttribute("DanceSpeed") ~= speed then
-			safeSetAttr(character, "DanceSpeed", speed)
-		end
-
-		if spamOnSameDance then
-			local now = os.clock()
-			local lastSpam = spamNonceCooldown[player.UserId] or 0
-			if now - lastSpam >= 0.25 then
-				spamNonceCooldown[player.UserId] = now
-				local currentNonce = character:GetAttribute("SpamNonce") or 0
-				character:SetAttribute("SpamNonce", currentNonce + 1)
-			end
+		-- isSpam tidak lagi punya cooldown. Setiap klik tetap menjadi restart
+		-- baru lewat restartSeq di snapshot.
+		--
+		-- Legacy SpamNonce tetap dipertahankan untuk kompatibilitas script lain,
+		-- tetapi tidak pernah dipakai untuk membatasi spam.
+		if isSpam then
+			local nonce = character:GetAttribute("SpamNonce") or 0
+			character:SetAttribute("SpamNonce", nonce + 1)
 		end
 	end
 
@@ -156,32 +193,50 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 end
 
 -- ADJUST ANIMATION SPEED
-function module.adjustAnimationSpeed(player, speed, loadedAnimations)
+-- Client mengirim anchor time + posisi asli track-nya. Server tidak
+-- menghitung ulang dari waktu terima karena itu menambah delay/jitter.
+function module.adjustAnimationSpeed(player, speed, loadedAnimations, clientAnchorTime, clientPosition)
 	if not canProcessRequest(player) then return "rate_limited" end
 	startProcessing(player)
 
 	local character = player.Character
-	if not character or character:GetAttribute("Syncing") then 
+	if not character or character:GetAttribute("Syncing") then
 		endProcessing(player)
-		return "syncing" 
+		return "syncing"
 	end
 
 	local numSpeed = tonumber(speed)
-	if not numSpeed or numSpeed ~= numSpeed then
-		numSpeed = 1
+	if not finiteNumber(numSpeed) then
+		endProcessing(player)
+		return "invalid_speed"
 	end
 	speed = math.clamp(numSpeed, 0.1, 3)
 
-	-- Sesuaikan DanceStartTime agar posisi dance tetap presisi saat speed berubah.
-	local oldSpeed = character:GetAttribute("DanceSpeed") or 1
-	local oldStartTime = character:GetAttribute("DanceStartTime")
-	if oldStartTime and oldSpeed > 0 and speed > 0 and oldSpeed ~= speed then
-		local now = workspace:GetServerTimeNow()
-		local elapsedPos = (now - oldStartTime) * oldSpeed
-		character:SetAttribute("DanceStartTime", now - (elapsedPos / speed))
+	local snapshot = readSnapshot(character)
+	if not snapshot then
+		local currentDanceId = character:GetAttribute("CurrentDanceID")
+		if not currentDanceId or currentDanceId == "" then
+			endProcessing(player)
+			return "no_dance"
+		end
+		snapshot = {
+			animationId = currentDanceId,
+			anchorTime = workspace:GetServerTimeNow(),
+			anchorPosition = 0,
+			speed = 1,
+			restartSeq = 0,
+			version = 0,
+		}
 	end
 
-	safeSetAttr(character, "DanceSpeed", speed)
+	local anchorTime, anchorPosition = sanitizeAnchor(clientAnchorTime, clientPosition)
+	if not finiteNumber(clientAnchorTime) or not finiteNumber(clientPosition) then
+		local now = workspace:GetServerTimeNow()
+		anchorTime = now
+		anchorPosition = math.max(0, snapshot.anchorPosition + (now - snapshot.anchorTime) * snapshot.speed)
+	end
+
+	writeSnapshot(character, snapshot.animationId, anchorTime, anchorPosition, speed, false)
 
 	endProcessing(player)
 	return "speed_changed"

@@ -23,18 +23,35 @@ local Modules = ReplicatedStorage:WaitForChild("Modules")
 local AnimationPreloader = require(Modules:WaitForChild("AnimationPreloader"))
 local AnimatorUtils = require(Modules:WaitForChild("AnimatorUtils"))
 local AnimationRegistry = require(Modules:WaitForChild("AnimationRegistry"))
+local DanceState = require(Modules:WaitForChild("DanceState"))
 AnimatorUtils.AnimationPreloader = AnimationPreloader
 local UIAnimator = require(ReplicatedStorage:WaitForChild("UIAnimator"))
 
 -- GLOBAL CONNECTION TRACKER
 local isScriptActive = true
 local scriptConnections = {}
-local fakeStartTimes = setmetatable({}, { __mode = "k" })
 local characterConnections = {}
 local playerConnections = {}
 local globalSyncListeners = setmetatable({}, { __mode = "k" })
 local leaderCharAddedConn = nil
 local leaderDanceConn = nil
+
+-- SNAPSHOT & RENDERER STATE
+local parsedSnapshots = setmetatable({}, { __mode = "k" })
+local snapshotByPlayerName = {}
+local renderStates = setmetatable({}, { __mode = "k" })
+local forgetRenderCharacter
+local updateUnsyncFrame
+local localSourceRestartSeq = 0
+local localPlayToken = 0
+local localAppliedSpeed = 1
+local renderAccumulator = 0
+local pruneAccumulator = 0
+local lastSpeedPublish = 0
+local lastPublishedSpeed = nil
+local RENDER_INTERVAL = 1 / 20
+local MIRROR_CULL_DISTANCE = 90
+local PRUNE_INTERVAL = 5
 
 local function trackConnection(conn)
 	table.insert(scriptConnections, conn)
@@ -52,9 +69,11 @@ local function cleanupCharacterConnections(char)
 		end
 		characterConnections[char] = nil
 	end
-	fakeStartTimes[char] = nil
 	if globalSyncListeners then
 		globalSyncListeners[char] = nil
+	end
+	if forgetRenderCharacter then
+		forgetRenderCharacter(char)
 	end
 end
 
@@ -207,7 +226,6 @@ local function killGhostAnimation(animator, fade, excludeTrack, excludeTrack2)
 				local animId = t.Animation and t.Animation.AnimationId
 				if (animId and isClubDanceId(animId)) or t.Priority == Enum.AnimationPriority.Action4 then
 					pcall(function()
-						t:AdjustSpeed(1)
 						t:Stop(f)
 					end)
 				end
@@ -379,179 +397,405 @@ local function findAnimById(danceId)
 	return fallbackAnim
 end
 
--- GLOBAL OBSERVER
-local function applyDance(char, danceId, speed, startTime, leaderName, isSpam)
-	if char ~= player.Character then return end 
+-- ==========================================================================
+-- DANCE MIRROR RENDERER
+-- Semua dancer selain local player dirender ulang secara lokal dari snapshot.
+-- Track native mereka dihentikan karena TimePosition/AdjustSpeed tidak
+-- direplikasi Roblox. Dengan satu snapshot, semua mirror di satu client
+-- memakai fase dan speed yang sama.
+-- ==========================================================================
 
-	speed = speed or 1
+local function getCharacterAnimator(char)
+	if not char then return nil end
+	local humanoid = char:FindFirstChildOfClass("Humanoid")
+	return humanoid and humanoid:FindFirstChildOfClass("Animator")
+end
 
-	local animator = char:FindFirstChild("Humanoid") and char.Humanoid:FindFirstChild("Animator")
-	if not animator then return end
+local function isLocalFollowing()
+	local char = player.Character
+	if not char then return false end
+	local syncingTo = char:GetAttribute("Syncing")
+	return syncingTo ~= nil and syncingTo ~= ""
+end
 
-	local applyTicket = (char:GetAttribute("ApplyTicket") or 0) + 1
-	char:SetAttribute("ApplyTicket", applyTicket)
-
-	local normDanceId = normalizeId(danceId)
-
-	if localSyncTrack and localSyncTrack.Animation and normalizeId(localSyncTrack.Animation.AnimationId) == normDanceId and localSyncTrack.IsPlaying then
-		if isSpam then
-			pcall(function() localSyncTrack.TimePosition = 0 end)
-		end
-		pcall(function() localSyncTrack:AdjustSpeed(speed) end)
-		currentSpeed = speed
-		return
+local function getActiveLocalDanceTrack()
+	local char = player.Character
+	if not char then return nil end
+	local syncingTo = char:GetAttribute("Syncing")
+	if syncingTo and syncingTo ~= "" then
+		return nil
 	end
 
-	local now = os.clock()
-	local isRapid = (now - lastDanceSwitchTime < 0.6)
-	lastDanceSwitchTime = now
-	local actualFade = isSpam and 0 or (isRapid and 0.4 or 0.5)
-
-	if updateLeaderDanceIndicator then
-		updateLeaderDanceIndicator()
-	end
-	if dancelabel then
-		if danceId and emoteIdCache[danceId] then
-			dancelabel.Text = " " .. emoteIdCache[danceId]
-		else
-			local displayName = leaderName or "Leader"
-			local lp = Players:FindFirstChild(leaderName or "")
-			if lp then displayName = lp.DisplayName end
-			dancelabel.Text = " " .. displayName .. "'s Dance"
-		end
+	if localAnimTrack and localAnimTrack.IsPlaying and localAnimTrack.Animation then
+		return localAnimTrack
 	end
 
-	if not danceId or danceId == "" then
-		if localSyncTrack then
-			localSyncTrack:Stop(actualFade)
-			localSyncTrack = nil
-		end
-
-		killGhostAnimation(animator, actualFade)
-		restoreCharacterAnimations(char)
-
-		if not isSyncing then
-			if savedLocalEmoteData then
-				local saved = savedLocalEmoteData
-				savedLocalEmoteData = nil
-				task.delay(0.05, function()
-					if isScriptActive then animationStarted(saved.animation, saved.button) end
-				end)
+	-- Fallback untuk track yang dibuat script lain (mis. resume GlobalEffect).
+	local animator = getCharacterAnimator(char)
+	local currentDanceId = char:GetAttribute("CurrentDanceID")
+	if animator and currentDanceId and currentDanceId ~= "" then
+		local norm = DanceState.normalizeId(currentDanceId)
+		for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+			if track.Animation and track.IsPlaying and DanceState.normalizeId(track.Animation.AnimationId) == norm then
+				return track
 			end
 		end
-		return
 	end
 
-	local targetAnim = findAnimById(danceId)
-	if not targetAnim then return end
+	return nil
+end
 
-	setAnimateEnabled(char, false)
-
-	local oldSyncTrack = localSyncTrack or localAnimTrack
-	if localAnimTrack and localAnimTrack ~= oldSyncTrack then
-		localAnimTrack:Stop(actualFade)
-		localAnimTrack = nil
+local function legacyStateForCharacter(char)
+	local animationId = char:GetAttribute("CurrentDanceID")
+	if not animationId or animationId == "" then
+		return nil
 	end
 
-	local track = AnimatorUtils.getOrCreateTrack(animator, targetAnim)
-	if not track then setAnimateEnabled(char, true) return end
+	local startTime = char:GetAttribute("DanceStartTime")
+	if type(startTime) ~= "number" or startTime ~= startTime then
+		startTime = workspace:GetServerTimeNow()
+	end
 
-	localSyncTrack = track
-	track.Priority = Enum.AnimationPriority.Action4
+	return {
+		animationId = animationId,
+		anchorTime = startTime,
+		anchorPosition = 0,
+		speed = math.clamp(tonumber(char:GetAttribute("DanceSpeed")) or 1, 0.1, 3),
+		restartSeq = tonumber(char:GetAttribute("SpamNonce")) or 0,
+		version = 0,
+	}
+end
 
-	local exactPos = nil
-	if leaderName and leaderName ~= "" then
-		local leaderPlayer = Players:FindFirstChild(leaderName)
-		local leaderChar = leaderPlayer and leaderPlayer.Character
-		local leaderAnimator = leaderChar and leaderChar:FindFirstChild("Humanoid") and leaderChar.Humanoid:FindFirstChild("Animator")
-		if leaderAnimator then
-			for _, t in ipairs(leaderAnimator:GetPlayingAnimationTracks()) do
-				local tId = t.Animation and t.Animation.AnimationId
-				if tId and normalizeId(tId) == normDanceId and t.IsPlaying then
-					exactPos = t.TimePosition
-					break
+local function parseSnapshotForCharacter(char)
+	local parsed = DanceState.decode(char:GetAttribute("DanceSnapshot"))
+	parsedSnapshots[char] = parsed
+
+	local targetPlayer = Players:GetPlayerFromCharacter(char)
+	if targetPlayer then
+		snapshotByPlayerName[targetPlayer.Name] = parsed
+	end
+
+	return parsed
+end
+
+local function getStateForCharacter(char)
+	return parsedSnapshots[char] or legacyStateForCharacter(char)
+end
+
+-- Mengembalikan: sourceKind, sourceCharacter, sourceState, sourceTrack,
+-- animationId, restartMarker.
+local function getSourceForCharacter(char)
+	local myChar = player.Character
+	local syncingTo = char:GetAttribute("Syncing")
+	local isLocal = (char == myChar)
+
+	if isLocal and (not syncingTo or syncingTo == "") then
+		local track = getActiveLocalDanceTrack()
+		if track and track.Animation then
+			return "local", char, nil, track, track.Animation.AnimationId, localSourceRestartSeq
+		end
+		return nil
+	end
+
+	if syncingTo and syncingTo ~= "" then
+		local leader = Players:FindFirstChild(syncingTo)
+		local leaderChar = leader and leader.Character
+
+		if leaderChar then
+			-- Kalau local player adalah leader, follower langsung mengikuti
+			-- track lokal tanpa menunggu snapshot/jaringan.
+			if leaderChar == myChar and (not myChar:GetAttribute("Syncing") or myChar:GetAttribute("Syncing") == "") then
+				local track = getActiveLocalDanceTrack()
+				if track and track.Animation then
+					return "local", leaderChar, nil, track, track.Animation.AnimationId, localSourceRestartSeq
 				end
+				return nil
 			end
+
+			local state = getStateForCharacter(leaderChar)
+			if state then
+				return "snapshot", leaderChar, state, nil, state.animationId, state.restartSeq
+			end
+			return nil
+		end
+
+		-- Leader tidak sedang ter-stream, tapi snapshot terakhir masih tersimpan.
+		local state = snapshotByPlayerName[syncingTo]
+		if state then
+			return "snapshot", nil, state, nil, state.animationId, state.restartSeq
+		end
+		return nil
+	end
+
+	local state = getStateForCharacter(char)
+	if not state then
+		return nil
+	end
+	return "snapshot", char, state, nil, state.animationId, state.restartSeq
+end
+
+local function isPoseAnimation(animation)
+	return animation ~= nil and animation.Parent ~= nil and animation.Parent.Name == "Pose"
+end
+
+forgetRenderCharacter = function(char)
+	local state = renderStates[char]
+	if not state then return end
+
+	if state.track then
+		pcall(function() state.track:Stop(0) end)
+	end
+	if char == player.Character and localSyncTrack == state.track then
+		localSyncTrack = nil
+	end
+
+	renderStates[char] = nil
+	parsedSnapshots[char] = nil
+end
+
+local function stopRenderState(char, fade)
+	local state = renderStates[char]
+	if not state then return end
+
+	local track = state.track
+	if track then
+		pcall(function() track:Stop(fade or DANCE_SWITCH_FADE) end)
+	end
+	if char == player.Character and localSyncTrack == track then
+		localSyncTrack = nil
+	end
+
+	state.track = nil
+	state.animId = nil
+	state.animIdNorm = nil
+	state.restartMarker = nil
+	state.lastSpeed = nil
+	state.sourceKind = nil
+end
+
+local function getRenderState(char, animator)
+	local state = renderStates[char]
+	if state and state.animator ~= animator then
+		forgetRenderCharacter(char)
+		state = nil
+	end
+
+	if not state then
+		state = {
+			char = char,
+			animator = animator,
+			track = nil,
+			animId = nil,
+			animIdNorm = nil,
+			restartMarker = nil,
+			lastSpeed = nil,
+			ourTracks = setmetatable({}, { __mode = "k" }),
+		}
+		renderStates[char] = state
+	end
+
+	return state
+end
+
+local function updateRenderCharacter(char, now, force)
+	if not char or not char.Parent then return end
+
+	local myChar = player.Character
+	local isLocal = (char == myChar)
+	local localFollowing = isLocal and isLocalFollowing()
+	local syncingTo = char:GetAttribute("Syncing")
+
+	-- Local player yang sedang menjadi leader/solo adalah sumber. Jangan
+	-- pernah membuat mirror untuk dirinya sendiri.
+	if isLocal and not localFollowing then
+		local state = renderStates[char]
+		if state and state.track then
+			stopRenderState(char, DANCE_SWITCH_FADE)
+		end
+		return
+	end
+
+	-- Selama global effect, animasi efek yang menang.
+	if char:GetAttribute("GlobalEffectActive") == true then
+		stopRenderState(char, 0.1)
+		return
+	end
+
+	-- Cull mirror yang jauh. Local follower sendiri tidak pernah di-cull.
+	if not isLocal then
+		local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		if not myHrp or not hrp or (myHrp.Position - hrp.Position).Magnitude > MIRROR_CULL_DISTANCE then
+			stopRenderState(char, DANCE_SWITCH_FADE)
+			return
 		end
 	end
 
-	if not exactPos and startTime and track.Length > 0 then
-		exactPos = ((workspace:GetServerTimeNow() - startTime) * speed) % track.Length
+	local sourceKind, sourceChar, sourceState, sourceTrack, animationId, restartMarker = getSourceForCharacter(char)
+	if not animationId or animationId == "" then
+		stopRenderState(char, DANCE_SWITCH_FADE)
+		return
 	end
 
-	track:Play(actualFade, 1, speed)
-	local initialPosApplied = false
-	if exactPos and track.Length > 0 then
-		pcall(function() track.TimePosition = exactPos end)
-		initialPosApplied = true
+	local animator = getCharacterAnimator(char)
+	if not animator then
+		forgetRenderCharacter(char)
+		return
 	end
 
-	if oldSyncTrack and oldSyncTrack ~= track then
+	local targetAnim = findAnimById(animationId)
+	if not targetAnim then
+		stopRenderState(char, DANCE_SWITCH_FADE)
+		return
+	end
+
+	local state = getRenderState(char, animator)
+	local normId = DanceState.normalizeId(animationId)
+	local isPose = isPoseAnimation(targetAnim)
+
+	local targetTrack = nil
+	if state.track and state.animIdNorm == normId then
+		targetTrack = state.track
+	else
+		targetTrack = AnimatorUtils.getOrCreateTrack(animator, targetAnim)
+	end
+
+	if not targetTrack then
+		return
+	end
+
+	local length = targetTrack.Length
+	if not length or length <= 0 then
+		-- Asset belum siap. Track lama tetap diputar; jangan pernah
+		-- memainkan track baru yang Length-nya masih 0.
+		return
+	end
+
+	local targetSpeed
+	if sourceKind == "local" then
+		targetSpeed = sourceTrack and sourceTrack.Speed or localAppliedSpeed
+	else
+		targetSpeed = sourceState and sourceState.speed or 1
+	end
+	targetSpeed = math.clamp(tonumber(targetSpeed) or 1, 0.1, 3)
+
+	local targetPos
+	if sourceKind == "local" then
+		targetPos = sourceTrack and sourceTrack.TimePosition or 0
+	else
+		local elapsed = (now - sourceState.anchorTime) * sourceState.speed
+		if isPose and elapsed >= length then
+			stopRenderState(char, DANCE_SWITCH_FADE)
+			return
+		end
+		targetPos = DanceState.positionAt(sourceState, length, now, not isPose)
+	end
+
+	local sameAnimation = state.track ~= nil
+		and state.animIdNorm == normId
+		and state.track.IsPlaying
+
+	local switchFade = DANCE_SWITCH_FADE
+
+	if not sameAnimation then
+		local oldTrack = state.track
+
+		state.ourTracks[targetTrack] = true
+		targetTrack.Priority = Enum.AnimationPriority.Action4
+		pcall(function() targetTrack.TimePosition = targetPos end)
+		targetTrack:Play(switchFade, 1, targetSpeed)
+		pcall(function() targetTrack.TimePosition = targetPos end)
+		pcall(function() targetTrack:AdjustSpeed(targetSpeed) end)
+
+		state.track = targetTrack
+		state.animId = animationId
+		state.animIdNorm = normId
+		state.restartMarker = restartMarker
+		state.lastSpeed = targetSpeed
+		state.sourceKind = sourceKind
+
+		if oldTrack and oldTrack ~= targetTrack then
+			pcall(function() oldTrack:Stop(switchFade) end)
+		end
+
+		if isLocal then
+			localSyncTrack = targetTrack
+		end
+		return
+	end
+
+	-- Restart eksplisit (spam / start ulang) harus mengenai semua mirror
+	-- pada frame yang sama. Tidak ada speed reset sebelum transisi.
+	if force or restartMarker ~= state.restartMarker then
+		pcall(function() state.track.TimePosition = targetPos end)
+		pcall(function() state.track:AdjustSpeed(targetSpeed) end)
+		state.restartMarker = restartMarker
+		state.lastSpeed = targetSpeed
+		return
+	end
+
+	if math.abs((state.track.Speed or 1) - targetSpeed) > 0.005 then
+		pcall(function() state.track:AdjustSpeed(targetSpeed) end)
+		state.lastSpeed = targetSpeed
+	end
+
+	-- Koreksi sisa drift hanya lewat speed. TimePosition baru di-set pada
+	-- restart, switch, initial sync, atau desync yang benar-benar besar.
+	local diff = DanceState.wrapDiff(targetPos - state.track.TimePosition, length)
+	local absDiff = math.abs(diff)
+
+	if absDiff > 1.5 then
+		pcall(function() state.track.TimePosition = targetPos end)
+	elseif absDiff > 0.06 then
+		local correction = math.clamp(diff * 1.5, -0.18, 0.18)
 		pcall(function()
-			oldSyncTrack:AdjustSpeed(1)
-			oldSyncTrack:Stop(actualFade)
+			state.track:AdjustSpeed(math.max(0.05, targetSpeed * (1 + correction)))
 		end)
+	elseif math.abs((state.track.Speed or 1) - targetSpeed) > 0.005 then
+		pcall(function() state.track:AdjustSpeed(targetSpeed) end)
 	end
-	killGhostAnimation(animator, actualFade, track)
+end
 
-	local capturedTicket = applyTicket
-	local function onTrackReady()
-		if not isScriptActive then return end
-		if char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
+local function refreshLocalGroup(force)
+	local myChar = player.Character
+	if not myChar then return end
 
-		if not initialPosApplied and track and track.Length > 0 then
-			local targetPos = nil
-			if leaderName and leaderName ~= "" then
-				local leaderPlayer = Players:FindFirstChild(leaderName)
-				local leaderChar = leaderPlayer and leaderPlayer.Character
-				local leaderAnimator = leaderChar and leaderChar:FindFirstChild("Humanoid") and leaderChar.Humanoid:FindFirstChild("Animator")
-				if leaderAnimator then
-					for _, t in ipairs(leaderAnimator:GetPlayingAnimationTracks()) do
-						local tId = t.Animation and t.Animation.AnimationId
-						if tId and normalizeId(tId) == normDanceId and t.IsPlaying then
-							targetPos = t.TimePosition
-							break
-						end
-					end
-				end
-			end
-
-			if not targetPos and startTime and track.Length > 0 then
-				local finalTime = workspace:GetServerTimeNow()
-				targetPos = ((finalTime - startTime) * speed) % track.Length
-			end
-
-			if targetPos and track.Length > 0 then
-				pcall(function() track.TimePosition = targetPos end)
-			end
+	local now = workspace:GetServerTimeNow()
+	local localName = player.Name
+	for _, otherPlayer in ipairs(Players:GetPlayers()) do
+		local char = otherPlayer.Character
+		if char and char ~= myChar and char:GetAttribute("Syncing") == localName then
+			updateRenderCharacter(char, now, force ~= false)
 		end
+	end
+end
 
-		track:AdjustSpeed(speed) 
-		killGhostAnimation(animator, actualFade, track)
+local function updateAllRenderCharacters(now, force)
+	local myChar = player.Character
+	local localFollowing = isLocalFollowing()
+
+	for _, otherPlayer in ipairs(Players:GetPlayers()) do
+		local char = otherPlayer.Character
+		if char and (char ~= myChar or localFollowing) then
+			updateRenderCharacter(char, now, force)
+		end
+	end
+end
+
+local function suppressNativeDanceTrack(char, track)
+	if not track or not track.Animation then return end
+
+	local state = renderStates[char]
+	if state and state.ourTracks[track] then return end
+
+	local myChar = player.Character
+	if char == myChar and not isLocalFollowing() then
+		return
 	end
 
-	if track and track.Length > 0 then
-		onTrackReady()
-	elseif track then
-		local lengthConn
-		local timeoutThread
-		local done = false
-		local function triggerReady()
-			if done then return end
-			done = true
-			if lengthConn then lengthConn:Disconnect() lengthConn = nil end
-			onTrackReady()
-		end
-
-		lengthConn = track:GetPropertyChangedSignal("Length"):Connect(function()
-			if track.Length > 0 then
-				triggerReady()
-			end
-		end)
-
-		timeoutThread = task.delay(1.5, function()
-			triggerReady()
-		end)
+	local animationId = track.Animation.AnimationId
+	if isClubDanceId(animationId) or track.Priority == Enum.AnimationPriority.Action4 then
+		pcall(function() track:Stop(0) end)
 	end
 end
 
@@ -599,217 +843,50 @@ local function monitorPlayerCharacter(targetPlayer)
 			end)
 		end))
 
-		local function forceSnapCharacterDance(track)
-			if not track or track.Length == 0 then return end
-
-			local startTime = fakeStartTimes[char] or char:GetAttribute("DanceStartTime")
-			local speed = char:GetAttribute("DanceSpeed") or 1
-			local currentDanceId = char:GetAttribute("CurrentDanceID")
-			local syncingTo = char:GetAttribute("Syncing")
-
-			if syncingTo == player.Name then
-				local myRef = localSyncTrack or localAnimTrack
-				if myRef and myRef.IsPlaying and myRef.Animation and track.Animation then
-					local myNorm = normalizeId(myRef.Animation.AnimationId)
-					local trackNorm = normalizeId(track.Animation.AnimationId)
-					if myNorm == trackNorm then
-						pcall(function()
-							track.TimePosition = myRef.TimePosition
-							track:AdjustSpeed(currentSpeed)
-						end)
-					end
-				end
-				return
-			end
-
-			if syncingTo and syncingTo ~= "" then
-				local leader = Players:FindFirstChild(syncingTo)
-				local leaderChar = leader and leader.Character
-				local leaderAnim = leaderChar and leaderChar:FindFirstChild("Humanoid") and leaderChar.Humanoid:FindFirstChild("Animator")
-				if leaderAnim then
-					local targetNorm = normalizeId(currentDanceId)
-					for _, lt in ipairs(leaderAnim:GetPlayingAnimationTracks()) do
-						local ltId = lt.Animation and lt.Animation.AnimationId
-						if ltId and normalizeId(ltId) == targetNorm and lt.IsPlaying then
-							pcall(function()
-								track.TimePosition = lt.TimePosition
-								track:AdjustSpeed(lt.Speed)
-							end)
-							return
-						end
-					end
-				end
-				if leaderChar then
-					startTime = fakeStartTimes[leaderChar] or leaderChar:GetAttribute("DanceStartTime") or startTime
-					speed = leaderChar:GetAttribute("DanceSpeed") or speed
-				end
-			end
-
-			if currentDanceId and track.Animation and normalizeId(track.Animation.AnimationId) ~= normalizeId(currentDanceId) then
-				return
-			end
-
-			if not char:GetAttribute("IsLeader") and startTime and track.Length > 0 then
-				local elapsed = workspace:GetServerTimeNow() - startTime
-				local exactPos = (elapsed * speed) % track.Length
-				if exactPos > 0 and math.abs(track.TimePosition - exactPos) > 0.02 then
-					pcall(function() track.TimePosition = exactPos end)
-				end
-			end
-
-			pcall(function() track:AdjustSpeed(speed) end)
-		end
-
+		-- Track native dance pada karakter remote dihentikan. Track mirror
+		-- buatan renderer kita sendiri dikecualikan lewat state.ourTracks.
 		trackCharConn(animator.AnimationPlayed:Connect(function(track)
-			if char ~= player.Character and track and track.Animation then
-				if track.Length > 0 then
-					forceSnapCharacterDance(track)
-				else
-					local lengthConn
-					local timeoutThread
-					local snapped = false
-					local function triggerSnap()
-						if snapped then return end
-						snapped = true
-						if lengthConn then lengthConn:Disconnect() lengthConn = nil end
-						if track and track.Length > 0 then
-							forceSnapCharacterDance(track)
-						end
-					end
-
-					lengthConn = track:GetPropertyChangedSignal("Length"):Connect(function()
-						if track.Length > 0 then
-							triggerSnap()
-						end
-					end)
-
-					timeoutThread = task.delay(1.5, function()
-						triggerSnap()
-					end)
-				end
-			end
+			suppressNativeDanceTrack(char, track)
 		end))
 
-		local function onAttributeChanged()
-			if char == player.Character then return end
-			for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-				if track.Animation and emoteIdCache[track.Animation.AnimationId] then
-					forceSnapCharacterDance(track)
-				end
-			end
+		-- Track dance yang sudah terlanjur diputar sebelum listener terpasang
+		-- juga harus dihentikan supaya tidak dobel dengan mirror.
+		for _, existingTrack in ipairs(animator:GetPlayingAnimationTracks()) do
+			suppressNativeDanceTrack(char, existingTrack)
 		end
 
-		local function syncToLeader()
-			local leaderName = char:GetAttribute("Syncing")
-			if leaderName and leaderName ~= "" then
-				local leaderPlayer = Players:FindFirstChild(leaderName)
-				local leaderChar = leaderPlayer and leaderPlayer.Character
-				if leaderChar then
-					local danceId = leaderChar:GetAttribute("CurrentDanceID")
-					local speed = leaderChar:GetAttribute("DanceSpeed") or 1
-					local startTime = leaderChar:GetAttribute("DanceStartTime")
-					applyDance(char, danceId, speed, startTime, leaderName, false)
-				else
-					applyDance(char, nil, 1, nil, leaderName, false)
-				end
-			else
-				applyDance(char, nil, 1, nil, nil, false)
-			end
+		local function onSnapshotChanged()
+			parseSnapshotForCharacter(char)
 		end
 
-		local function broadcastLeaderState(isSpamTrigger)
-			if char == player.Character then return end
-			local myChar = player.Character
-			if myChar and myChar:GetAttribute("Syncing") == char.Name then
-				local danceId = char:GetAttribute("CurrentDanceID")
-				local speed = char:GetAttribute("DanceSpeed") or 1
-				local startTime = char:GetAttribute("DanceStartTime")
-				applyDance(myChar, danceId, speed, startTime, char.Name, isSpamTrigger)
-			end
-		end
-
-		-- 6 Listener attribute yang terdaftar dan dibersihkan per-karakter
-		trackCharConn(char:GetAttributeChangedSignal("DanceStartTime"):Connect(function()
-			fakeStartTimes[char] = char:GetAttribute("DanceStartTime")
-			onAttributeChanged()
-			broadcastLeaderState(false)
-		end))
-
-		trackCharConn(char:GetAttributeChangedSignal("CurrentDanceID"):Connect(function()
-			onAttributeChanged()
-			broadcastLeaderState(false)
-		end))
+		trackCharConn(char:GetAttributeChangedSignal("DanceSnapshot"):Connect(onSnapshotChanged))
 
 		trackCharConn(char:GetAttributeChangedSignal("Syncing"):Connect(function()
-			onAttributeChanged()
-			syncToLeader()
-		end))
-
-		trackCharConn(char:GetAttributeChangedSignal("SpamNonce"):Connect(function() 
-			broadcastLeaderState(true) 
-		end))
-
-		trackCharConn(char:GetAttributeChangedSignal("DanceSpeed"):Connect(function()
-			local newSpeed = char:GetAttribute("DanceSpeed") or 1
-			local currentDanceId = char:GetAttribute("CurrentDanceID")
-
-			if char == player.Character then 
-				if localAnimTrack and localAnimTrack.IsPlaying and newSpeed > 0 then
-					fakeStartTimes[char] = workspace:GetServerTimeNow() - (localAnimTrack.TimePosition / newSpeed)
-				end
-			else
-				local charAnimator = char:FindFirstChild("Humanoid") and char.Humanoid:FindFirstChild("Animator")
-				if charAnimator and currentDanceId then
-					for _, track in ipairs(charAnimator:GetPlayingAnimationTracks()) do
-						if track.Animation and track.Animation.AnimationId == currentDanceId then
-							local currentPos = track.TimePosition
-							if newSpeed > 0 then
-								fakeStartTimes[char] = workspace:GetServerTimeNow() - (currentPos / newSpeed)
-							end
-							track:AdjustSpeed(newSpeed)
-						end
-					end
-				end
-
-				if player.Character and player.Character:GetAttribute("Syncing") == char.Name then
-					if localSyncTrack and localSyncTrack.IsPlaying and newSpeed > 0 then
-						fakeStartTimes[player.Character] = workspace:GetServerTimeNow() - (localSyncTrack.TimePosition / newSpeed)
-						localSyncTrack:AdjustSpeed(newSpeed)
-
-						if currentSpeed ~= newSpeed then
-							currentSpeed = newSpeed
-							if speedtext then 
-								speedtext.Text = string.format("%.1fx", math.floor(currentSpeed * 10 + 0.5) / 10) 
-							end
-							if speedSlider and speedBar then
-								local scale = (newSpeed - SPEED_MIN) / (SPEED_MAX - SPEED_MIN)
-								speedSlider.Position = UDim2.fromScale(scale, 0.5)
-							end
-						end
-					end
-				end
+			if char == player.Character and updateUnsyncFrame then
+				updateUnsyncFrame()
 			end
 		end))
 
-		task.spawn(function()
-			if char:GetAttribute("Syncing") and char:GetAttribute("Syncing") ~= "" then
-				syncToLeader()
-			elseif char:GetAttribute("CurrentDanceID") then
-				broadcastLeaderState(false)
+		trackCharConn(char:GetAttributeChangedSignal("GlobalEffectActive"):Connect(function()
+			if char:GetAttribute("GlobalEffectActive") == true then
+				stopRenderState(char, 0.1)
 			end
-		end)
+		end))
+
+		parseSnapshotForCharacter(char)
 	end
 
 	local charAddedConn = targetPlayer.CharacterAdded:Connect(onCharacterAdded)
 	table.insert(playerConnections[targetPlayer], charAddedConn)
 
 	local charRemovingConn = targetPlayer.CharacterRemoving:Connect(function(oldChar)
+		snapshotByPlayerName[targetPlayer.Name] = nil
 		cleanupCharacterConnections(oldChar)
 	end)
 	table.insert(playerConnections[targetPlayer], charRemovingConn)
 
-	if targetPlayer.Character then 
-		task.spawn(onCharacterAdded, targetPlayer.Character) 
+	if targetPlayer.Character then
+		task.spawn(onCharacterAdded, targetPlayer.Character)
 	end
 end
 
@@ -824,6 +901,8 @@ local function onPlayerRemoving(leavingPlayer)
 		end
 		playerConnections[leavingPlayer] = nil
 	end
+
+	snapshotByPlayerName[leavingPlayer.Name] = nil
 
 	if leavingPlayer.Character then
 		cleanupCharacterConnections(leavingPlayer.Character)
@@ -1029,7 +1108,7 @@ local function setMenuElementsBlocked(blocked)
 	if spFrame then spFrame.Visible = not blocked end
 end
 
-local function updateUnsyncFrame()
+function updateUnsyncFrame()
 	if not player.Character then 
 		if unsyncframe.Visible then 
 			unsyncframe.Visible = false
@@ -1051,8 +1130,51 @@ local function updateUnsyncFrame()
 		bindLeaderDanceListener(leaderPlayer)
 		updateLeaderDanceIndicator()
 
+		-- Simpan dance lokal sebelum track dihentikan. Listener lain bisa
+		-- berjalan lebih dulu, jadi jangan bergantung pada urutan sinyal.
+		if not savedLocalEmoteData and currentAnimation then
+			for _, data in ipairs(allButtons) do
+				if data.button == currentAnimation then
+					savedLocalEmoteData = {
+						animation = data.animation,
+						button = currentAnimation,
+						speed = currentSpeed,
+					}
+					break
+				end
+			end
+		end
+
+		-- Dance lokal harus berhenti saat mulai menjadi follower. Mirror
+		-- renderer akan memutar dance leader pada karakter ini.
+		local character = player.Character
+		if localAnimTrack then
+			pcall(function() localAnimTrack:Stop(FADE_TIME) end)
+			localAnimTrack = nil
+		end
+		if localSyncTrack then
+			pcall(function() localSyncTrack:Stop(FADE_TIME) end)
+			localSyncTrack = nil
+		end
+		if character then
+			local animator = getCharacterAnimator(character)
+			if animator then
+				killGhostAnimation(animator, FADE_TIME)
+			end
+			freezeHumanoidForPose(character, false)
+		end
+
+		-- UI kembali netral selama mengikuti leader. Dance yang disimpan
+		-- akan dipulihkan saat unsync.
+		currentAnimation = nil
+		lastEmoteClickTime = 0
+		updateButtonVisuals()
+
 		setMenuElementsBlocked(true)
 		unsyncframe.Visible = true
+
+		-- Mulai mirror pada frame ini juga, jangan menunggu render tick.
+		updateAllRenderCharacters(workspace:GetServerTimeNow(), true)
 	else
 		if leaderDanceConn then leaderDanceConn:Disconnect() leaderDanceConn = nil end
 		if leaderCharAddedConn then leaderCharAddedConn:Disconnect() leaderCharAddedConn = nil end
@@ -1063,11 +1185,28 @@ local function updateUnsyncFrame()
 		isSyncing = false
 		currentLeaderName = nil
 		if localSyncTrack then 
-			localSyncTrack:Stop(FADE_TIME) 
+			pcall(function() localSyncTrack:Stop(FADE_TIME) end)
 			localSyncTrack = nil 
 		end
 		if player.Character then
 			restoreCharacterAnimations(player.Character)
+		end
+
+		-- Kembalikan dance lokal yang tadi disimpan saat mulai sync.
+		if savedLocalEmoteData and not currentAnimation then
+			local saved = savedLocalEmoteData
+			savedLocalEmoteData = nil
+			currentSpeed = saved.speed or currentSpeed
+			if speedSlider and speedBar and speedtext then
+				local scale = (currentSpeed - SPEED_MIN) / (SPEED_MAX - SPEED_MIN)
+				speedSlider.Position = UDim2.fromScale(math.clamp(scale, 0, 1), 0.5)
+				speedtext.Text = string.format("%.1fx", math.floor(currentSpeed * 10 + 0.5) / 10)
+			end
+			task.delay(0.08, function()
+				if not isScriptActive or isSyncing or currentAnimation then return end
+				if localAnimTrack and localAnimTrack.IsPlaying then return end
+				animationStarted(saved.animation, saved.button, true)
+			end)
 		end
 	end
 end
@@ -1131,24 +1270,188 @@ end
 setupSyncMonitoring()
 trackConnection(player.CharacterAdded:Connect(function() task.wait(1) if isScriptActive then setupSyncMonitoring() end end))
 
--- ANIMATION STARTED 
-function animationStarted(animation, button)
-	if inputLock or pendingRequest then return end
+-- ANIMATION STARTED
+local function publishPlaySnapshot(animation, track, isSpam, fade)
+	if not animation or not track or not track.Animation then return end
+	if not isScriptActive then return end
+
+	animationStartRE:FireServer(
+		animation.AnimationId,
+		true,
+		localAppliedSpeed,
+		fade or DANCE_SWITCH_FADE,
+		isSpam == true,
+		workspace:GetServerTimeNow(),
+		track.TimePosition
+	)
+	lastSpeedPublish = os.clock()
+	lastPublishedSpeed = localAppliedSpeed
+end
+
+local function playLocalDance(animation, isSpam, isPose)
+	local character = player.Character
+	local animator = getCharacterAnimator(character)
+	if not character or not animator or not animation then
+		return false
+	end
+
+	local normId = DanceState.normalizeId(animation.AnimationId)
+	local token = localPlayToken + 1
+	localPlayToken = token
+
+	-- Spam dance yang sama: restart track yang sudah siap. Tidak ada
+	-- fade keluar/masuk yang membuat karakter terlihat patah.
+	if localAnimTrack and localAnimTrack.IsPlaying and localAnimTrack.Animation
+		and DanceState.normalizeId(localAnimTrack.Animation.AnimationId) == normId then
+		localAppliedSpeed = currentSpeed
+		localAnimTrack.Priority = Enum.AnimationPriority.Action4
+		pcall(function() localAnimTrack.TimePosition = 0 end)
+		pcall(function() localAnimTrack:AdjustSpeed(localAppliedSpeed) end)
+		setAnimateEnabled(character, false)
+		localSourceRestartSeq += 1
+		lastDanceSwitchTime = os.clock()
+
+		refreshLocalGroup(true)
+		publishPlaySnapshot(animation, localAnimTrack, true, DANCE_SWITCH_FADE)
+
+		task.delay(DANCE_SWITCH_FADE + 0.02, function()
+			if isScriptActive and localPlayToken == token and localAnimTrack then
+				freezeHumanoidForPose(character, isPose)
+			end
+		end)
+		return true
+	end
+
+	local track = AnimatorUtils.getOrCreateTrack(animator, animation)
+	if not track then
+		return false
+	end
+
+	local function beginPlay()
+		if token ~= localPlayToken or not isScriptActive then return end
+		if not track or not track.Animation or track.Length <= 0 then return end
+
+		local currentCharacter = player.Character
+		if not currentCharacter then return end
+
+		local currentAnimator = getCharacterAnimator(currentCharacter)
+		if not currentAnimator then return end
+
+		local oldTrack = localAnimTrack
+		localAppliedSpeed = currentSpeed
+
+		setAnimateEnabled(currentCharacter, false)
+		track.Priority = Enum.AnimationPriority.Action4
+
+		-- Penting: track baru diputar setelah Length > 0. Dance lama tetap
+		-- berjalan sampai titik ini, jadi tidak ada frame karakter diam.
+		pcall(function() track.TimePosition = 0 end)
+		track:Play(DANCE_SWITCH_FADE, 1, localAppliedSpeed)
+		pcall(function() track.TimePosition = 0 end)
+		pcall(function() track:AdjustSpeed(localAppliedSpeed) end)
+
+		localAnimTrack = track
+
+		if oldTrack and oldTrack ~= track then
+			pcall(function() oldTrack:Stop(DANCE_SWITCH_FADE) end)
+		end
+
+		killGhostAnimation(currentAnimator, DANCE_SWITCH_FADE, track)
+		localSourceRestartSeq += 1
+		lastDanceSwitchTime = os.clock()
+
+		refreshLocalGroup(true)
+		publishPlaySnapshot(animation, track, isSpam, DANCE_SWITCH_FADE)
+
+		task.delay(DANCE_SWITCH_FADE + 0.02, function()
+			if isScriptActive and localPlayToken == token and localAnimTrack == track then
+				freezeHumanoidForPose(currentCharacter, isPose)
+			end
+		end)
+	end
+
+	if track.Length > 0 then
+		beginPlay()
+	else
+		-- First-click / asset belum siap: tunggu track benar-benar punya
+		-- Length, sambil dance lama terus diputar.
+		local lengthConn
+		local done = false
+		local function tryStart()
+			if done then return end
+			if track.Length > 0 then
+				done = true
+				if lengthConn then lengthConn:Disconnect() lengthConn = nil end
+				beginPlay()
+			end
+		end
+
+		lengthConn = track:GetPropertyChangedSignal("Length"):Connect(tryStart)
+		local timeoutThread = task.delay(3, function()
+			if done then return end
+			done = true
+			if lengthConn then lengthConn:Disconnect() lengthConn = nil end
+		end)
+		task.delay(0.01, tryStart)
+	end
+
+	return true
+end
+
+local function stopLocalDance(animationId, fade)
+	local character = player.Character
+	local animator = getCharacterAnimator(character)
+	local track = localAnimTrack or getActiveLocalDanceTrack()
+
+	localPlayToken += 1
+	localAnimTrack = nil
+	localSourceRestartSeq += 1
+	lastPublishedSpeed = nil
+	lastSpeedPublish = 0
+
+	if track then
+		pcall(function() track:Stop(fade or FADE_TIME) end)
+	end
+	if animator then
+		killGhostAnimation(animator, fade or FADE_TIME)
+	end
+	restoreCharacterAnimations(character)
+
+	if animationId and animationId ~= "" then
+		animationStartRE:FireServer(
+			animationId,
+			false,
+			currentSpeed,
+			0,
+			false,
+			workspace:GetServerTimeNow(),
+			0
+		)
+	end
+
+	refreshLocalGroup(true)
+end
+
+function animationStarted(animation, button, ignoreLock)
+	if not animation or (inputLock and not ignoreLock) or pendingRequest then return end
 
 	inputLock = true
-	task.delay(0.05, function() inputLock = false end)
+	task.delay(0.02, function()
+		inputLock = false
+	end)
 
 	local currentTime = os.clock()
 	local character = player.Character
-	local animator = character and character:FindFirstChild("Humanoid") and character.Humanoid:FindFirstChild("Animator")
+	if not character then return end
 
 	if isSyncing then
 		isSyncing = false
+		savedLocalEmoteData = nil
 		local prevLeader = currentLeaderName
 		currentLeaderName = nil
 		if unsyncframe then unsyncframe.Visible = false end
 		if localSyncTrack then
-			localSyncTrack:Stop(DANCE_SWITCH_FADE)
+			pcall(function() localSyncTrack:Stop(DANCE_SWITCH_FADE) end)
 			localSyncTrack = nil
 		end
 		if prevLeader then
@@ -1157,9 +1460,7 @@ function animationStarted(animation, button)
 				startSyncRE:FireServer(lp, false)
 			end
 		end
-		if character then
-			character:SetAttribute("Syncing", nil)
-		end
+		character:SetAttribute("Syncing", nil)
 	end
 
 	local timeSinceLastClick = currentTime - lastEmoteClickTime
@@ -1167,47 +1468,26 @@ function animationStarted(animation, button)
 
 	if currentAnimation == button then
 		if isSpamming then
+			-- Spam: restart seketika tanpa mematikan track lama lebih dulu.
 			lastEmoteClickTime = os.clock()
-			if animator then
-				if localAnimTrack and localAnimTrack.Animation and normalizeId(localAnimTrack.Animation.AnimationId) == normalizeId(animation.AnimationId) then
-					localAnimTrack.TimePosition = 0
-				else
-					local isPose = isCurrentAnimPose()
-					local char = character
-					setAnimateEnabled(character, false)
-
-					local oldTrack = localAnimTrack
-					localAnimTrack = AnimatorUtils.getOrCreateTrack(animator, animation)
-					if localAnimTrack then
-						localAnimTrack.TimePosition = 0
-						localAnimTrack.Priority = Enum.AnimationPriority.Action4
-						localAnimTrack:Play(0, 1, currentSpeed)
-
-						if oldTrack and oldTrack ~= localAnimTrack then
-							oldTrack:Stop(0)
-						end
-
-						local capturedTicket = (char:GetAttribute("ApplyTicket") or 0)
-						task.spawn(function()
-							task.wait(0.05)
-							if not isScriptActive or char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
-							freezeHumanoidForPose(char, isPose)
-						end)
-					end
+			local isPose = buttonCategoryMap[button] == "Pose"
+			playLocalDance(animation, true, isPose)
+		else
+			local stopAnimationId = nil
+			if localAnimTrack and localAnimTrack.Animation then
+				stopAnimationId = localAnimTrack.Animation.AnimationId
+			else
+				local activeTrack = getActiveLocalDanceTrack()
+				if activeTrack and activeTrack.Animation then
+					stopAnimationId = activeTrack.Animation.AnimationId
 				end
 			end
-			animationStartRE:FireServer(animation.AnimationId, true, currentSpeed, 0, true, workspace:GetServerTimeNow())
-		else
+
 			currentAnimation = nil
 			lastEmoteClickTime = 0
 			updateButtonVisuals()
 			savedLocalEmoteData = nil
-			if animator and localAnimTrack then
-				localAnimTrack:Stop(FADE_TIME)
-				localAnimTrack = nil
-			end
-			restoreCharacterAnimations(character)
-			animationStartRE:FireServer(animation.AnimationId, false, currentSpeed, 0, false, workspace:GetServerTimeNow())
+			stopLocalDance(stopAnimationId, FADE_TIME)
 		end
 	else
 		savedLocalEmoteData = nil
@@ -1215,40 +1495,8 @@ function animationStarted(animation, button)
 		lastEmoteClickTime = os.clock()
 		updateButtonVisuals()
 
-		local oldAnimTrack = localAnimTrack
-		local now = os.clock()
-		local isRapid = (now - lastDanceSwitchTime < 0.6)
-		lastDanceSwitchTime = now
-		local actualFade = isRapid and 0.4 or 0.5
-
-		if animator then
-			local isPose = isCurrentAnimPose()
-			local char = character
-			setAnimateEnabled(character, false)
-
-			localAnimTrack = AnimatorUtils.getOrCreateTrack(animator, animation)
-			if localAnimTrack then
-				localAnimTrack.Priority = Enum.AnimationPriority.Action4
-				localAnimTrack.TimePosition = 0
-				localAnimTrack:Play(actualFade, 1, currentSpeed)
-
-				if oldAnimTrack and oldAnimTrack ~= localAnimTrack then
-					pcall(function()
-						oldAnimTrack:AdjustSpeed(1)
-						oldAnimTrack:Stop(actualFade)
-					end)
-				end
-				killGhostAnimation(animator, actualFade, localAnimTrack)
-
-				local capturedTicket = (char:GetAttribute("ApplyTicket") or 0)
-				task.spawn(function()
-					task.wait(actualFade + 0.02)
-					if not isScriptActive or char:GetAttribute("ApplyTicket") ~= capturedTicket then return end
-					freezeHumanoidForPose(char, isPose)
-				end)
-			end
-		end
-		animationStartRE:FireServer(animation.AnimationId, true, currentSpeed, actualFade, false, workspace:GetServerTimeNow())
+		local isPose = buttonCategoryMap[button] == "Pose"
+		playLocalDance(animation, false, isPose)
 	end
 end
 
@@ -1349,43 +1597,44 @@ poseBtn.MouseButton1Click:Connect(function() setActiveCategory("Pose") end)
 favoriteBtn.MouseButton1Click:Connect(function() setActiveCategory("Favorite") end)
 searchBox:GetPropertyChangedSignal("Text"):Connect(function() searchQuery = searchBox.Text updateDisplay() end)
 
--- SPEED SLIDER 
+-- SPEED SLIDER
+-- Knob mengikuti input secara langsung (tanpa easing). Speed animasi memakai
+-- ramp pendek di updateLocalSpeed agar perubahan tetap halus.
 if speedSlider and speedBar and speedtext and speedButton then
 	local isDraggingSpeed = false
 	local activeInput = nil
-	local speedSendDebounce = false
-	local lastSentSpeed = SPEED_DEFAULT
 	speedSlider.AnchorPoint = Vector2.new(0.5, 0.5)
 
-	local function scaleToSpeed(scale) return math.floor((SPEED_MIN + scale * (SPEED_MAX - SPEED_MIN)) * 100 + 0.5) / 100 end
-	local function speedToScale(speed) return (speed - SPEED_MIN) / (SPEED_MAX - SPEED_MIN) end
-
-	local function sendSpeedToServer(speed, isFinal)
-		if speed == lastSentSpeed then return end
-		if not isFinal and speedSendDebounce then return end
-		speedSendDebounce = true
-		lastSentSpeed = speed
-		changeSpeedRE:FireServer(speed)
-		task.delay(0.25, function()
-			speedSendDebounce = false
-			if not isDraggingSpeed and currentSpeed ~= lastSentSpeed then
-				changeSpeedRE:FireServer(currentSpeed)
-				lastSentSpeed = currentSpeed
-			end
-		end)
+	local function scaleToSpeed(scale)
+		return math.floor((SPEED_MIN + scale * (SPEED_MAX - SPEED_MIN)) * 100 + 0.5) / 100
+	end
+	local function speedToScale(speed)
+		return (speed - SPEED_MIN) / (SPEED_MAX - SPEED_MIN)
 	end
 
-	local targetScale = speedToScale(SPEED_DEFAULT)
-	local currentScale = targetScale
+	local function applyScale(scale)
+		scale = math.clamp(scale, 0, 1)
+		speedSlider.Position = UDim2.fromScale(scale, 0.5)
+
+		local newSpeed = scaleToSpeed(scale)
+		if newSpeed ~= currentSpeed then
+			currentSpeed = newSpeed
+			speedtext.Text = string.format("%.1fx", math.floor(currentSpeed * 10 + 0.5) / 10)
+		end
+	end
 
 	local function updateSlider(input)
-		local posX = input.Position.X
-		targetScale = math.clamp((posX - speedBar.AbsolutePosition.X) / speedBar.AbsoluteSize.X, 0, 1)
+		local width = math.max(1, speedBar.AbsoluteSize.X)
+		local scale = (input.Position.X - speedBar.AbsolutePosition.X) / width
+		applyScale(scale)
 	end
 
 	speedBar.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if isSyncing then showNotification("Cannot change speed while syncing", 2, Color3.fromRGB(0, 0, 0)) return end
+			if isSyncing then
+				showNotification("Cannot change speed while syncing", 2, Color3.fromRGB(0, 0, 0))
+				return
+			end
 			isDraggingSpeed = true
 			activeInput = input
 			updateSlider(input)
@@ -1394,53 +1643,31 @@ if speedSlider and speedBar and speedtext and speedButton then
 
 	speedButton.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if isSyncing then showNotification("Cannot change speed while syncing", 2, Color3.fromRGB(0, 0, 0)) return end
+			if isSyncing then
+				showNotification("Cannot change speed while syncing", 2, Color3.fromRGB(0, 0, 0))
+				return
+			end
 			isDraggingSpeed = true
 			activeInput = input
 		end
 	end)
 
 	trackConnection(UserInputService.InputChanged:Connect(function(input)
-		if isDraggingSpeed then
-			if input == activeInput or input.UserInputType == Enum.UserInputType.MouseMovement then
-				updateSlider(input)
-			end
+		if isDraggingSpeed and (input == activeInput or input.UserInputType == Enum.UserInputType.MouseMovement) then
+			updateSlider(input)
 		end
 	end))
 
-	trackConnection(UserInputService.InputEnded:Connect(function(input) 
+	trackConnection(UserInputService.InputEnded:Connect(function(input)
 		if input == activeInput or input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			isDraggingSpeed = false 
+			isDraggingSpeed = false
 			activeInput = nil
-			if not isSyncing and currentSpeed ~= lastSentSpeed then
-				sendSpeedToServer(currentSpeed, true)
-			end
+			-- Snapshot final dikirim oleh loop speed saat nilainya sudah stabil.
 		end
 	end))
 
-	trackConnection(RunService.RenderStepped:Connect(function(dt)
-		if currentScale == targetScale then return end
-
-		if math.abs(currentScale - targetScale) > 0.001 then
-			currentScale = currentScale + (targetScale - currentScale) * (12 * dt)
-			speedSlider.Position = UDim2.fromScale(currentScale, 0.5)
-			local newSpeed = scaleToSpeed(currentScale)
-			if newSpeed ~= currentSpeed then
-				currentSpeed = newSpeed
-				speedtext.Text = string.format("%.1fx", math.floor(currentSpeed * 10 + 0.5) / 10)
-				if not isSyncing then
-					if localAnimTrack then
-						localAnimTrack:AdjustSpeed(currentSpeed)
-					end
-					sendSpeedToServer(currentSpeed, false)
-				end
-			end
-		else
-			currentScale = targetScale
-		end
-	end))
-
-	speedSlider.Position = UDim2.fromScale(targetScale, 0.5)
+	local initialScale = speedToScale(SPEED_DEFAULT)
+	speedSlider.Position = UDim2.fromScale(initialScale, 0.5)
 	speedtext.Text = string.format("%.1fx", SPEED_DEFAULT)
 end
 
@@ -1501,175 +1728,100 @@ task.spawn(function()
 	setActiveCategory("Dance")
 end)
 
--- ANTI-DRIFT BACKGROUND SYNC 
-task.spawn(function()
-	local ANTI_DRIFT_INTERVAL = 0.35
-	local CULL_DISTANCE = 60
+-- RENDERER LOOP & SPEED STREAM
+-- 20 Hz cukup untuk semua mirror; aksi leader memakai refreshLocalGroup
+-- agar follower di layar leader berubah pada frame yang sama.
+local function publishLocalSpeedSnapshot()
+	if not isScriptActive then return end
 
-	local function wrapDiff(diff, len)
-		if diff > len / 2 then return diff - len end
-		if diff < -len / 2 then return diff + len end
-		return diff
+	local char = player.Character
+	if not char then return end
+	local syncingTo = char:GetAttribute("Syncing")
+	if syncingTo and syncingTo ~= "" then return end
+
+	local track = getActiveLocalDanceTrack()
+	if not track or not track.Animation then return end
+
+	local nowClock = os.clock()
+	if nowClock - lastSpeedPublish < (1 / 20) then return end
+	if lastPublishedSpeed ~= nil and math.abs(lastPublishedSpeed - localAppliedSpeed) < 0.001 then
+		return
 	end
 
-	local function syncTrackPosition(track, targetPos, targetSpeed, snapThreshold)
-		if track.Length <= 0 then return end
-		local diff = wrapDiff(targetPos - track.TimePosition, track.Length)
-		if math.abs(diff) > (snapThreshold or 0.03) then
-			pcall(function() track.TimePosition = targetPos end)
-			pcall(function() track:AdjustSpeed(targetSpeed) end)
-		elseif math.abs(track.Speed - targetSpeed) > 0.02 then
-			pcall(function() track:AdjustSpeed(targetSpeed) end)
+	changeSpeedRE:FireServer(localAppliedSpeed, workspace:GetServerTimeNow(), track.TimePosition)
+	lastSpeedPublish = nowClock
+	lastPublishedSpeed = localAppliedSpeed
+end
+
+local function updateLocalSpeed(dt)
+	if math.abs(localAppliedSpeed - currentSpeed) > 0.0005 then
+		local alpha = 1 - math.exp(-dt * 22)
+		localAppliedSpeed += (currentSpeed - localAppliedSpeed) * alpha
+		if math.abs(localAppliedSpeed - currentSpeed) < 0.004 then
+			localAppliedSpeed = currentSpeed
+		end
+
+		local track = getActiveLocalDanceTrack()
+		if track and track.IsPlaying then
+			pcall(function() track:AdjustSpeed(localAppliedSpeed) end)
+		end
+	elseif localAppliedSpeed ~= currentSpeed then
+		localAppliedSpeed = currentSpeed
+	end
+end
+
+local function pruneRemoteTracks()
+	local keepByAnimator = {}
+
+	for _, otherPlayer in ipairs(Players:GetPlayers()) do
+		local char = otherPlayer.Character
+		local animator = getCharacterAnimator(char)
+		if animator then
+			keepByAnimator[animator] = keepByAnimator[animator] or {}
 		end
 	end
 
-	while isScriptActive do 
-		task.wait(ANTI_DRIFT_INTERVAL)
-		if not isScriptActive then break end 
-
-		local myChar = player.Character
-		local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
-		if not myHrp then continue end
-
-		local isDancing = (localAnimTrack and localAnimTrack.IsPlaying) or (localSyncTrack and localSyncTrack.IsPlaying)
-		if not isDancing and not isSyncing then
-			task.wait(1.0)
-			continue
+	for char, state in pairs(renderStates) do
+		if state.animator and state.track then
+			local keep = keepByAnimator[state.animator]
+			if not keep then
+				keep = {}
+				keepByAnimator[state.animator] = keep
+			end
+			keep[state.track] = true
 		end
-
-		local activeLeader = currentLeaderName or (myChar and myChar:GetAttribute("Syncing"))
-		if isSyncing and localSyncTrack and localSyncTrack.IsPlaying and activeLeader then
-			local leaderPlayer = Players:FindFirstChild(activeLeader)
-			local leaderChar = leaderPlayer and leaderPlayer.Character
-			local leaderAnimator = leaderChar and leaderChar:FindFirstChild("Humanoid") and leaderChar.Humanoid:FindFirstChild("Animator")
-			local synced = false
-
-			if leaderAnimator then
-				local myAnimId = localSyncTrack.Animation and localSyncTrack.Animation.AnimationId
-				local myNorm = myAnimId and normalizeId(myAnimId)
-				for _, lt in ipairs(leaderAnimator:GetPlayingAnimationTracks()) do
-					local ltId = lt.Animation and lt.Animation.AnimationId
-					if ltId and (normalizeId(ltId) == myNorm or ltId == myAnimId) and lt.IsPlaying then
-						if localSyncTrack.Length > 0 then
-							local diff = wrapDiff(lt.TimePosition - localSyncTrack.TimePosition, localSyncTrack.Length)
-							local leaderSpeed = leaderChar:GetAttribute("DanceSpeed") or lt.Speed
-							local absDiff = math.abs(diff)
-
-							if absDiff <= 0.05 then
-								pcall(function() localSyncTrack:AdjustSpeed(leaderSpeed) end)
-							elseif absDiff <= 0.40 then
-								local nudge = math.clamp(diff * 0.35, -0.15, 0.15)
-								pcall(function() localSyncTrack:AdjustSpeed(math.max(0.05, leaderSpeed * (1 + nudge))) end)
-							else
-								pcall(function() localSyncTrack.TimePosition = lt.TimePosition end)
-								pcall(function() localSyncTrack:AdjustSpeed(leaderSpeed) end)
-							end
-							synced = true
-						end
-						break
-					end
-				end
-			end
-
-			if not synced and leaderChar and localSyncTrack.Length > 0 then
-				local sTime = fakeStartTimes[leaderChar] or leaderChar:GetAttribute("DanceStartTime")
-				local sSpeed = leaderChar:GetAttribute("DanceSpeed") or 1
-				if sTime then
-					local expectedPos = ((workspace:GetServerTimeNow() - sTime) * sSpeed) % localSyncTrack.Length
-					local diff = wrapDiff(expectedPos - localSyncTrack.TimePosition, localSyncTrack.Length)
-					local absDiff = math.abs(diff)
-
-					if absDiff <= 0.05 then
-						pcall(function() localSyncTrack:AdjustSpeed(sSpeed) end)
-					elseif absDiff <= 0.40 then
-						local nudge = math.clamp(diff * 0.35, -0.15, 0.15)
-						pcall(function() localSyncTrack:AdjustSpeed(math.max(0.05, sSpeed * (1 + nudge))) end)
-					else
-						pcall(function() localSyncTrack.TimePosition = expectedPos end)
-						pcall(function() localSyncTrack:AdjustSpeed(sSpeed) end)
-					end
-				end
-			end
-		end
-
-		local myReferenceTrack = localSyncTrack or localAnimTrack
-
-		for _, p in ipairs(Players:GetPlayers()) do
-			local char = p.Character
-			if not (char and char ~= myChar) then continue end
-
-			local targetHrp = char:FindFirstChild("HumanoidRootPart")
-			if not targetHrp or (myHrp.Position - targetHrp.Position).Magnitude > CULL_DISTANCE then 
-				continue 
-			end
-
-			local animator = char:FindFirstChild("Humanoid") and char.Humanoid:FindFirstChild("Animator")
-			if not animator then continue end
-
-			local syncingTo = char:GetAttribute("Syncing")
-
-			if syncingTo == player.Name then
-				if myReferenceTrack and myReferenceTrack.IsPlaying then
-					local myNorm = myReferenceTrack.Animation and normalizeId(myReferenceTrack.Animation.AnimationId)
-					for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-						local tId = track.Animation and track.Animation.AnimationId
-						if tId and (normalizeId(tId) == myNorm or tId == myReferenceTrack.Animation.AnimationId) then
-							syncTrackPosition(track, myReferenceTrack.TimePosition, currentSpeed, 0.03)
-						end
-					end
-				end
-				continue 
-			end
-
-			if syncingTo and syncingTo ~= "" then
-				local leader = Players:FindFirstChild(syncingTo)
-				local leaderChar = leader and leader.Character
-				local leaderAnimator = leaderChar and leaderChar:FindFirstChild("Humanoid") and leaderChar.Humanoid:FindFirstChild("Animator")
-				local currentDanceId = char:GetAttribute("CurrentDanceID")
-				local danceNorm = currentDanceId and normalizeId(currentDanceId)
-
-				local leaderTrack
-				if leaderAnimator then
-					for _, lt in ipairs(leaderAnimator:GetPlayingAnimationTracks()) do
-						local ltId = lt.Animation and lt.Animation.AnimationId
-						if ltId and (normalizeId(ltId) == danceNorm or ltId == currentDanceId) and lt.IsPlaying then
-							leaderTrack = lt
-							break
-						end
-					end
-				end
-
-				if leaderTrack and leaderTrack.Length > 0 then
-					for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-						local tId = track.Animation and track.Animation.AnimationId
-						if tId and (normalizeId(tId) == danceNorm or tId == currentDanceId) then
-							syncTrackPosition(track, leaderTrack.TimePosition, leaderTrack.Speed, 0.03)
-						end
-					end
-					continue
-				end
-			end
-
-			local startTime = fakeStartTimes[char] or char:GetAttribute("DanceStartTime")
-			local speed = char:GetAttribute("DanceSpeed") or 1
-			local currentDanceId = char:GetAttribute("CurrentDanceID")
-
-			if startTime and currentDanceId then
-				local danceNorm = normalizeId(currentDanceId)
-				for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-					local tId = track.Animation and track.Animation.AnimationId
-					if tId and (normalizeId(tId) == danceNorm or tId == currentDanceId) and track.Length > 0 then
-						local elapsed = workspace:GetServerTimeNow() - startTime
-						local exactPos = (elapsed * speed) % track.Length
-						if exactPos > 0 then
-							syncTrackPosition(track, exactPos, speed, 0.03)
-						end
-					end
-				end
-			end
+		if not char.Parent then
+			renderStates[char] = nil
 		end
 	end
-end)
+
+	for animator, keep in pairs(keepByAnimator) do
+		AnimatorUtils.pruneTracks(animator, keep)
+	end
+end
+
+trackConnection(RunService.RenderStepped:Connect(function(dt)
+	if not isScriptActive then return end
+	updateLocalSpeed(dt)
+end))
+
+trackConnection(RunService.Heartbeat:Connect(function(dt)
+	if not isScriptActive then return end
+
+	renderAccumulator += dt
+	if renderAccumulator < RENDER_INTERVAL then return end
+	renderAccumulator = 0
+
+	local now = workspace:GetServerTimeNow()
+	updateAllRenderCharacters(now, false)
+	publishLocalSpeedSnapshot()
+
+	pruneAccumulator += dt
+	if pruneAccumulator >= PRUNE_INTERVAL then
+		pruneAccumulator = 0
+		pruneRemoteTracks()
+	end
+end))
 
 -- CLEANUP
 trackConnection(player.CharacterAdded:Connect(function(newCharacter)
@@ -1695,9 +1847,18 @@ trackConnection(player.CharacterAdded:Connect(function(newCharacter)
 	isSyncing = false
 	currentLeaderName = nil
 	currentSpeed = 1
+	localAppliedSpeed = 1
+	localSourceRestartSeq += 1
+	lastPublishedSpeed = nil
+	lastSpeedPublish = 0
 	currentAnimation = nil
 	lastEmoteClickTime = 0
 	savedLocalEmoteData = nil
+	if speedSlider and speedBar and speedtext then
+		local scale = (SPEED_DEFAULT - SPEED_MIN) / (SPEED_MAX - SPEED_MIN)
+		speedSlider.Position = UDim2.fromScale(scale, 0.5)
+		speedtext.Text = string.format("%.1fx", SPEED_DEFAULT)
+	end
 	updateButtonVisuals()
 end))
 

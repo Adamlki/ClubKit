@@ -3,9 +3,11 @@ local RateLimiter = {}
 -- CONFIGURATION
 local CONFIG = {
 	-- Animation & Emotes
-	animationStart = { count = 8, window = 1 },      -- 8 animasi per detik; cukup untuk dance, jauh lebih ringan untuk 100 player
-	changeSpeed = { count = 8, window = 1 },         -- 8 speed change per detik
-	changeAnimationSpeed = { count = 8, window = 1 },
+	-- Spam dance tidak boleh dipotong. Batas ini masih membatasi abuse,
+	-- tetapi cukup untuk spam 10-20 klik/detik dan streaming speed 20 Hz.
+	animationStart = { count = 30, window = 1 },
+	changeSpeed = { count = 40, window = 1 },
+	changeAnimationSpeed = { count = 40, window = 1 },
 	startSync = { count = 3, window = 2 },           -- 3 sync per 2 detik
 	updateFavoritedAnimations = { count = 3, window = 5 },
 

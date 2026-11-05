@@ -41,6 +41,7 @@ function module.clearAllSyncAttributes(character)
 	safeSetAttr(character, "CurrentDanceID", nil)
 	safeSetAttr(character, "DanceStartTime", nil)
 	safeSetAttr(character, "DanceSpeed", nil)
+	safeSetAttr(character, "DanceSnapshot", nil)
 	safeSetAttr(character, "SpamNonce", nil)
 end
 
@@ -168,6 +169,12 @@ function module.forceUnsyncAllFollowers(leaderPlayer, loadedAnimations)
 					safeSetAttr(follower.Character, "Syncing", nil)
 					safeSetAttr(follower.Character, "IsLeader", nil)
 					safeSetAttr(follower.Character, "FollowerCount", nil)
+					-- Jangan tinggalkan snapshot lama pada follower. Client akan
+					-- memulihkan dance lokalnya sendiri setelah unsync.
+					safeSetAttr(follower.Character, "CurrentDanceID", nil)
+					safeSetAttr(follower.Character, "DanceStartTime", nil)
+					safeSetAttr(follower.Character, "DanceSpeed", nil)
+					safeSetAttr(follower.Character, "DanceSnapshot", nil)
 				end
 			end
 		end
@@ -178,6 +185,10 @@ function module.unsyncPlayer(player, loadedAnimations)
 	if player.Character then
 		safeSetAttr(player.Character, "Syncing", nil)
 		safeSetAttr(player.Character, "CurrentDanceID", nil)
+		safeSetAttr(player.Character, "DanceStartTime", nil)
+		safeSetAttr(player.Character, "DanceSpeed", nil)
+		safeSetAttr(player.Character, "DanceSnapshot", nil)
+		safeSetAttr(player.Character, "SpamNonce", nil)
 	end
 
 	local playerName = player.Name
@@ -262,6 +273,7 @@ function module.handleSyncRequest(player, targetPlayer, condition, loadedAnimati
 				safeSetAttr(player.Character, "CurrentDanceID", nil)
 				safeSetAttr(player.Character, "DanceStartTime", nil)
 				safeSetAttr(player.Character, "DanceSpeed", nil)
+				safeSetAttr(player.Character, "DanceSnapshot", nil)
 				player.Character:SetAttribute("Syncing", trueLeaderOfTarget.Name)
 			end
 

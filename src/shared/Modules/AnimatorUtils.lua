@@ -1,5 +1,7 @@
 --!native
 --!optimize 2
+local Players = game:GetService("Players")
+
 local module = {}
 
 -- Cache dengan weak keys agar otomatis dibersihkan GC
@@ -7,6 +9,17 @@ local trackCache = setmetatable({}, { __mode = "k" })
 
 -- Reference ke AnimationPreloader (di-set oleh EmoteHandler di client)
 module.AnimationPreloader = nil
+
+local function getLocalAnimator()
+	local localPlayer = Players.LocalPlayer
+	local character = localPlayer and localPlayer.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	return humanoid and humanoid:FindFirstChildOfClass("Animator")
+end
+
+local function isLocalAnimator(animator)
+	return animator ~= nil and animator == getLocalAnimator()
+end
 
 -- Animation Set untuk O(1) lookup isDanceTrack
 local function animationSetFrom(loadedAnimations)
@@ -64,19 +77,20 @@ function module.getOrCreateTrack(animator, animation)
 	if not animator or not animation then return nil end
 	if not animator.Parent or not animator.Parent.Parent then return nil end
 
-	-- Coba preloaded track dulu (client side)
-	if module.AnimationPreloader then
-		local preloadedTrack = module.AnimationPreloader.getPreloadedTrack(animation)
+	-- Preloader hanya aman untuk animator LocalPlayer. Untuk karakter remote,
+	-- LoadAnimation harus dibuat pada animator karakter itu sendiri.
+	if module.AnimationPreloader and isLocalAnimator(animator) then
+		local preloadedTrack = module.AnimationPreloader.getPreloadedTrack(animation, animator)
 		if preloadedTrack then
 			local trackValid = false
 			pcall(function()
-				trackValid = preloadedTrack.Parent == animator and preloadedTrack.Animation ~= nil
+				trackValid = preloadedTrack.Animation ~= nil and typeof(preloadedTrack.Length) == "number"
 			end)
 
 			if trackValid then
 				return preloadedTrack
 			else
-				module.AnimationPreloader.invalidateTrack(animation)
+				module.AnimationPreloader.invalidateTrack(animation, animator)
 			end
 		end
 	end
@@ -94,8 +108,7 @@ function module.getOrCreateTrack(animator, animation)
 	if track then
 		local isValid = false
 		pcall(function()
-			isValid = track.Parent == animator 
-				and track.Animation ~= nil
+			isValid = track.Animation ~= nil
 				and typeof(track.Length) == "number" -- Pastikan track belum ter-destroy secara instance!
 		end)
 
@@ -162,9 +175,8 @@ function module.stopAllDances(animator, loadedAnimations, fadeOut)
 
 	for _, t in ipairs(tracks) do
 		if isDanceTrack(t, loadedAnimations) or t.Priority == Enum.AnimationPriority.Action4 then
-			pcall(function() 
-				t:AdjustSpeed(1) -- UNFREEZE SEBELUM STOP (Mencegah Zombie)
-				t:Stop(fadeOut) 
+			pcall(function()
+				t:Stop(fadeOut)
 			end)
 		end
 	end
@@ -186,6 +198,43 @@ function module.stopOtherDances(animator, excludeTrack, loadedAnimations, fadeOu
 		if t ~= excludeTrack and (isDanceTrack(t, loadedAnimations) or t.Priority == Enum.AnimationPriority.Action4) then
 			pcall(function() t:Stop(fadeOut) end)
 		end
+	end
+end
+
+-- Sisakan hanya track remote yang masih dipakai. Track local tidak disentuh
+-- karena dipegang AnimationPreloader untuk seluruh katalog.
+function module.pruneTracks(animator, keep)
+	if not animator or not keep then return end
+	if isLocalAnimator(animator) then return end
+
+	local perAnimator = trackCache[animator]
+	if not perAnimator then return end
+
+	for animation, track in pairs(perAnimator) do
+		if not keep[track] then
+			perAnimator[animation] = nil
+			pcall(function()
+				track:Stop(0)
+				track:Destroy()
+			end)
+		end
+	end
+end
+
+-- Hapus satu track remote dengan aman.
+function module.evictTrack(animator, animation, track)
+	if not animator or not animation or isLocalAnimator(animator) then return end
+	local perAnimator = trackCache[animator]
+	if not perAnimator then return end
+
+	local cached = perAnimator[animation]
+	if track and cached and cached ~= track then return end
+	perAnimator[animation] = nil
+	if cached then
+		pcall(function()
+			cached:Stop(0)
+			cached:Destroy()
+		end)
 	end
 end
 
@@ -214,8 +263,6 @@ function module.stripAnimationId(id)
 end
 
 -- Auto-Cleanup Event (Mencegah Memory Leak)
-local Players = game:GetService("Players")
-
 local function setupAutoCleanup(player)
 	player.CharacterRemoving:Connect(function(character)
 		-- Menggunakan referensi 'character' yang sedang dihapus

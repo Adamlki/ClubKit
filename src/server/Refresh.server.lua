@@ -222,6 +222,7 @@ local function processPlayer(player)
 
 	if currentDance and currentDance ~= "" then
 		character:SetAttribute("CurrentDanceID", nil)
+		character:SetAttribute("DanceSnapshot", nil)
 		task.delay(0.1, function()
 			if character and character.Parent then
 				character:SetAttribute("CurrentDanceID", currentDance)

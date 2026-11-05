@@ -376,11 +376,16 @@ local function resumeLocalDance()
 
 	local syncTarget = char:GetAttribute("Syncing")
 	if syncTarget and syncTarget ~= "" then
-		local leader = Players:FindFirstChild(syncTarget)
-		if leader and leader.Character then
-			currentDanceID = leader.Character:GetAttribute("CurrentDanceID")
-			speed = leader.Character:GetAttribute("DanceSpeed") or speed
+		-- Follower disinkronkan oleh DanceMirror renderer di EmoteHandler.
+		-- Jangan membuat track kedua di sini.
+		if resumedDanceTrack then
+			resumedDanceTrack:Stop(0.1)
+			resumedDanceTrack:Destroy()
+			resumedDanceTrack = nil
 		end
+		suspendedTimePosition = 0
+		suspendedDanceID = nil
+		return
 	end
 
 	if not currentDanceID or currentDanceID == "" then return end

@@ -7,10 +7,9 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local LeaderboardRegistry = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("LeaderboardRegistry"))
 local DonationLeaderboard = require(script.DonationLeaderboard)
 
-local REFRESH_INTERVAL = 120   -- detik antar refresh otomatis (dinaikkan ke 120 untuk mencegah rate limit)
+local REFRESH_INTERVAL = 120
 local TOP_ENTRIES      = 100
 
--- REMOTE
 local updateTopBoardRemote = ReplicatedStorage:FindFirstChild("UpdateTopBoard")
 	or (function()
 		local r = Instance.new("RemoteEvent")
@@ -19,10 +18,8 @@ local updateTopBoardRemote = ReplicatedStorage:FindFirstChild("UpdateTopBoard")
 		return r
 	end)()
 
--- INISIALISASI
 local leaderboard = DonationLeaderboard.new()
 
--- MANUAL CONTROL (DIPINDAHKAN KE ATAS)
 local leaderboardControl = {
 	Refresh = function()
 		leaderboard:ClearCache()
@@ -43,10 +40,8 @@ local leaderboardControl = {
 
 LeaderboardRegistry.setController("Robux", leaderboardControl)
 
--- STATE (CACHE)
 local cachedDonors = {}
 
--- HELPER
 local function buildNetworkData(donors)
 	local data = {}
 	for i = 1, math.min(TOP_ENTRIES, #donors) do
@@ -61,7 +56,6 @@ local function buildNetworkData(donors)
 	return data
 end
 
--- UPDATE LEADERBOARD (GLOBAL)
 local function isDataDifferent(oldPayload, newPayload)
 	if not oldPayload or not newPayload then return true end
 	local oldAll = oldPayload.AllTime or {}
@@ -106,13 +100,11 @@ function updateLeaderboard()
 	local hasChanged = isDataDifferent(cachedDonors, newPayload)
 	cachedDonors = newPayload
 
-	-- HANYA FIRING JIKA ADA PERUBAHAN DATA (0% Trafik jika tidak ada donasi baru)
 	if hasChanged then
 		updateTopBoardRemote:FireAllClients(cachedDonors)
 	end
 end
 
--- Export ke LeaderboardRegistry & LeaderboardOrchestrator
 local function refreshRobuxLeaderboard()
 	leaderboard:ClearCache()
 	updateLeaderboard()
@@ -127,8 +119,6 @@ updateTopBoardRemote.OnServerEvent:Connect(function(player)
 
 	local now = os.clock()
 	if now - (clientBoardCooldown[player.UserId] or 0) < 15 then
-		-- Throttle the reply itself. Return the last known payload so the
-		-- StatueRenderer/LeaderboardsClient still gets data on a cache hit.
 		if cachedDonors and (#(cachedDonors.AllTime or {}) > 0 or #(cachedDonors.Daily or {}) > 0) then
 			pcall(function()
 				updateTopBoardRemote:FireClient(player, cachedDonors)

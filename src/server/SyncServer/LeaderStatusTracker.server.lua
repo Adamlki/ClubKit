@@ -4,7 +4,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SyncController = require(script.Parent:WaitForChild("Modules"):WaitForChild("SyncController"))
 local AnimatorUtils = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("AnimatorUtils"))
 
--- Create remote event
 local LeaderRemotes = ReplicatedStorage:FindFirstChild("Remotes")
 if not LeaderRemotes then
 	LeaderRemotes = Instance.new("Folder")
@@ -12,14 +11,12 @@ if not LeaderRemotes then
 	LeaderRemotes.Parent = ReplicatedStorage
 end
 
--- Configuration
 local CONFIG = {
 	DEBUG_ENABLED = false,
 	DEBOUNCE_TIME = 0.05,
 	PERIODIC_CHECK_INTERVAL = 10
 }
 
--- Connection management
 local playerConnections = {}
 local characterConnections = {}
 local updateScheduled = false
@@ -55,7 +52,6 @@ local function cleanupCharacterConnections(character)
 	end
 end
 
--- Update single player
 local function updatePlayerLeaderStatus(player)
 	if not player or not player.Parent then return end
 	if not player.Character then return end
@@ -79,15 +75,12 @@ local function updatePlayerLeaderStatus(player)
 	end
 end
 
--- Immediate update all (O(N) batch)
 local function immediateUpdateAll()
 	SyncController.updateAllLeaderStatus()
 end
 
--- Scheduled update with debounce (coalesce pattern)
--- Semua panggilan dalam window DEBOUNCE_TIME digabung menjadi 1 eksekusi.
 local function scheduleUpdate()
-	if updateScheduled then return end  -- sudah ada update pending, ikut antrian itu
+	if updateScheduled then return end
 	updateScheduled = true
 
 	task.delay(CONFIG.DEBOUNCE_TIME, function()
@@ -97,18 +90,12 @@ local function scheduleUpdate()
 	end)
 end
 
--- Setup character tracking
 local function setupCharacterTracking(player, character)
 	debug("Setting up tracking for", player.Name)
 
 	cleanupCharacterConnections(character)
 	characterConnections[character] = {}
 
-	-- Pantau perubahan atribut Syncing.
-	-- Hanya listener ini yang dibutuhkan — satu-satunya trigger eksternal yang
-	-- perlu ditangkap. IsLeader & FollowerCount TIDAK didengarkan karena
-	-- updatePlayerLeaderStatus() sudah FireAllClients setelah set kedua attribute
-	-- tersebut; mendengarkannya hanya akan membuat cascade fire berganda.
 	local syncingConnection = character:GetAttributeChangedSignal("Syncing"):Connect(function()
 		local syncTarget = character:GetAttribute("Syncing")
 		debug(syncTarget and "→" or "←", player.Name, syncTarget and "syncing to" or "stopped syncing", syncTarget or "")
@@ -116,15 +103,12 @@ local function setupCharacterTracking(player, character)
 	end)
 	table.insert(characterConnections[character], syncingConnection)
 
-	-- Pantau kematian karakter.
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		local diedConnection = humanoid.Died:Connect(function()
 			debug("??", player.Name, "died - clearing status")
 
-			-- Clear attributes (delegated ke SyncController dengan dirty-checking)
 			SyncController.clearAllSyncAttributes(character)
-
 
 			cleanupCharacterConnections(character)
 		end)
@@ -135,7 +119,6 @@ local function setupCharacterTracking(player, character)
 	updatePlayerLeaderStatus(player)
 end
 
--- Player character added
 Players.PlayerAdded:Connect(function(player)
 	debug("?", player.Name, "joined the game")
 
@@ -149,8 +132,6 @@ Players.PlayerAdded:Connect(function(player)
 		task.spawn(function()
 			character:WaitForChild("Humanoid")
 
-
-			-- Clear attributes (delegated ke SyncController dengan dirty-checking)
 			SyncController.clearAllSyncAttributes(character)
 
 			task.wait(0.1)
@@ -162,9 +143,7 @@ Players.PlayerAdded:Connect(function(player)
 	local charRemovingConn = player.CharacterRemoving:Connect(function(character)
 		debug("??", player.Name, "character removing")
 
-		-- Clear attributes (delegated ke SyncController dengan dirty-checking)
 		SyncController.clearAllSyncAttributes(character)
-
 
 		cleanupCharacterConnections(character)
 	end)
@@ -179,7 +158,6 @@ Players.PlayerAdded:Connect(function(player)
 	end
 end)
 
--- Player removing
 Players.PlayerRemoving:Connect(function(player)
 	debug("??", player.Name, "left the game")
 
@@ -189,14 +167,11 @@ Players.PlayerRemoving:Connect(function(player)
 		cleanupCharacterConnections(player.Character)
 	end
 
-	-- Cache dibersihkan otomatis oleh weak table.
-
 	cleanupPlayerConnections(player)
 
 	task.defer(immediateUpdateAll)
 end)
 
--- Periodic update (safety net)
 local periodicUpdateTask = task.spawn(function()
 	while true do
 		task.wait(CONFIG.PERIODIC_CHECK_INTERVAL)
@@ -242,7 +217,6 @@ local periodicUpdateTask = task.spawn(function()
 	end
 end)
 
--- Cleanup on shutdown
 game:BindToClose(function()
 	debug("Shutting down - cleaning up...")
 
@@ -258,7 +232,6 @@ game:BindToClose(function()
 		cleanupPlayerConnections(player)
 	end
 
-
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player.Character then
 			SyncController.clearAllSyncAttributes(player.Character)
@@ -268,7 +241,6 @@ game:BindToClose(function()
 	debug("Cleanup complete")
 end)
 
--- Initialization
 task.spawn(function()
 	task.wait(2)
 

@@ -6,7 +6,6 @@ local TextService       = game:GetService("TextService")
 
 local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 
--- MODULES
 local OverheadShared     = ReplicatedStorage:WaitForChild("OverheadShared")
 local Config             = require(OverheadShared:WaitForChild("Config"))
 local DebugSystem        = require(script.DebugSystem)
@@ -18,7 +17,6 @@ local RoleSystem         = require(ServerStorage.Modules.RoleSystem)
 local LevelSystem        = require(ServerStorage.Modules.LevelSystem)
 local TitleDataManager   = require(script.TitleDataManager)
 
--- INITIALIZATION
 DebugSystem:Init(Config.DEBUG_ENABLED)
 TitleDataManager:Init(Config)
 
@@ -34,15 +32,12 @@ OverheadManager:Init(
 
 NametagDisabler:Init()
 
--- CHARACTER EVENTS
 local function onCharacterAdded(player, character)
-	-- Tunggu avatar tampil, maksimal 5 detik.
 	local appearanceWait = 0
 	while not player:HasAppearanceLoaded() and player.Parent and appearanceWait < 5 do
 		appearanceWait += task.wait(0.2)
 	end
 
-	-- Tunggu komponen penting, maksimal 10 detik.
 	local head = character:WaitForChild("Head", 10)
 	local hrp = character:WaitForChild("HumanoidRootPart", 10)
 	local humanoid = character:WaitForChild("Humanoid", 10)
@@ -52,23 +47,19 @@ local function onCharacterAdded(player, character)
 		return 
 	end
 
-	-- Pastikan player dan character masih valid.
 	if not player or not player.Parent then return end
 	if not character or not character.Parent then return end
 
 	NametagDisabler:DisableNametag(player, character)
 
-	-- Buat overhead secara async agar HTTP Saweria tidak memblokir spawn.
 	task.spawn(function()
 		OverheadManager:CreateOverhead(player, character)
 
-		-- Safety net setelah Team selesai di-assign.
 		task.wait(0.5)
 		if player and player.Parent and character and character.Parent then
 			OverheadManager:UpdateTeam(player)
 		end
 
-		-- Muat ulang data donasi setelah overhead siap.
 		task.wait(3.5)
 		if player and player.Parent and character and character.Parent then
 			if OverheadManager.UpdateDonationRank then
@@ -102,7 +93,6 @@ local function onPlayerAdded(player)
 	LevelSystem:InitializePlayer(player)
 	LevelSystem:SetupCommands(player, RoleSystem)
 
-	-- Preload rank di background.
 	task.spawn(function()
 		DonaturRankSystem:PreloadRank(player.UserId)
 	end)
@@ -115,7 +105,6 @@ local function onPlayerAdded(player)
 		onCharacterAdded(player, character)
 	end)
 
-	-- Update label setelah Team benar-benar tersettled.
 	player:GetPropertyChangedSignal("Team"):Connect(function()
 		task.wait(0.3)
 		if player and player.Parent then
@@ -139,7 +128,6 @@ local function onPlayerRemoving(player)
 	DebugSystem:Log("Player left:", player.Name)
 end
 
--- ROLE & LEVEL LISTENERS
 RoleSystem.RoleChanged:Connect(function(player, oldRole, newRole)
 	OverheadManager:UpdateRole(player, newRole)
 end)
@@ -148,9 +136,6 @@ LevelSystem.LevelUp:Connect(function(player, oldLevel, newLevel)
 	OverheadManager:UpdateLevel(player, newLevel)
 end)
 
--- Auto donation rank changes now handled by LeaderboardRegistry controller checks in OverheadManager
-
--- REMOTE EVENTS SETUP
 local titleRemotes = ReplicatedStorage:FindFirstChild("TitleRemotes")
 if not titleRemotes then
 	titleRemotes        = Instance.new("Folder")
@@ -184,14 +169,12 @@ local checkAccessRemote   = ensureRemoteFunction("CheckAccess")
 local getPlayerDataRemote = ensureRemoteFunction("GetPlayerData")
 local getPlayerTitleRemote = ensureRemoteFunction("GetPlayerTitle")
 
--- CHECK ACCESS
 checkAccessRemote.OnServerInvoke = function(sender)
 	if not sender then return false end
 	local role = RoleSystem:GetPlayerRole(sender)
 	return role == "Owner" or role == "Admin"
 end
 
--- GET PLAYER TITLE (BACKWARD COMPATIBILITY)
 getPlayerTitleRemote.OnServerInvoke = function(sender, targetPlayer)
 	if not sender then return nil end
 	local senderRole = RoleSystem:GetPlayerRole(sender)
@@ -204,7 +187,6 @@ getPlayerTitleRemote.OnServerInvoke = function(sender, targetPlayer)
 	return TitleDataManager:LoadTitleData(targetPlayer.UserId)
 end
 
--- GET PLAYER DATA
 getPlayerDataRemote.OnServerInvoke = function(sender, targetPlayer)
 	if not sender then return nil end
 
@@ -240,7 +222,6 @@ getPlayerDataRemote.OnServerInvoke = function(sender, targetPlayer)
 	}
 end
 
--- UPDATE TITLE REMOTE
 local function markTitleUpdated(targetPlayer)
 	if not targetPlayer or not targetPlayer.Parent then return end
 	local revision = (targetPlayer:GetAttribute("TitleRevision") or 0) + 1
@@ -265,7 +246,6 @@ updateTitleRemote.OnServerEvent:Connect(function(sender, targetPlayer, titleData
 
 	if type(titleData) ~= "table" then return end
 
-	-- Validasi dan batasi data dari client.
 	local rawTitle = titleData.Title
 	if type(rawTitle) ~= "string" then rawTitle = "" end
 	rawTitle = rawTitle:match("^%s*(.-)%s*$") or ""
@@ -286,7 +266,6 @@ updateTitleRemote.OnServerEvent:Connect(function(sender, targetPlayer, titleData
 		TitleDataManager:UpdateCache(targetPlayer.UserId, emptyData)
 		DebugSystem:Log("Title removed for", targetPlayer.Name)
 	else
-		-- Wajib lolos filter teks Roblox sebelum disimpan.
 		local filteredTitle = nil
 		local okFilter = pcall(function()
 			local filterResult = TextService:FilterStringAsync(rawTitle, sender.UserId)
@@ -310,14 +289,12 @@ updateTitleRemote.OnServerEvent:Connect(function(sender, targetPlayer, titleData
 		DebugSystem:Log("Title updated & saved for", targetPlayer.Name, "->", filteredTitle)
 	end
 
-	-- Rebuild overhead jika character valid.
 	if targetPlayer.Character and targetPlayer.Character.Parent then
 		OverheadManager:CreateOverhead(targetPlayer, targetPlayer.Character)
 	end
 	markTitleUpdated(targetPlayer)
 end)
 
--- ASSIGN DONATUR RANK REMOTE
 assignDonaturRemote.OnServerEvent:Connect(function(sender, targetPlayer, rank)
 	if not RemoteEventManager.checkRateLimit(sender, "assignDonatur") then return end
 
@@ -351,7 +328,6 @@ assignDonaturRemote.OnServerEvent:Connect(function(sender, targetPlayer, rank)
 	end
 end)
 
--- PLAYER INITIALIZATION
 for _, player in ipairs(Players:GetPlayers()) do
 	task.spawn(onPlayerAdded, player)
 end

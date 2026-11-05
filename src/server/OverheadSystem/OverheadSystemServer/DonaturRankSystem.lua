@@ -3,7 +3,6 @@ local DataStoreEnv = require(ServerStorage:WaitForChild("Modules"):WaitForChild(
 
 local DonaturRankSystem = {}
 
--- STATE
 local dataStore  = nil
 local dataWriteStore = nil
 local rankCache  = {}
@@ -19,7 +18,6 @@ local function logWarn(...)
 	if DEBUG then warn("[DonaturRank]", ...) end
 end
 
--- INIT
 function DonaturRankSystem:Init(config)
 	DEBUG    = config.DEBUG_ENABLED or false
 	local storeName = config.DONATUR_RANK_DATASTORE_NAME
@@ -27,7 +25,6 @@ function DonaturRankSystem:Init(config)
 	log("Initialized - DataStore:", storeName)
 end
 
--- LOAD RANK
 function DonaturRankSystem:LoadRank(userId)
 	local cached = rankCache[userId]
 	if cached ~= nil then
@@ -68,7 +65,6 @@ function DonaturRankSystem:LoadRank(userId)
 	end
 end
 
--- GET RANK
 function DonaturRankSystem:GetRank(userId)
 	local cached = rankCache[userId]
 	if cached ~= nil then
@@ -77,7 +73,6 @@ function DonaturRankSystem:GetRank(userId)
 	return self:LoadRank(userId)
 end
 
--- ASSIGN RANK
 function DonaturRankSystem:AssignRank(userId, rank)
 	local success, err = pcall(function()
 		if rank then
@@ -97,29 +92,24 @@ function DonaturRankSystem:AssignRank(userId, rank)
 	end
 end
 
--- REMOVE RANK
 function DonaturRankSystem:RemoveRank(userId)
 	return self:AssignRank(userId, nil)
 end
 
--- PRELOAD (saat player join, load di background)
 function DonaturRankSystem:PreloadRank(userId)
 	if rankCache[userId] ~= nil then return end
 
 	task.spawn(function()
-		-- JEDA PINTAR: Tunggu 1 hingga 2 detik agar tidak bertabrakan dengan LevelSystem
 		task.wait(math.random(10, 20) / 10) 
 		self:LoadRank(userId)
 	end)
 end
 
--- CLEAR CACHE (saat player leave)
 function DonaturRankSystem:ClearCache(userId)
 	rankCache[userId] = nil
 	loadingLocks[userId] = nil
 end
 
--- UPDATE CACHE LANGSUNG (tanpa DataStore)
 function DonaturRankSystem:UpdateCache(userId, rank)
 	rankCache[userId] = rank or false
 end

@@ -3,33 +3,30 @@ ServerMusicAudioHandler.__index = ServerMusicAudioHandler
 
 local CONFIG = {
 	Audio = {
-		DefaultVolume = 0.60, -- Headroom aman (~ -4.4 dB) agar lagu keras tidak pernah menyentuh digital clipping / keprek
+		DefaultVolume = 0.60,
 		DefaultPlaybackSpeed = 1.0
 	},
-	-- ROBLOX CLUB MASTER AUDIO SYSTEM
-	-- Standar sound system club/nightclub: bass empuk nendang, snare lembut anti-cempreng,
-	-- compressor peak limiter anti-pecah/keprek, dan akustik ruang club yang megah.
 	ClubAudio = {
 		EQ = {
-			LowGain  = 4.0,   -- +4.0 dB: Dentuman bass & sub-kick club bulat, padat, berbobot, dan hangat
-			MidGain  = -4.0,  -- -4.0 dB: [ANTI-CEMPRENG] Cut frekuensi 1.5 - 4 kHz agar snare & clap empuk, tidak menusuk telinga
-			HighGain = -15,  -- -4.5 dB: [ANTI-DESIS RESAMPLING] Cut frekuensi tinggi untuk meredam kresek & artefak tajam saat PlaybackSpeed dinaikkan (0.43x -> normal)
+			LowGain  = 4.0,
+			MidGain  = -4.0,
+			HighGain = -15,
 			Priority = 1,
 		},
 		Compressor = {
-			Threshold  = -12.5, -- -12.5 dB: Menangkap lonjakan suara lebih awal sebelum menyentuh batas digital
-			Ratio      = 7.0,   -- 7:1 [ANTI-PECAH & ANTI-KEPREK] Menjinakkan hentakan drum/bass keras agar tidak pernah digital clipping
-			Attack     = 0.015, -- 15 ms: Reaksi ultra-cepat meredam pukulan tajam tanpa mematikan ketukan lagu
-			Release    = 0.14,  -- 140 ms: Pelepasan alami dan halus tanpa efek suara kembang-kempis (pumping)
-			GainMakeup = 0.0,   -- 0 dB: Menjaga sinyal audio selalu berada di bawah batas 0 dBFS
+			Threshold  = -12.5,
+			Ratio      = 7.0,
+			Attack     = 0.015,
+			Release    = 0.14,
+			GainMakeup = 0.0,
 			Priority   = 2,
 		},
 		Reverb = {
-			DecayTime = 1.6,    -- 1.6 detik: Akustik ruangan hall club yang megah dan luas
-			Density   = 0.85,   -- Pantulan suara rapat, tebal, dan hangat
-			Diffusion = 0.92,   -- Sebaran pantulan sangat halus merata tanpa efek gema berulang/echo kaleng
-			DryLevel  = 0.0,    -- 0 dB: Vokal & musik asli tetap 100% jernih dan tegas di depan
-			WetLevel  = -11.5,  -- -11.5 dB: Nuansa akustik ruang club terdengar nyata dan mewah membungkus lagu
+			DecayTime = 1.6,
+			Density   = 0.85,
+			Diffusion = 0.92,
+			DryLevel  = 0.0,
+			WetLevel  = -11.5,
 			Priority  = 3,
 		}
 	}
@@ -44,7 +41,6 @@ function ServerMusicAudioHandler.new()
 	self.isPlaying    = false
 	self.isPaused     = false
 
-	-- Setup proper order
 	self:CreateMusicGroup()
 	self:CreateServerSound()
 
@@ -54,10 +50,8 @@ end
 function ServerMusicAudioHandler:CreateMusicGroup()
 	local soundService = game:GetService("SoundService")
 
-	-- 1. Matikan AmbientReverb global agar map outdoor tidak bergema/gema kaleng
 	soundService.AmbientReverb = Enum.ReverbType.NoReverb
 
-	-- Create or get MusicGroup
 	local musicGroup = soundService:FindFirstChild("MusicGroup")
 	if not musicGroup then
 		musicGroup = Instance.new("SoundGroup")
@@ -66,20 +60,12 @@ function ServerMusicAudioHandler:CreateMusicGroup()
 		musicGroup.Volume = 0.85
 	end
 
-	-- Bersihkan efek distorsi/echo lama jika ada
 	for _, child in ipairs(musicGroup:GetChildren()) do
 		if child:IsA("EchoSoundEffect") or child:IsA("DistortionSoundEffect") or child:IsA("ChorusSoundEffect") or child:IsA("FlangeSoundEffect") then
 			child:Destroy()
 		end
 	end
 
-	-- EFEK MASTER CLUB AUDIO (ROBLOX NIGHTCLUB SOUND SYSTEM PRESET)
-	-- Mengatasi:
-	-- 1. Snare "Cempreng" -> Dipangkas lewat ClubEQ (MidGain -3.5 dB & HighGain -3.5 dB)
-	-- 2. Suara Keras "Pecah / Keprek" -> Diredam lewat ClubCompressor (Peak Limiter)
-	-- 3. Suara Kering/Kaku -> Dihaluskan lewat ClubReverb (Ambience Hall VIP Club)
-
-	-- 1. CLUB EQUALIZER (V-Curve Tone: Bass Bulat Nendang, Snare Empuk Anti-Cempreng)
 	local eq = musicGroup:FindFirstChild("ClubEQ")
 	if not eq or not eq:IsA("EqualizerSoundEffect") then
 		if eq then eq:Destroy() end
@@ -93,7 +79,6 @@ function ServerMusicAudioHandler:CreateMusicGroup()
 	eq.HighGain = CONFIG.ClubAudio.EQ.HighGain
 	eq.Enabled  = true
 
-	-- 2. CLUB COMPRESSOR / PEAK TAMER (Anti-Pecah & Anti-Keprek saat Snare/Kick Keras)
 	local comp = musicGroup:FindFirstChild("ClubCompressor")
 	if not comp or not comp:IsA("CompressorSoundEffect") then
 		if comp then comp:Destroy() end
@@ -109,7 +94,6 @@ function ServerMusicAudioHandler:CreateMusicGroup()
 	comp.GainMakeup = CONFIG.ClubAudio.Compressor.GainMakeup
 	comp.Enabled    = true
 
-	-- 3. CLUB REVERB (Atmosfer Ruang Club Mewah & Menghaluskan Transien Snare)
 	local reverb = musicGroup:FindFirstChild("ClubReverb")
 	if not reverb or not reverb:IsA("ReverbSoundEffect") then
 		if reverb then reverb:Destroy() end
@@ -131,20 +115,16 @@ function ServerMusicAudioHandler:CreateMusicGroup()
 end
 
 function ServerMusicAudioHandler:CreateServerSound()
-	-- Ensure MusicGroup exists
 	if not self.musicGroup then
 		self:CreateMusicGroup()
 	end
 
 	local soundService = game:GetService("SoundService")
 
-	-- Pastikan AmbientReverb SoundService selalu NoReverb (Map Outdoor)
 	soundService.AmbientReverb = Enum.ReverbType.NoReverb
 
-	-- Check existing sound
 	local existingSound = soundService:FindFirstChild("ServerMusicSound")
 	if not existingSound or not existingSound:IsA("Sound") then
-		-- Create new sound if it doesn't exist
 		existingSound = Instance.new("Sound")
 		existingSound.Name = "ServerMusicSound"
 		existingSound.Looped = false
@@ -152,12 +132,10 @@ function ServerMusicAudioHandler:CreateServerSound()
 		existingSound.Parent = soundService
 	end
 
-	-- Pastikan Volume & SoundGroup selalu terkonfigurasi dengan headroom aman
 	existingSound.Volume = CONFIG.Audio.DefaultVolume
 	existingSound.SoundGroup = self.musicGroup
 	self.serverSound = existingSound
 
-	-- Bersihkan efek-efek lokal di Sound agar pemrosesan terpusat bersih & rapi di MusicGroup
 	for _, child in ipairs(existingSound:GetChildren()) do
 		if child:IsA("EqualizerSoundEffect") or child:IsA("CompressorSoundEffect")
 			or child:IsA("ReverbSoundEffect") or child:IsA("EchoSoundEffect")
@@ -169,7 +147,6 @@ function ServerMusicAudioHandler:CreateServerSound()
 	return existingSound
 end
 
--- PRELOAD
 function ServerMusicAudioHandler:Preload(soundId)
 	if not self.serverSound or not self.serverSound.Parent then
 		self:CreateServerSound()
@@ -177,14 +154,12 @@ function ServerMusicAudioHandler:Preload(soundId)
 
 	local assetId = "rbxassetid://" .. soundId
 
-	-- Jangan isi SoundId jika sudah sama. Jika beda, matikan yang lama.
 	if self.serverSound.SoundId ~= assetId then
 		self.serverSound:Stop()
 		self.serverSound.SoundId = assetId
 	end
 end
 
--- AUTO DETECT SONG TITLE FROM SOUND
 function ServerMusicAudioHandler:TryDetectSongTitle()
 	local success, title = pcall(function()
 		if not self.serverSound then return nil end
@@ -206,8 +181,6 @@ function ServerMusicAudioHandler:TryDetectSongTitle()
 	return nil
 end
 
--- PLAYBACK WITH SPEED SUPPORT
--- Tambahkan parameter 'pitchOctave' di ujungnya
 function ServerMusicAudioHandler:Play(soundId, timePosition, playbackSpeed, pitchOctave)
 	if not self.serverSound or not self.serverSound.Parent then
 		self:CreateServerSound()
@@ -220,16 +193,13 @@ function ServerMusicAudioHandler:Play(soundId, timePosition, playbackSpeed, pitc
 		self.serverSound.SoundId = assetId
 	end
 
-	-- Atur Waktu dan Kecepatan
 	self.serverSound.TimePosition = timePosition or 0
 	self.serverSound.PlaybackSpeed = playbackSpeed or CONFIG.Audio.DefaultPlaybackSpeed
 
-	-- Pastikan SoundGroup selalu terhubung ke MusicGroup
 	if self.serverSound.SoundGroup ~= self.musicGroup then
 		self.serverSound.SoundGroup = self.musicGroup
 	end
 
-	-- PitchShift hanya dibuat untuk nada non-standar.
 	local pitchShift = self.serverSound:FindFirstChild("ConcertPitchShift")
 	local octave = tonumber(pitchOctave) or 1.0
 	if math.abs(octave - 1.0) > 0.005 then
@@ -268,7 +238,6 @@ function ServerMusicAudioHandler:Stop()
 		self.serverSound:Stop()
 	end)
 
-
 	self.isPlaying = false
 	self.isPaused = false
 	self.currentSoundId = nil
@@ -281,7 +250,6 @@ function ServerMusicAudioHandler:Pause()
 		self.serverSound:Pause()
 	end)
 
-
 	self.isPaused = true
 end
 
@@ -291,7 +259,6 @@ function ServerMusicAudioHandler:Resume()
 	pcall(function()
 		self.serverSound:Resume()
 	end)
-
 
 	self.isPaused = false
 end
@@ -319,7 +286,6 @@ function ServerMusicAudioHandler:Reload()
 		self.serverSound.SoundId = assetId
 		self.serverSound.PlaybackSpeed = currentPlaybackSpeed
 
-		-- Ensure still connected
 		if self.serverSound.SoundGroup ~= self.musicGroup then
 			self.serverSound.SoundGroup = self.musicGroup
 		end
@@ -340,7 +306,6 @@ function ServerMusicAudioHandler:Reload()
 	return true
 end
 
--- VOLUME & SPEED CONTROL
 function ServerMusicAudioHandler:SetVolume(volume)
 	if not self.serverSound then return end
 	volume = math.clamp(volume, 0, 1)
@@ -363,7 +328,6 @@ function ServerMusicAudioHandler:GetPlaybackSpeed()
 	return self.serverSound.PlaybackSpeed
 end
 
--- STATE GETTERS
 function ServerMusicAudioHandler:IsPlaying()
 	return self.isPlaying and self.serverSound and self.serverSound.IsPlaying
 end
@@ -390,7 +354,6 @@ function ServerMusicAudioHandler:GetSound()
 	return self.serverSound
 end
 
--- CLEANUP
 function ServerMusicAudioHandler:Cleanup()
 	if self.serverSound then
 		pcall(function()

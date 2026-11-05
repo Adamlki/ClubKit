@@ -1,6 +1,5 @@
 --!optimize 2
 
--- Singleton guard berbasis module cache, pengganti _G.__<Script>Loaded.
 local ScriptOnce = {}
 local claimed = {}
 

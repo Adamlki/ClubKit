@@ -187,10 +187,6 @@ function MusicPlayer.new()
 			local targetSpeed = self.expectedPlaybackSpeed or 1.0
 			local expectedTimePos = realTimeElapsed * targetSpeed
 
-			-- `TimeLength` adalah durasi audio mentah. Saat PlaybackSpeed != 1,
-			-- durasi tampilan adalah TimeLength / speed. Jangan memakai
-			-- panjang mentah untuk progress bar karena lagu 0.43x jadi terlihat
-			-- selesai di 43% durasi sebenarnya.
 			local rawLength = serverSound.TimeLength
 			local maxSeek = rawLength > 0 and rawLength or ((self.expectedDuration or 180) * targetSpeed)
 			local displayDuration = self.expectedDuration or (maxSeek / targetSpeed)
@@ -654,8 +650,6 @@ function MusicPlayer:ForceAudioSync(payload)
 		local realTimeElapsed = currentServerTime - payload.ServerTime
 		local targetSpeed = self.expectedPlaybackSpeed or serverSound.PlaybackSpeed or 1.0
 		local expectedTimePos = realTimeElapsed * targetSpeed
-		-- `payload.Duration` adalah durasi tampilan (sudah dibagi speed).
-		-- TimePosition memakai timeline audio mentah, jadi clamp ke TimeLength.
 		local rawLength = serverSound.TimeLength
 		local maxSeek = rawLength > 0 and rawLength or ((payload.Duration or 180) * targetSpeed)
 		if maxSeek <= 0 then maxSeek = 9999 end
@@ -696,8 +690,6 @@ function MusicPlayer:SyncState(state)
 	end
 
 	if state.currentSong then
-		-- state.duration = durasi playback yang sudah disesuaikan dengan speed;
-		-- currentSong.Duration masih metadata mentah.
 		self.expectedDuration = state.duration or state.currentSong.Duration or 180
 		self.uiManager:UpdateNowPlaying(state.currentSong, state.currentUploader, false)
 		self.uiManager:UpdateSongDuration(state.duration or 0, state.currentSong.Duration, false)

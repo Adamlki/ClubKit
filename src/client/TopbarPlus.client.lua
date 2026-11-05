@@ -1,5 +1,3 @@
--- UNIFIED TOPBAR PLUS V3 & SYNCTO SCRIPT
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players           = game:GetService("Players")
 local SoundService      = game:GetService("SoundService")
@@ -69,7 +67,6 @@ local function playClick()
 	end
 end
 
--- UISTROKE + GRADIENT
 local gradientRotation    = 0
 local registeredGradients = {}
 
@@ -153,7 +150,6 @@ local function hideOriginalButton(gui, buttonName)
 	end
 end
 
--- STATE
 local icons         = {}
 local menuIcon      = nil
 local dropdownIcons = {}
@@ -178,7 +174,6 @@ end
 
 TopbarPanelRegistry:Register("TopbarPlus", closeAllTopbarPanels)
 
--- INSTANT ICON CREATION (NO YIELDING)
 local function createRawIcon(name)
 	local cfg = getCfg(name)
 	if not cfg.enabled then return nil end
@@ -189,14 +184,10 @@ local function createRawIcon(name)
 	return icon
 end
 
--- 1. Main Topbar Icons
--- Sisi Kiri: Musik (di luar menu)
 local musicIcon   = createRawIcon("Music")
 
--- Sisi Kanan: Refresh
 local refreshIcon = createRawIcon("Refresh")
 
--- 2. Menu Icon (Sisi Kanan, sejajar dengan refresh)
 local menuCfg = getCfg("Menu")
 if menuCfg.enabled then
 	menuIcon = Icon.new()
@@ -206,7 +197,6 @@ if menuCfg.enabled then
 	menuIcon:autoDeselect(false)
 end
 
--- 3. Icons di dalam Menu Dropdown
 local danceIcon     = createRawIcon("Dance")
 local setIcon       = createRawIcon("Setting")
 local freecamIcon   = createRawIcon("FreeCam")
@@ -236,8 +226,6 @@ if menuIcon then
 	
 	menuIcon:setMenu(activeMenu)
 end
-
--- ASYNC LOGIC HOOKUPS
 
 local function setupFrameSync(name, icon, frame, closeButtonPath)
 	if not icon or not frame then return end
@@ -348,9 +336,6 @@ local function bindIconLogic(name, icon, gui, frame, closeBtnPath, originalBtnNa
 	end
 end
 
--- SPAWN GUI FETCHING
-
--- Dance punya tombol sendiri di topbar; pastikan tombol asli EmoteGui tetap terlihat.
 task.spawn(function()
 	local gui = playerGui:WaitForChild("EmoteGui", 5)
 	if gui then
@@ -453,7 +438,6 @@ task.spawn(function()
 	end
 end)
 
--- Network Dependent Icons
 task.spawn(function()
 	local gui = playerGui:WaitForChild("AdminNotif", 10)
 	if gui then
@@ -527,7 +511,6 @@ task.spawn(function()
 	end
 end)
 
--- Freecam
 if freecamIcon then
 	local freecamState = { isOn = false, debounce = false }
 	freecamIcon:bindEvent("selected", function()
@@ -547,7 +530,6 @@ if freecamIcon then
 	end)
 end
 
--- INIT & CLEANUP
 task.wait(CONFIG.InitDelay)
 isInitialized = true
 

@@ -8,7 +8,6 @@ local LeaderboardRegistry = require(ServerScriptService:WaitForChild("Modules"):
 
 local OverheadManager = {}
 
--- PENGATURAN DEBUG (ANTI-SPAM LOG)
 local DEBUG_ENABLED = false
 
 local function debugLog(...)
@@ -23,7 +22,6 @@ local function debugWarn(...)
 	end
 end
 
--- Module references (diisi via Init)
 local CONFIG              = nil
 local RoleSystem          = nil
 local LevelSystem         = nil
@@ -31,7 +29,6 @@ local DonaturRankSystem   = nil
 local TitleDataManager    = nil
 local DebugSystem         = nil
 
--- 100-PLAYER OPTIMIZATION: DIRTY-CHECK & SHORT CACHE
 local function safeSetAttr(player, key, value)
 	if player and player.Parent and player:GetAttribute(key) ~= value then
 		player:SetAttribute(key, value)
@@ -42,7 +39,7 @@ local cachedSaweriaTop = nil
 local lastSaweriaFetch = 0
 local cachedRobuxTop = nil
 local lastRobuxFetch = 0
-local RANK_CACHE_TTL = 2 -- Detik (mencegah 100x Invoke beruntun saat refresh massal)
+local RANK_CACHE_TTL = 2
 
 local function getTopSaweriaList()
 	local now = os.clock()
@@ -79,7 +76,6 @@ local function getTopRobuxList()
 	return cachedRobuxTop
 end
 
--- INIT
 function OverheadManager:Init(config, roleSystem, levelSystem, titleDataManager, donaturRankSystem)
 	CONFIG             = config
 	RoleSystem         = roleSystem
@@ -89,14 +85,12 @@ function OverheadManager:Init(config, roleSystem, levelSystem, titleDataManager,
 	DebugSystem        = require(script.Parent.DebugSystem)
 end
 
--- FUNGSI GET SAWERIA
 local function getSaweriaRank(player)
 	local topList = getTopSaweriaList()
 	if type(topList) == "table" then
 		local pName = string.lower(player.Name)
 		for rank, donor in ipairs(topList) do
 			local dName = string.lower(tostring(donor.name or ""))
-			-- KEAMANAN: Cocokkan hanya dengan Username unik (player.Name), bukan DisplayName
 			if dName == pName then
 				return rank
 			end
@@ -105,21 +99,17 @@ local function getSaweriaRank(player)
 	return nil
 end
 
--- UPDATE ATTRIBUTES
 function OverheadManager:UpdateAllAttributes(player)
 	if not player or not player.Parent then return end
 
-	-- 1. Role
 	local role = RoleSystem and RoleSystem:GetPlayerRole(player) or "Player"
 	safeSetAttr(player, "Overhead_Role", role)
 
-	-- 2. Level
 	if LevelSystem then
 		local level = LevelSystem:GetPlayerLevel(player) or 1
 		safeSetAttr(player, "Overhead_Level", level)
 	end
 
-	-- 3. Title Data
 	if TitleDataManager then
 		local titleData = TitleDataManager:LoadTitleData(player.UserId)
 		if titleData then
@@ -138,11 +128,9 @@ function OverheadManager:UpdateAllAttributes(player)
 		end
 	end
 
-	-- 4. Saweria Rank
 	local saweriaRank = getSaweriaRank(player) or 0
 	safeSetAttr(player, "Overhead_SaweriaRank", saweriaRank)
 
-	-- 5. Robux Rank (LeaderboardControl)
 	local robuxRank = 0
 	local topDonors = getTopRobuxList()
 	if type(topDonors) == "table" then
@@ -155,7 +143,6 @@ function OverheadManager:UpdateAllAttributes(player)
 	end
 	safeSetAttr(player, "Overhead_RobuxRank", robuxRank)
 
-	-- 6. Likes Rank
 	local likesRank = 0
 	local topLikes = LeaderboardRegistry.getData("Likes")
 	if type(topLikes) == "table" then
@@ -168,13 +155,11 @@ function OverheadManager:UpdateAllAttributes(player)
 	end
 	safeSetAttr(player, "Overhead_LikesRank", likesRank)
 
-	-- 7. Donatur Rank (Manual Admin)
 	if DonaturRankSystem then
 		local donaturRank = DonaturRankSystem:GetRank(player.UserId)
 		safeSetAttr(player, "Overhead_DonaturRank", donaturRank or 0)
 	end
 
-	-- 8. Country Code (Regional Detection)
 	if not player:GetAttribute("Overhead_CountryCode") then
 		task.spawn(function()
 			local ok, code = pcall(function()
@@ -188,7 +173,6 @@ function OverheadManager:UpdateAllAttributes(player)
 		end)
 	end
 
-	-- 9. VIP Status Check (Baca dari cache RoleSystem tanpa memicu ulang Marketplace call berat)
 	local hasVIP = false
 	if RoleSystem then
 		if role == "VIP" then
@@ -203,7 +187,6 @@ function OverheadManager:UpdateAllAttributes(player)
 	safeSetAttr(player, "Overhead_HasVIP", hasVIP)
 end
 
--- EXPOSED UPDATE METHODS FOR INIT.SERVER.LUA
 function OverheadManager:CreateOverhead(player, character)
 	self:UpdateAllAttributes(player)
 end

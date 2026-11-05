@@ -458,7 +458,6 @@ function CustomTeams.CreateTeam(invoker, teamName, colorName)
 
 		filteredTeamName = broadcastStr
 
-		-- Jangan pernah memakai nama mentah jika Roblox menyensor/mengubahnya.
 		if filteredTeamName ~= teamName then
 			return false, "Nama team tidak diizinkan atau mengandung kata yang disensor oleh Roblox!"
 		end
@@ -625,7 +624,7 @@ local CHAT_COMMANDS = {
 	moveteam = cmdMoveTeam,
 }
 
-local lastCustomTeamCmd = {} -- [userId] = { text = string, timestamp = number }
+local lastCustomTeamCmd = {}
 
 local function handleCommand(player, message)
 	if not player or not player.Parent then return end
@@ -636,7 +635,6 @@ local function handleCommand(player, message)
 		return
 	end
 
-	-- Deduplikasi perintah untuk mencegah eksekusi ganda jika dipicu Chatted + TextChatCommand bersamaan
 	local now = os.clock()
 	local last = lastCustomTeamCmd[player.UserId]
 	if last and last.text == message and (now - last.timestamp) < 0.5 then
@@ -659,7 +657,6 @@ end
 function CustomTeams.Init()
 	setupNotifyRemote()
 
-	-- [LOW-01] Integrasi TextChatCommand untuk TextChatService modern
 	pcall(function()
 		local TextChatService = game:GetService("TextChatService")
 		local cmdFolder = TextChatService:FindFirstChild("TextChatCommands")

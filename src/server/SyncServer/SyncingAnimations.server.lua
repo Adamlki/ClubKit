@@ -4,14 +4,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 local Players = game:GetService("Players")
 
--- INITIALIZE REMOTES
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local animationStartRE = remotes:WaitForChild("animationStart")
 local startSyncRE = remotes:WaitForChild("startSync")
 local changeSpeedRE = remotes:WaitForChild("changeSpeed")
 local syncNotificationRE = remotes:WaitForChild("SyncNotification")
 
--- LOAD SERVER MODULES
 local SyncServer = ServerScriptService:WaitForChild("SyncServer")
 local ServerModules = SyncServer:WaitForChild("Modules")
 
@@ -22,11 +20,9 @@ local AnimationController = require(ServerModules:WaitForChild("AnimationControl
 local SyncController = require(ServerModules:WaitForChild("SyncController"))
 local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 
--- LOAD SHARED MODULES
 local SharedModules = ReplicatedStorage:WaitForChild("Modules")
 local AnimatorUtils = require(SharedModules:WaitForChild("AnimatorUtils"))
 
--- BUILD ANIMATION TABLE & O(1) LOOKUP CACHE
 local loadedAnimations = AnimationLoader.loadAnimations()
 local loadedAnimationsById = {}
 local loadedAnimationsByNormId = {}
@@ -48,9 +44,7 @@ for _, anim in pairs(loadedAnimations) do
 	end
 end
 
--- REMOTE HANDLERS
 animationStartRE.OnServerEvent:Connect(function(player, animationId, shouldPlay, speed, clientFadeTime, isSpam, clientStartTime, clientPosition)
-	-- Validasi tipe dan nilai dari client.
 	if animationId ~= nil and type(animationId) ~= "string" and type(animationId) ~= "number" then return end
 	if type(shouldPlay) ~= "boolean" then return end
 	if speed ~= nil and (type(speed) ~= "number" or speed ~= speed) then return end
@@ -58,7 +52,6 @@ animationStartRE.OnServerEvent:Connect(function(player, animationId, shouldPlay,
 	if not RemoteEventManager.checkRateLimit(player, "animationStart") then return end
 	speed = math.clamp(speed or 1, 0.1, 3.0)
 
-	-- Tolak timestamp yang tidak valid atau terlalu jauh dari waktu server.
 	local nowServer = workspace:GetServerTimeNow()
 	if type(clientStartTime) ~= "number" or clientStartTime ~= clientStartTime or math.abs(nowServer - clientStartTime) > 10 then
 		clientStartTime = nowServer
@@ -76,8 +69,6 @@ animationStartRE.OnServerEvent:Connect(function(player, animationId, shouldPlay,
 			animation = loadedAnimationsByNormId[norm]
 		end
 
-		-- Hanya animasi yang ada di AnimationRegistry/Emotes yang boleh diputar.
-		-- Jangan membuat Animation dari ID arbitrer dari client.
 		if shouldPlay and not animation then
 			return
 		end
@@ -95,7 +86,6 @@ animationStartRE.OnServerEvent:Connect(function(player, animationId, shouldPlay,
 end)
 
 changeSpeedRE.OnServerEvent:Connect(function(player, speed, clientAnchorTime, clientPosition)
-	-- speed ~= speed mendeteksi NaN.
 	if type(speed) ~= "number" or speed ~= speed then return end
 	if clientAnchorTime ~= nil and (type(clientAnchorTime) ~= "number" or clientAnchorTime ~= clientAnchorTime) then return end
 	if clientPosition ~= nil and (type(clientPosition) ~= "number" or clientPosition ~= clientPosition) then return end
@@ -119,7 +109,6 @@ startSyncRE.OnServerEvent:Connect(function(player, target, condition)
 	SyncController.handleSyncRequest(player, target, condition, loadedAnimations)
 end)
 
--- CONNECTION CLEANUP
 local playerConnections = {}
 
 local function cleanupPlayerConnections(player)
@@ -133,7 +122,6 @@ local function cleanupPlayerConnections(player)
 	end
 end
 
--- Force unsync semua follower saat player keluar/respawn.
 local function forceUnsyncAllFollowers(leavingPlayer)
 	SyncController.forceUnsyncAllFollowers(leavingPlayer, loadedAnimations)
 end
@@ -148,7 +136,6 @@ local function queueLeaderUpdate()
 	end)
 end
 
--- RESPAWN HANDLER
 local function setupPlayerRespawnHandler(player)
 	cleanupPlayerConnections(player) 
 	playerConnections[player] = {}
@@ -159,7 +146,6 @@ local function setupPlayerRespawnHandler(player)
 
 		if not humanoid or not hrp then
 			warn("[SyncSystem] Character load timeout for", player.Name)
-			-- Jangan return: atribut dasar tetap harus di-set.
 		end
 
 		task.wait(0.5)
@@ -186,7 +172,6 @@ local function setupPlayerRespawnHandler(player)
 
 	table.insert(playerConnections[player], charRemovingConn)
 
-	-- Setup untuk karakter yang sudah ada
 	if player.Character then
 		task.spawn(function()
 			local humanoid = player.Character:WaitForChild("Humanoid", 5)
@@ -198,7 +183,6 @@ local function setupPlayerRespawnHandler(player)
 	end
 end
 
--- PLAYER REMOVING
 Players.PlayerRemoving:Connect(function(leavingPlayer)
 	pcall(forceUnsyncAllFollowers, leavingPlayer)
 	cleanupPlayerConnections(leavingPlayer)
@@ -214,10 +198,8 @@ Players.PlayerRemoving:Connect(function(leavingPlayer)
 	end)
 end)
 
--- PLAYER INITIALIZATION
 Players.PlayerAdded:Connect(function(player)
 	task.wait(0.5)
-	-- VALIDASI: Cegah Memory Leak (Ghost Player) jika player DC saat yield
 	if not player or not player.Parent then return end
 	setupPlayerRespawnHandler(player)
 end)
@@ -226,7 +208,6 @@ for _, player in ipairs(Players:GetPlayers()) do
 	task.spawn(setupPlayerRespawnHandler, player)
 end
 
--- CLEANUP ON SHUTDOWN
 game:BindToClose(function()
 	for player, _ in pairs(playerConnections) do
 		cleanupPlayerConnections(player)

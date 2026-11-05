@@ -28,7 +28,6 @@ function UIManager:ShowConfirmDialog(confirmDialog, confirmText, text, onYes, on
 
 	confirmText.Text = text
 
-	-- Munculkan dialog konfirmasi pakai animasi
 	UIAnimator.Open(confirmDialog)
 
 	return {
@@ -59,7 +58,6 @@ function UIManager:SetupConfirmButtons(confirmYesBtn, confirmNoBtn, onYes, onNo)
 			connections.noConnection = nil
 		end
 
-		-- Tutup dialog pakai animasi jika direferensikan
 		if connections.dialog then
 			UIAnimator.Close(connections.dialog)
 		end

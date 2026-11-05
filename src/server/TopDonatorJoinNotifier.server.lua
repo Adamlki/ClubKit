@@ -1,33 +1,27 @@
--- PENGATURAN
-local DEBUG_ENABLED = false -- true untuk melihat log di console
+local DEBUG_ENABLED = false
 
 local SETTINGS = {
-	BatasTopRobux   = 10, -- Tampilkan notif untuk Top X donatur Robux
-	BatasTopSaweria = 10, -- Tampilkan notif untuk Top X donatur Saweria
+	BatasTopRobux   = 10,
+	BatasTopSaweria = 10,
 
-	-- Format pesan (%s = Nama Player, %d = Peringkat)
 	PesanRobux   = "💎 Top %d Robux Donator join server!",
 	PesanSaweria = "💸 Top %d Saweria Donator join server!",
 
-	-- Nama RemoteEvent untuk trigger UI Notifikasi di Client
 	RemoteEventName = "SultanJoinNotifEvent"
 }
 
--- FUNGSI DEBUG
 local function debugLog(...)
 	if DEBUG_ENABLED then
 		print("[DEBUG NOTIF SERVER]", ...)
 	end
 end
 
--- SISTEM UTAMA
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 local LeaderboardRegistry = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("LeaderboardRegistry"))
 
--- 1. Siapkan RemoteEvent untuk Client (UI)
 local NotifEvent = ReplicatedStorage:FindFirstChild(SETTINGS.RemoteEventName)
 if not NotifEvent then
 	NotifEvent = Instance.new("RemoteEvent")
@@ -35,7 +29,6 @@ if not NotifEvent then
 	NotifEvent.Parent = ReplicatedStorage
 end
 
--- 2. Gunakan cache terpusat dari LeaderboardRegistry agar tidak membuat leaderboard kedua.
 local fallbackRobuxBoard = nil
 
 local function getRobuxRank(userId)
@@ -67,15 +60,12 @@ local function getRobuxRank(userId)
 	return nil
 end
 
--- Fungsi mengecek Rank Saweria
 local function getSaweriaRank(playerName, displayName)
-	-- Mengambil data dari BindableFunction yang akan kita buat di TopSaweria
 	local getSaweriaData = ServerStorage:FindFirstChild("GetTopSaweriaFunc")
 	if getSaweriaData then
 		local rankFound = nil
 		local isCompleted = false
 		
-		-- Jalankan secara terpisah agar tidak bisa menyandera script utama
 		task.spawn(function()
 			local success, topSaweria = pcall(function()
 				return getSaweriaData:Invoke()
@@ -83,7 +73,6 @@ local function getSaweriaRank(playerName, displayName)
 			if success and type(topSaweria) == "table" then
 				for rank, donor in ipairs(topSaweria) do
 					if rank > SETTINGS.BatasTopSaweria then break end
-					-- Cek kecocokan nama (Username atau DisplayName)
 					if string.lower(tostring(donor.name or "")) == string.lower(playerName) then
 						rankFound = rank
 						break
@@ -93,7 +82,6 @@ local function getSaweriaRank(playerName, displayName)
 			isCompleted = true
 		end)
 		
-		-- Beri waktu maksimal 2 detik. Jika Saweria lag, tinggalkan saja!
 		local timeout = 0
 		while not isCompleted and timeout < 2 do
 			task.wait(0.1)
@@ -105,12 +93,10 @@ local function getSaweriaRank(playerName, displayName)
 	return nil
 end
 
--- EVENT KETIKA PLAYER JOIN
 local function onPlayerJoin(player)
 	debugLog("👤 Player Join:", player.Name)
-	task.wait(math.random(3, 12)) -- Tunggu player load
+	task.wait(math.random(3, 12))
 
-	-- Pastikan player masih ada sebelum memberi notifikasi.
 	if not player or not player.Parent then return end
 
 	debugLog("🔍 Mulai mengecek Rank untuk:", player.DisplayName)
@@ -144,7 +130,6 @@ end
 
 Players.PlayerAdded:Connect(onPlayerJoin)
 
--- JAGA-JAGA UNTUK STUDIO (Kadang player join lebih cepat dari script)
 for _, player in ipairs(Players:GetPlayers()) do
 	task.spawn(onPlayerJoin, player)
 end

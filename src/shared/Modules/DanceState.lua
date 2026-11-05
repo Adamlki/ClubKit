@@ -1,15 +1,6 @@
 --!native
 --!optimize 2
 
--- Satu sumber kebenaran untuk state dance.
--- Format snapshot sengaja dibuat string agar bisa disimpan dalam satu attribute
--- dan dibaca secara atomik oleh semua client.
---
--- animationId|anchorTime|anchorPosition|speed|restartSeq|version
---
--- anchorTime memakai jam server (workspace:GetServerTimeNow), bukan waktu
--- diterima server. Dengan begitu semua client bisa menghitung fase yang sama.
-
 local module = {}
 
 local SEPARATOR = "|"
@@ -78,8 +69,6 @@ function module.normalizeId(animationId)
 	return tostring(animationId):match("%d+") or tostring(animationId)
 end
 
--- Hitung posisi yang seharusnya pada waktu tertentu.
--- loops=false dipakai untuk pose agar tidak berputar kembali ke awal.
 function module.positionAt(state, length, now, loops)
 	if not state or not finiteNumber(length) or length <= 0 then
 		return 0
@@ -103,7 +92,6 @@ function module.positionAt(state, length, now, loops)
 	return position
 end
 
--- Selisih fase terpendek, berguna untuk animation loop.
 function module.wrapDiff(diff, length)
 	if not finiteNumber(length) or length <= 0 then
 		return 0

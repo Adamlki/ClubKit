@@ -5,19 +5,17 @@ function MusicCooldownService.new(config)
 	local self = setmetatable({}, MusicCooldownService)
 
 	self.config = config
-	self.playerCooldowns = {} -- [userId] = timestamp
+	self.playerCooldowns = {}
 
 	return self
 end
 
--- COOLDOWN CHECK
 function MusicCooldownService:CheckCooldown(player, roleCooldowns)
 	local userId = player.UserId
 	local RoleSystem = require(game:GetService("ServerStorage").Modules.RoleSystem)
 	local role = RoleSystem:GetPlayerRole(player)
 	local cooldown = roleCooldowns[role] or 300
 
-	-- No cooldown for this role
 	if cooldown == 0 then
 		return true, nil
 	end
@@ -46,7 +44,6 @@ function MusicCooldownService:UpdateCooldown(player)
 	self.playerCooldowns[player.UserId] = tick()
 end
 
--- CLEANUP
 function MusicCooldownService:CleanupPlayer(userId)
 	self.playerCooldowns[userId] = nil
 end

@@ -20,19 +20,16 @@ end
 
 local module = {}
 
--- CONFIG
 local FADE_OUT = 0.1
 local MAX_SYNC_DEPTH = 10
 local DANCE_WALK_SPEED = 5 
 
--- Set attribute hanya jika nilainya berubah untuk menghemat replikasi.
 local function safeSetAttr(obj, key, value)
 	if obj:GetAttribute(key) ~= value then
 		obj:SetAttribute(key, value)
 	end
 end
 
--- Helper: Bersihkan semua attribute sync/dance sekaligus
 function module.clearAllSyncAttributes(character)
 	if not character then return end
 	safeSetAttr(character, "Syncing", nil)
@@ -116,7 +113,6 @@ function module.updateLeaderStatus(player)
 	end
 end
 
--- Hitung follower sekali untuk semua leader (O(N)).
 function module.updateAllLeaderStatus()
 	local followerCounts = {}
 
@@ -169,8 +165,6 @@ function module.forceUnsyncAllFollowers(leaderPlayer, loadedAnimations)
 					safeSetAttr(follower.Character, "Syncing", nil)
 					safeSetAttr(follower.Character, "IsLeader", nil)
 					safeSetAttr(follower.Character, "FollowerCount", nil)
-					-- Jangan tinggalkan snapshot lama pada follower. Client akan
-					-- memulihkan dance lokalnya sendiri setelah unsync.
 					safeSetAttr(follower.Character, "CurrentDanceID", nil)
 					safeSetAttr(follower.Character, "DanceStartTime", nil)
 					safeSetAttr(follower.Character, "DanceSpeed", nil)
@@ -217,13 +211,11 @@ function module.wouldCreateCircular(player, targetPlayer)
 	return false
 end
 
--- Handle Sync Request
 function module.handleSyncRequest(player, targetPlayer, condition, loadedAnimations)
 	if not targetPlayer or typeof(targetPlayer) ~= "Instance" or not targetPlayer:IsA("Player") then return end
 	if not waitForCharacterReady(player, 3) then return end
 	if condition and not waitForCharacterReady(targetPlayer, 3) then return end
 
-	-- Pastikan kedua player masih ada setelah yield.
 	if not player or not player.Parent or not targetPlayer or not targetPlayer.Parent then return end
 	
 	local char = player.Character
@@ -265,11 +257,9 @@ function module.handleSyncRequest(player, targetPlayer, condition, loadedAnimati
 			syncNotificationRE:FireClient(player, "unsync_success")
 			module.updateLeaderStatus(trueLeaderOfTarget)
 		else
-			-- Cek leader lama sebelum menimpa data
 			local oldTargetName = player.Character and player.Character:GetAttribute("Syncing")
 
 			if player.Character then
-				-- Follower membaca state dance langsung dari leader.
 				safeSetAttr(player.Character, "CurrentDanceID", nil)
 				safeSetAttr(player.Character, "DanceStartTime", nil)
 				safeSetAttr(player.Character, "DanceSpeed", nil)
@@ -279,10 +269,8 @@ function module.handleSyncRequest(player, targetPlayer, condition, loadedAnimati
 
 			syncNotificationRE:FireClient(player, "sync_success", trueLeaderOfTarget.Name)
 			
-			-- Update jumlah follower Leader Baru
 			module.updateLeaderStatus(trueLeaderOfTarget)
 
-			-- Kurangi jumlah follower Leader Lama agar tidak ada "Ghost Follower"
 			if oldTargetName and oldTargetName ~= "" and oldTargetName ~= trueLeaderOfTarget.Name then
 				local oldLeader = Players:FindFirstChild(oldTargetName)
 				if oldLeader then

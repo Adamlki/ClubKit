@@ -8,7 +8,6 @@ local dataStore = DataStoreService:GetDataStore(
 	DonationConfig.DATASTORE.SCOPE
 )
 
--- ORDERED DATA STORE (Khusus untuk Papan Leaderboard 3D)
 local orderedDataStore = DataStoreService:GetOrderedDataStore("DonationBoard_Ordered_V2", "global")
 
 local PlayerDataCache = {}

@@ -5,7 +5,6 @@ local ServerStorage = game:GetService("ServerStorage")
 
 local RoleSystem = require(ServerStorage.Modules.RoleSystem)
 
--- COLOR TEMPLATES
 TeamGroups.COLOR_TEMPLATES = {
 	{ name = "Merah",       brickColorName = "Bright red" },
 	{ name = "Oranye",      brickColorName = "Deep orange" },
@@ -30,7 +29,6 @@ for _, t in ipairs(TeamGroups.COLOR_TEMPLATES) do
 	TeamGroups.templateByName[t.name:lower()] = t
 end
 
--- CONFIG
 TeamGroups.Config = {
 	Teams = {
 		Owner     = { TeamName = "Owner",      ColorName = "Merah",   PaletteIndex = 40, Order = 1 },
@@ -63,7 +61,6 @@ local function debugPrint(...)
 	if TeamGroups.Config.DEBUG_ENABLED then print("[TeamGroups]", ...) end
 end
 
--- CORE: BUAT TEAM MENGGUNAKAN BRICKCOLOR
 local function makeTeam(teamName, brickColorName, paletteIndex)
 	local bc = BrickColor.new(brickColorName)
 	local team          = Instance.new("Team")
@@ -102,7 +99,6 @@ function TeamGroups.GetTemplateColorName(colorName)
 	return "Medium stone grey"
 end
 
--- SINGLE TEAM WRITE: hindari system message saat assign ke team yang sama.
 function TeamGroups.SetPlayerTeam(player, team)
 	if not player or not player.Parent then return false end
 	if team ~= nil and not team.Parent then return false end
@@ -112,7 +108,6 @@ function TeamGroups.SetPlayerTeam(player, team)
 	return true
 end
 
--- assignByRole (DENGAN LOGIKA SULTAN)
 local function assignByRole(player)
 	local role = RoleSystem:GetPlayerRole(player)
 

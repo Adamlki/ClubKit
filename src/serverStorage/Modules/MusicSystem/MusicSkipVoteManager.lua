@@ -25,14 +25,9 @@ function MusicSkipVoteManager.new(config, roleSystem)
 	return self
 end
 
--- ELIGIBLE VOTERS (SEMUA PEMAIN DI SERVER)
--- Sesuai aturan: Jika VIP skip, vote dikirim ke SELURUH player di server
-
 function MusicSkipVoteManager:GetEligibleVoters()
 	return Players:GetPlayers()
 end
-
--- RATE LIMITING
 
 function MusicSkipVoteManager:CheckRateLimit(player, customCooldown)
 	local userId = player.UserId
@@ -50,8 +45,6 @@ function MusicSkipVoteManager:CheckRateLimit(player, customCooldown)
 	self.skipVoteRateLimit[userId] = tick()
 	return true, 0
 end
-
--- VOTE MANAGEMENT
 
 function MusicSkipVoteManager:IsActive()
 	return self.skipVote.active
@@ -80,10 +73,8 @@ function MusicSkipVoteManager:StartVote(initiatorPlayer, songData, dispatcher)
 		return false, "Tidak ada player di server."
 	end
 
-	-- 80% dari total seluruh player yang ada di server
 	local requiredVotes = math.max(1, math.ceil(totalVoters * 0.8))
 
-	-- Inisiator VIP otomatis terhitung memberikan suara "YES" (1 suara)
 	self.skipVote = {
 		active = true,
 		initiator = initiatorPlayer.DisplayName,
@@ -99,12 +90,10 @@ function MusicSkipVoteManager:StartVote(initiatorPlayer, songData, dispatcher)
 		totalVoters = totalVoters,
 	}
 
-	-- Jika kondisi suara 80% langsung tercapai (misal VIP bermain sendirian di server: 1/1 = 100% >= 80%)
 	if self.skipVote.yesVotes >= requiredVotes then
-		return true, true -- Langsung lolos tanpa perlu menunggu voting
+		return true, true
 	end
 
-	-- Kirim popup vote skip ke SEMUA player di server
 	for _, player in ipairs(eligible) do
 		dispatcher:SendToClient(player, "SKIP_VOTE_START", {
 			initiator = initiatorPlayer.DisplayName,
@@ -117,7 +106,6 @@ function MusicSkipVoteManager:StartVote(initiatorPlayer, songData, dispatcher)
 		})
 	end
 
-	-- Snapshot waktu untuk mencegah timer bug jika ada vote baru setelahnya
 	local voteStartTime = self.skipVote.startTime
 	local voteDuration = self.config.SKIP_VOTE_DURATION or 30
 
@@ -127,7 +115,7 @@ function MusicSkipVoteManager:StartVote(initiatorPlayer, songData, dispatcher)
 		end
 	end)
 
-	return true, false -- Vote aktif dimulai, menunggu player lain
+	return true, false
 end
 
 function MusicSkipVoteManager:CastVote(player, voteType, dispatcher)
@@ -149,14 +137,12 @@ function MusicSkipVoteManager:CastVote(player, voteType, dispatcher)
 		self.skipVote.noVotes = self.skipVote.noVotes + 1
 	end
 
-	-- Perbarui target 80% berdasarkan total player saat ini
 	local currentEligible = self:GetEligibleVoters()
 	local totalVoters = #currentEligible
 	local requiredVotes = math.max(1, math.ceil(totalVoters * 0.8))
 	self.skipVote.requiredVotes = requiredVotes
 	self.skipVote.totalVoters = totalVoters
 
-	-- Perbarui status vote ke SEMUA player
 	for _, p in ipairs(currentEligible) do
 		dispatcher:SendToClient(p, "SKIP_VOTE_UPDATE", {
 			yesVotes = self.skipVote.yesVotes,
@@ -166,12 +152,11 @@ function MusicSkipVoteManager:CastVote(player, voteType, dispatcher)
 		})
 	end
 
-	-- Cek apakah vote 80% tercapai
 	if self.skipVote.yesVotes >= requiredVotes then
-		return true, true -- Vote lolos (passed)
+		return true, true
 	end
 
-	return true, false -- Vote tercatat, belum mencapai target
+	return true, false
 end
 
 function MusicSkipVoteManager:EndVote(dispatcher, forced)
@@ -246,7 +231,6 @@ function MusicSkipVoteManager:UpdateVoteOnPlayerLeave(userId, dispatcher)
 	self.skipVote.requiredVotes = requiredVotes
 	self.skipVote.totalVoters = totalVoters
 
-	-- Perbarui status ke sisa player
 	for _, p in ipairs(currentEligible) do
 		dispatcher:SendToClient(p, "SKIP_VOTE_UPDATE", {
 			yesVotes = self.skipVote.yesVotes,
@@ -256,9 +240,8 @@ function MusicSkipVoteManager:UpdateVoteOnPlayerLeave(userId, dispatcher)
 		})
 	end
 
-	-- Jika pengurangan player membuat suara YES yang tersisa memenuhi target 80%
 	if self.skipVote.yesVotes >= requiredVotes then
-		return true -- Sinyal bahwa vote lolos setelah player keluar
+		return true
 	end
 
 	return false

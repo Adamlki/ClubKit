@@ -1,10 +1,9 @@
--- CameraLease: satu pemilik untuk efek kamera; prioritas lebih tinggi boleh mengambil alih.
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 
 local CameraLease = {}
 
-local current = nil -- { owner, priority, token }
+local current = nil
 local saved = nil
 local nextToken = 0
 

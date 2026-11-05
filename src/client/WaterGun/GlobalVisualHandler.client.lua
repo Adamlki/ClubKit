@@ -1,4 +1,3 @@
--- Letak: StarterPlayer > StarterPlayerScripts > GlobalVisualHandler
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local globalEvent = ReplicatedStorage:WaitForChild("GlobalWeaponEvent")
@@ -99,7 +98,6 @@ globalEvent.OnClientEvent:Connect(function(first, toolName, state)
 		applyBatch(first)
 		return
 	end
-	-- Backward compatibility with the old single-shooter payload.
 	setVisual(first, toolName, state)
 end)
 

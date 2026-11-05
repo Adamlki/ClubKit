@@ -1,4 +1,3 @@
--- SERVER LOGGER MODULE
 local Config = require(script.Parent.Config)
 
 local Logger = {}

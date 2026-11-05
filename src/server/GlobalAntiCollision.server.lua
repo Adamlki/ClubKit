@@ -1,7 +1,5 @@
 --!native
 --!optimize 2
--- GLOBAL ANTI-COLLISION SYSTEM
--- Mengatur CollisionGroup AllPlayers agar pemain tidak saling bertabrakan.
 
 local ScriptOnce = require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("ScriptOnce"))
 if not ScriptOnce.Claim("GlobalAntiCollision") then return end
@@ -32,7 +30,6 @@ local LIMB_NAMES = {
 	["RightUpperLeg"] = true,
 	["RightLowerLeg"] = true,
 	["RightFoot"] = true,
-	-- R6 limb compatibility
 	["Left Arm"] = true,
 	["Right Arm"] = true,
 	["Left Leg"] = true,
@@ -42,14 +39,12 @@ local LIMB_NAMES = {
 local function optimizeBasePart(part)
 	if not part:IsA("BasePart") then return end
 
-	-- Semua part karakter wajib masuk ke CollisionGroup AllPlayers
 	if part.CollisionGroup ~= GROUP_NAME then
 		part.CollisionGroup = GROUP_NAME
 	end
 
 	local isAccessory = part:FindFirstAncestorWhichIsA("Accessory") ~= nil
 	if isAccessory then
-		-- Aksesoris (topi/sayap/tas/senjata/layered clothing)
 		if part.CanCollide then part.CanCollide = false end
 		if part.CanTouch then part.CanTouch = false end
 		if part.CanQuery then part.CanQuery = false end
@@ -58,7 +53,6 @@ local function optimizeBasePart(part)
 		return
 	end
 
-	-- Root & Torso tetap memegang gravitasi, pergerakan, dan zona deteksi
 	if part.Name == "HumanoidRootPart" then
 		part.Massless = false
 		part.CanTouch = true
@@ -70,10 +64,6 @@ local function optimizeBasePart(part)
 		return
 	end
 
-	-- Anggota tubuh (Limbs):
-	-- Massless = true & CanTouch = false
-	-- Karakter tetap 100% bebas bergerak & menari, tetapi engine fisika Roblox
-	-- hanya mereplikasi 1 center of mass ke server (memangkas KB/s Sent)
 	if LIMB_NAMES[part.Name] then
 		if part.CanCollide then part.CanCollide = false end
 		if part.CanTouch then part.CanTouch = false end
@@ -99,15 +89,12 @@ local function onCharacterAdded(character, player)
 	cleanupPlayerConnections(player)
 	playerConnections[player] = {}
 
-	-- 1. Scan awal semua bagian yang sudah ada
 	for _, inst in ipairs(character:GetDescendants()) do
 		if inst:IsA("BasePart") then
 			optimizeBasePart(inst)
 		end
 	end
 
-	-- 2. Listener untuk part baru (aksesoris/tool yang baru terpasang)
-	-- Filter ketat: HANYA BasePart, TANPA loop GetDescendants rekursif
 	local conn = character.DescendantAdded:Connect(function(child)
 		if child:IsA("BasePart") then
 			optimizeBasePart(child)

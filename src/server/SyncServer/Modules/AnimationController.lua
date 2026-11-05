@@ -14,7 +14,6 @@ local SyncController = require(ServerModules:WaitForChild("SyncController"))
 
 local module = {}
 
--- CONFIG
 local FADE_OUT = 0.1
 local MIN_REQUEST_INTERVAL = 0.01
 local MAX_ANCHOR_POSITION = 600
@@ -29,7 +28,6 @@ local function finiteNumber(value)
 		and value ~= -math.huge
 end
 
--- Set attribute hanya jika nilainya berubah untuk menghemat replikasi.
 local function safeSetAttr(obj, key, value)
 	if obj:GetAttribute(key) ~= value then
 		obj:SetAttribute(key, value)
@@ -80,8 +78,6 @@ local function sanitizeAnchor(clientTime, clientPosition)
 	return anchorTime, anchorPosition
 end
 
--- Tulis snapshot baru secara atomik. version selalu naik agar client bisa
--- mengabaikan update lama yang datang tidak berurutan.
 local function writeSnapshot(character, animationId, anchorTime, anchorPosition, speed, isRestart)
 	local current = readSnapshot(character)
 	local restartSeq = current and current.restartSeq or 0
@@ -100,7 +96,6 @@ local function writeSnapshot(character, animationId, anchorTime, anchorPosition,
 	return snapshot
 end
 
--- EXECUTE ANIMATION
 function module.executeAnimation(player, animation, shouldPlay, speed, loadedAnimations, isSpam, clientStartTime, clientPosition)
 	if not canProcessRequest(player) then return "rate_limited" end
 	startProcessing(player)
@@ -128,7 +123,6 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 		end
 	end
 
-	-- === STOP LOGIC ===
 	if not shouldPlay then
 		if character then
 			safeSetAttr(character, "Syncing", nil)
@@ -140,7 +134,6 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 		return "stopped"
 	end
 
-	-- === PLAY & RESTART LOGIC ===
 	if character then
 		if character:GetAttribute("GlobalEffectActive") then
 			local GlobalEffectRemotes = ReplicatedStorage:FindFirstChild("GlobalEffectRemotes")
@@ -177,11 +170,6 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 		local anchorTime, anchorPosition = sanitizeAnchor(clientStartTime, clientPosition)
 		writeSnapshot(character, animation.AnimationId, anchorTime, anchorPosition, speed, true)
 
-		-- isSpam tidak lagi punya cooldown. Setiap klik tetap menjadi restart
-		-- baru lewat restartSeq di snapshot.
-		--
-		-- Legacy SpamNonce tetap dipertahankan untuk kompatibilitas script lain,
-		-- tetapi tidak pernah dipakai untuk membatasi spam.
 		if isSpam then
 			local nonce = character:GetAttribute("SpamNonce") or 0
 			character:SetAttribute("SpamNonce", nonce + 1)
@@ -192,9 +180,6 @@ function module.executeAnimation(player, animation, shouldPlay, speed, loadedAni
 	return "playing"
 end
 
--- ADJUST ANIMATION SPEED
--- Client mengirim anchor time + posisi asli track-nya. Server tidak
--- menghitung ulang dari waktu terima karena itu menambah delay/jitter.
 function module.adjustAnimationSpeed(player, speed, loadedAnimations, clientAnchorTime, clientPosition)
 	if not canProcessRequest(player) then return "rate_limited" end
 	startProcessing(player)

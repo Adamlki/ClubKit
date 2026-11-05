@@ -154,7 +154,7 @@ function PlayerEffectState:ResumeDance()
 				local anim = Instance.new("Animation")
 				anim.AnimationId = danceData.AnimationId
 				local track = animator:LoadAnimation(anim)
-				anim:Destroy() -- Cegah memory leak
+				anim:Destroy()
 				
 				track:Play()
 				track:AdjustWeight(danceData.Weight)
@@ -192,7 +192,6 @@ function PlayerEffectState:ApplyFloating()
 	local humanoid = char:FindFirstChild("Humanoid")
 	if not humanoid then return end
 	
-	-- Cegah tersangkut di kursi.
 	if humanoid.Sit then
 		humanoid.Sit = false
 		task.wait(0.1)
@@ -250,7 +249,6 @@ function PlayerEffectState:ApplyFly()
 	local rootPart = char:FindFirstChild("HumanoidRootPart")
 	if not humanoid or not rootPart then return end
 	
-	-- Cegah tersangkut di kursi.
 	if humanoid.Sit then
 		humanoid.Sit = false
 		task.wait(0.1) 
@@ -265,7 +263,6 @@ function PlayerEffectState:ApplyFly()
 	self:SuspendDance()
 	char:SetAttribute("GlobalEffectActive", true)
 	
-	-- Kunci network ownership agar karakter tidak rubberband.
 	if rootPart:CanSetNetworkOwnership() then
 		rootPart:SetNetworkOwner(nil)
 	end

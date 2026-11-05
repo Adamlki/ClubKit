@@ -300,8 +300,6 @@ getPlayerStatsRemote.OnServerInvoke = function(clientPlayer)
 	local now = os.clock()
 	local cached = statsCache[userId]
 	if now - (statsCooldown[userId] or 0) < 3 and cached then
-		-- Remote ini read-only. Saat cooldown, kembalikan hasil terakhir;
-		-- jangan kirim 0 karena UI akan menimpanya dengan "0 CASH".
 		return cached
 	end
 	statsCooldown[userId] = now

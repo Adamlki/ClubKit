@@ -1,5 +1,3 @@
--- ServerListManager (ClubKit Server Discovery & Teleportation)
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TeleportService = game:GetService("TeleportService")
@@ -9,7 +7,6 @@ local RunService = game:GetService("RunService")
 local serverStartTime = os.time()
 local isStudio = RunService:IsStudio()
 
--- Setup Remotes
 local remotesFolder = ReplicatedStorage:FindFirstChild("ServerListRemotes")
 if not remotesFolder then
 	remotesFolder = Instance.new("Folder")
@@ -31,10 +28,8 @@ if not teleportToServerRF then
 	teleportToServerRF.Parent = remotesFolder
 end
 
--- Flag untuk dummy server (set false agar HANYA menampilkan server ASLI yang aktif)
 local ENABLE_DUMMY_SERVERS = false
 
--- Server Identity
 local actualJobId = (game.JobId ~= "") and game.JobId or "STUDIO-SESSION"
 local shortId = (game.JobId ~= "") and string.upper(string.sub(game.JobId, -5)) or "2417E"
 local thisServerName = "SERVER " .. shortId
@@ -76,7 +71,6 @@ local function getCurrentServerData()
 	}
 end
 
--- MEMORY STORE REGISTRATION (Cross-server discovery)
 local memoryMap = nil
 pcall(function()
 	memoryMap = MemoryStoreService:GetSortedMap("ClubKit_ActiveServers_v1")
@@ -86,7 +80,6 @@ local function updateServerHeartbeat()
 	if isStudio or not memoryMap or actualJobId == "STUDIO-SESSION" then return end
 	pcall(function()
 		local data = getCurrentServerData()
-		-- Expire after 45 seconds if no heartbeat
 		memoryMap:SetAsync(actualJobId, data, 45)
 	end)
 end
@@ -106,7 +99,6 @@ game:BindToClose(function()
 	end
 end)
 
--- Mock / Realistic discovery servers for demonstration & testing
 local DEMO_SERVERS = {
 	{
 		idSuffix = "25D81",
@@ -193,7 +185,6 @@ local function getDiscoveryServers()
 	local thisServer = getCurrentServerData()
 	table.insert(list, thisServer)
 
-	-- Ambil daftar server nyata antar-instance dari MemoryStore
 	local foundCrossServers = false
 	if memoryMap then
 		local ok, items = pcall(function()
@@ -216,7 +207,6 @@ local function getDiscoveryServers()
 		end
 	end
 
-	-- Dummy servers hanya dimuat jika ENABLE_DUMMY_SERVERS diaktifkan secara eksplisit
 	if ENABLE_DUMMY_SERVERS and not foundCrossServers then
 		for _, mock in ipairs(DEMO_SERVERS) do
 			local createdTime = serverStartTime - (mock.daysAgo * 86400)
@@ -250,8 +240,6 @@ getServerListRF.OnServerInvoke = function(player)
 	if not player then return {} end
 	local now = os.clock()
 	if now - (serverListCooldown[player.UserId] or 0) < 5 then
-		-- Throttle the reply itself; serve the last known list rather than
-		-- an empty array during the cooldown window.
 		return cachedDiscoveryList or {}
 	end
 	serverListCooldown[player.UserId] = now

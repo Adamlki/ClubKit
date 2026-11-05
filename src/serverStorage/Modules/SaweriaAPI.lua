@@ -1,4 +1,3 @@
--- SAWERIA API MODULE
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 
@@ -8,7 +7,6 @@ local PrivateConfig = require(script.Parent:WaitForChild("PrivateConfig"))
 local WEB_APP_URL = PrivateConfig.SaweriaWebhookURL
 local IS_STUDIO = RunService:IsStudio()
 
--- Validasi konfigurasi: URL kosong / masih placeholder = jangan pernah polling
 local URL_CONFIGURED = type(WEB_APP_URL) == "string"
 	and WEB_APP_URL ~= ""
 	and string.find(WEB_APP_URL, "PASTE_YOUR_", 1, true) == nil
@@ -19,11 +17,8 @@ local warnedNotConfigured = false
 local cachedData = nil
 local lastFetchTime = 0
 local isFetching = false
--- Apps Script already caches GET for 45s. Poll less often; this cuts
--- redirects/HTTP work dramatically during a session.
 local FETCH_COOLDOWN = IS_STUDIO and 30 or 60
 
--- Anti-429: backoff eksponensial saat rate limit + jitter boot per server
 local BACKOFF_STEPS = { 30, 60, 120, 300 }
 local FAILURE_BACKOFF = 30
 local backoffUntil = 0
@@ -49,7 +44,6 @@ function SaweriaAPI:GetDonationData()
 
 	local currentTime = os.clock()
 
-	-- Sedang dalam masa backoff (kena 429): pakai data cache, jangan kirim request baru
 	if currentTime < backoffUntil then
 		return cachedData
 	end
@@ -65,7 +59,6 @@ function SaweriaAPI:GetDonationData()
 	isFetching = true
 	lastFetchTime = os.clock()
 
-	-- Jitter boot: fetch pertama tiap server ditunda acak agar server tidak menembak Google serentak
 	if not bootJitterDone then
 		bootJitterDone = true
 		task.wait(math.random() * 5)
@@ -105,7 +98,6 @@ function SaweriaAPI:GetDonationData()
 				configBroken = true
 				break
 			elseif isRateLimitError(errMsg) then
-				-- 429: retry hanya memperparah rate limit, langsung masuk backoff
 				rateLimited = true
 				break
 			else
@@ -128,8 +120,6 @@ function SaweriaAPI:GetDonationData()
 			BACKOFF_STEPS[backoffIndex]
 		))
 	elseif not configBroken then
-		-- Also back off after a normal timeout/5xx, otherwise every caller
-		-- immediately retries three times again and floods the queue.
 		backoffUntil = os.clock() + FAILURE_BACKOFF
 		warn("[SaweriaAPI] ❌ Gagal mengambil data terbaru dari Google API setelah 3 kali percobaan.")
 	end

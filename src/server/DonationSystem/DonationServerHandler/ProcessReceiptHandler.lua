@@ -4,14 +4,12 @@ local DonationConfig     = require(script.Parent.DonationConfig)
 
 local ProcessReceiptHandler = {}
 
--- STATE
 local initialized        = false
 local registeredCallbacks = {}
 local processedReceipts  = {} 
 local activeProcessing   = {}
 local warnedPriceMismatch = {}
 
--- HELPER
 local function debugLog(category, ...)
 	if not DonationConfig.DEBUG.ENABLED then return end
 	local show = (category == "RECEIPT" and DonationConfig.DEBUG.SHOW_RECEIPT)
@@ -49,8 +47,6 @@ local function cleanupOldReceipts()
 	end
 end
 
--- CALLBACK MANAGEMENT
-
 function ProcessReceiptHandler:RegisterCallback(name, callback)
 	if type(name) ~= "string" or type(callback) ~= "function" then
 		warn("[RECEIPT] RegisterCallback: name harus string dan callback harus function")
@@ -77,8 +73,6 @@ end
 function ProcessReceiptHandler:IsInitialized()
 	return initialized
 end
-
--- MAIN RECEIPT PROCESSOR
 
 function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 	local userId    = receiptInfo.PlayerId
@@ -189,8 +183,6 @@ function ProcessReceiptHandler:ProcessReceipt(receiptInfo)
 	debugLog("RECEIPT", "Receipt selesai diproses dan diberikan PurchaseGranted")
 	return Enum.ProductPurchaseDecision.PurchaseGranted
 end
-
--- INITIALIZATION
 
 function ProcessReceiptHandler:Initialize()
 	if initialized then

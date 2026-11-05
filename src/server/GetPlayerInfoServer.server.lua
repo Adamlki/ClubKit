@@ -10,7 +10,6 @@ local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):W
 local GameConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("GameConfig"))
 local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 
--- SETUP REMOTE
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
 
 local getPlayerInfoRF = remotes:FindFirstChild("GetPlayerInfo")
@@ -20,16 +19,12 @@ if not getPlayerInfoRF then
 	getPlayerInfoRF.Parent = remotes
 end
 
--- CONSTANTS
-
--- RoProxy: mirror publik API Roblox karena HttpService memblokir *.roblox.com langsung.
 local BASE_USERS   = "https://users.roproxy.com/v1/users/"
 local BASE_FRIENDS = "https://friends.roproxy.com/v1/users/"
 
-local CACHE_TTL       = 1800 -- 30 menit
-local REQUEST_TIMEOUT = 5    -- detik
+local CACHE_TTL       = 1800
+local REQUEST_TIMEOUT = 5
 
--- CACHE SYSTEM
 local cache = {}
 local profileLoadingLocks = {}
 local activeProfileFetches = 0
@@ -56,20 +51,17 @@ local function setCached(userId, rawDescription, friendsCount, followersCount, f
 	}
 end
 
--- HTTP HELPER DENGAN GLOBAL PACING & CIRCUIT BREAKER
 local proxyCircuitOpenUntil = 0
 local consecutiveErrors = 0
-local CIRCUIT_BREAK_DURATION = 30 -- Jeda 30 detik jika proxy down/terkena hard rate limit
+local CIRCUIT_BREAK_DURATION = 30
 local lastHttpCallTime = 0
-local MIN_HTTP_GAP = 0.15 -- Jeda minimal 150ms antar outbound request ke RoProxy untuk anti-429
+local MIN_HTTP_GAP = 0.15
 
 local function httpGet(url)
-	-- Jika circuit breaker aktif, jangan kirim HTTP request ke proxy sama sekali
 	if os.clock() < proxyCircuitOpenUntil then
 		return nil
 	end
 
-	-- GLOBAL PACING: Beri jeda minimal 150ms agar RoProxy tidak memblokir IP Roblox (HTTP 429)
 	local timeSinceLast = os.clock() - lastHttpCallTime
 	if timeSinceLast < MIN_HTTP_GAP then
 		task.wait(MIN_HTTP_GAP - timeSinceLast)
@@ -116,37 +108,29 @@ local function httpGet(url)
 	return nil
 end
 
--- API FETCH FUNCTIONS
-
--- GET users.roproxy.com/v1/users/{userId}
 local function fetchDescription(userId)
 	local data = httpGet(BASE_USERS .. userId)
 	return data and tostring(data.description or "") or ""
 end
 
--- GET friends.roproxy.com/v1/users/{userId}/friends/count
 local function fetchFriendsCount(userId)
 	local data = httpGet(BASE_FRIENDS .. userId .. "/friends/count")
 	return data and (data.count or 0) or 0
 end
 
--- GET friends.roproxy.com/v1/users/{userId}/followers/count
 local function fetchFollowersCount(userId)
 	local data = httpGet(BASE_FRIENDS .. userId .. "/followers/count")
 	return data and (data.count or 0) or 0
 end
 
--- GET friends.roproxy.com/v1/users/{userId}/followings/count
 local function fetchFollowingCount(userId)
 	local data = httpGet(BASE_FRIENDS .. userId .. "/followings/count")
 	return data and (data.count or 0) or 0
 end
 
--- Filter teks wajib sesuai ToS Roblox; hasil bergantung pada penerima, jadi filter ulang per caller.
 local function filterBio(rawBio, fromUserId, toPlayer)
 	if rawBio == "" then return "" end
 
-	-- FilterStringAsync mewajibkan sender berada di server saat ini
 	local senderId = fromUserId
 	if not Players:GetPlayerByUserId(fromUserId) and toPlayer then
 		senderId = toPlayer.UserId
@@ -172,7 +156,6 @@ local function filterBio(rawBio, fromUserId, toPlayer)
 	return (okGet and filtered) and filtered or ""
 end
 
--- Ambil grup utama; GroupService tidak lewat RoProxy sehingga bebas rate limit.
 local function fetchPrimaryGroup(userId)
 	local ok, groups = pcall(function()
 		return GroupService:GetGroupsAsync(userId)
@@ -205,7 +188,6 @@ end
 
 local function cachedResponse(cached, userId, callerPlayer)
 	return {
-		-- Filter ulang per caller karena hasil filter bergantung pada penerima
 		description    = filterBio(cached.rawDescription, userId, callerPlayer),
 		friendsCount   = cached.friendsCount,
 		followersCount = cached.followersCount,
@@ -214,16 +196,12 @@ local function cachedResponse(cached, userId, callerPlayer)
 	}
 end
 
--- Ambil profil sosial secara paralel dengan cache, lock, dan batas konkurensi.
 local function fetchPlayerInfo(userId, callerPlayer)
-	-- Cek cache terlebih dahulu
 	local cached = getCached(userId)
 	if cached then
 		return cachedResponse(cached, userId, callerPlayer)
 	end
 
-	-- If another caller is already loading this exact profile, wait for it
-	-- instead of firing 4 duplicate roproxy requests per caller.
 	if profileLoadingLocks[userId] then
 		local lockStart = os.clock()
 		while profileLoadingLocks[userId] and (os.clock() - lockStart) < 10 do
@@ -250,7 +228,6 @@ local function fetchPlayerInfo(userId, callerPlayer)
 		local followersCount = 0
 		local followingCount = 0
 
-		-- Cek circuit breaker sebelum request ke RoProxy
 		if os.clock() >= proxyCircuitOpenUntil then
 			local completedTasks = 0
 			task.spawn(function()
@@ -282,7 +259,6 @@ local function fetchPlayerInfo(userId, callerPlayer)
 			end
 		end
 
-		-- Cache hasil agar request berikutnya tidak menyentuh RoProxy.
 		setCached(userId, rawDescription, friendsCount, followersCount, followingCount, primaryGroup)
 
 		return {
@@ -311,11 +287,7 @@ local function fetchPlayerInfo(userId, callerPlayer)
 	return result
 end
 
--- Profil hanya di-fetch saat diminta agar join 50+ pemain tidak membanjiri RoProxy.
-
--- REMOTE HANDLER
 getPlayerInfoRF.OnServerInvoke = function(callerPlayer, targetUserId)
-	-- Batasi request per pemain agar IP server tidak diblokir RoProxy (429).
 	if not RemoteEventManager.checkRateLimit(callerPlayer, "getPlayerInfo") then
 		return { description = "", friendsCount = 0, followersCount = 0, followingCount = 0 }
 	end
@@ -325,7 +297,6 @@ getPlayerInfoRF.OnServerInvoke = function(callerPlayer, targetUserId)
 		return { description = "", friendsCount = 0, followersCount = 0, followingCount = 0 }
 	end
 
-	-- Pastikan caller masih di game
 	if not callerPlayer or not callerPlayer.Parent then
 		return { description = "", friendsCount = 0, followersCount = 0, followingCount = 0 }
 	end
@@ -340,7 +311,6 @@ getPlayerInfoRF.OnServerInvoke = function(callerPlayer, targetUserId)
 	end
 end
 
--- Bersihkan cache kedaluwarsa setiap 5 menit.
 task.spawn(function()
 	while true do
 		task.wait(300)

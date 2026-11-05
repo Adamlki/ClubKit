@@ -52,8 +52,6 @@ local closeBtn = topBar:WaitForChild("CloseBtn")
 
 local scroll = mainframe:WaitForChild("ScrollContainer")
 
--- The action buttons sit below the profile section. Keep the canvas height
--- in sync with the actual content so Whisper/Hide are reachable on mobile.
 scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 
@@ -178,8 +176,6 @@ whisperBtn.Visible = true
 whisperBtn.MouseButton1Click:Connect(function()
 	if not currentTargetPlayer then return end
 
-	-- Use Roblox's native /w command. It creates RBXWhisper channel and
-	-- respects the player's chat/privacy settings.
 	local textChannels = TextChatService:FindFirstChild("TextChannels")
 	local generalChannel = textChannels and textChannels:FindFirstChild("RBXGeneral")
 	if generalChannel then
@@ -198,8 +194,6 @@ hideBtn.MouseButton1Click:Connect(function()
 	playClickSound()
 end)
 
--- Gift VIP player-to-player. Default OFF; admin panel tetap bisa memberi VIP.
--- Tombol hanya dibuat jika FeatureFlags.VIPGiftEnabled == true.
 task.spawn(function()
 	local featureFolder = ReplicatedStorage:WaitForChild("FeatureFlags", 10)
 	local giftFlag = featureFolder and featureFolder:WaitForChild("VIPGiftEnabled", 5)
@@ -253,9 +247,6 @@ likeBtn.MouseButton1Click:Connect(function()
 	end)
 
 	if LikePlayerRemote then
-		-- RemoteFunction mengembalikan DUA nilai: success, cooldownEnd.
-		-- pcall harus menangkap keduanya; sebelumnya `result` berisi boolean
-		-- `true`, lalu Heartbeat menghitung `true - os.time()` dan error.
 		local ok, liked, cooldownEnd = pcall(function()
 			return LikePlayerRemote:InvokeServer(currentTargetPlayer.UserId)
 		end)

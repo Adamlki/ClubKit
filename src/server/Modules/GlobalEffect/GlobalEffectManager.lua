@@ -166,7 +166,6 @@ function GlobalEffectManager:_handleToggleEffect(player, effectName, isActive)
 		end
 		
 		if effectName == "Camera360" then
-			-- Send 360 only to those following
 			for _, p in ipairs(Players:GetPlayers()) do
 				local isFollowing = p:GetAttribute("FollowGlobalEffect")
 				if isFollowing == nil then isFollowing = true end
@@ -214,7 +213,6 @@ function GlobalEffectManager:_onCharacterAdded(character)
 	if character:GetAttribute("EffectLoaded") then return end
 	character:SetAttribute("EffectLoaded", true)
 	
-	-- Clear old state before applying to new char
 	if self.PlayerStates[player] then
 		self.PlayerStates[player]:Destroy()
 		self.PlayerStates[player] = nil
@@ -307,7 +305,6 @@ function GlobalEffectManager:_setupEvents()
 			end
 		end
 
-		-- Destroy state setelah ClearAllEffects agar tidak dibuat ulang.
 		if self.PlayerStates[player] then
 			self.PlayerStates[player]:Destroy()
 			self.PlayerStates[player] = nil

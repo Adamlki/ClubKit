@@ -121,7 +121,6 @@ local function refreshLeaderboard()
 	end
 end
 
--- CLIENT ON-DEMAND SYNC (RATE LIMITED)
 local requestCooldowns = {}
 local REQUEST_COOLDOWN = 5
 
@@ -130,7 +129,6 @@ remote.OnServerEvent:Connect(function(player)
 
 	local now = os.clock()
 	if now - (requestCooldowns[player.UserId] or 0) < REQUEST_COOLDOWN then
-		-- Throttle the reply itself, not only the DataStore fetch.
 		if cachedTopData and #cachedTopData > 0 then
 			pcall(function()
 				remote:FireClient(player, cachedTopData)
@@ -147,7 +145,6 @@ remote.OnServerEvent:Connect(function(player)
 		return
 	end
 
-	-- Fetch on first client if empty
 	pcall(refreshLeaderboard)
 	if cachedTopData and #cachedTopData > 0 then
 		pcall(function()
@@ -156,7 +153,6 @@ remote.OnServerEvent:Connect(function(player)
 	end
 end)
 
--- PLAYER MANAGEMENT
 local function onPlayerJoin(player)
 	debugPrint("Player joined:", player.Name)
 	if not player:FindFirstChild("leaderstats") then
@@ -175,10 +171,8 @@ for _, player in ipairs(Players:GetPlayers()) do
 	end)
 end
 
--- AUTO-SAVE LOOP (Setiap 10 Menit)
 task.spawn(function()
 	while true do
-		-- Interval 10 Menit untuk 100 Player (600 detik)
 		task.wait(600)
 		for _, player in ipairs(Players:GetPlayers()) do
 			pcall(function() LevelSystem:SavePlayerLevel(player) end)
@@ -187,7 +181,6 @@ task.spawn(function()
 	end
 end)
 
--- Export ke LeaderboardRegistry & LeaderboardOrchestrator
 local function updateLevelLeaderboard()
 	pcall(refreshLeaderboard)
 end

@@ -316,9 +316,6 @@ function RoleSystem:GetPlayerRole(player)
 	local ok, inGroup = pcall(player.IsInGroup, player, targetGroupId)
 	ownership.GroupCheckedAt = now
 	if ok and inGroup then
-		-- Jangan set ownership.VIP di sini: itu bikin status VIP nempel permanen
-		-- (tetap VIP walau sudah keluar grup) dan dianggap memiliki gamepass VIP.
-		-- Cukup GroupVIP; RoleSystem sudah menganggap GroupVIP sebagai VIP.
 		ownership.GroupVIP = true
 		return "VIP"
 	end

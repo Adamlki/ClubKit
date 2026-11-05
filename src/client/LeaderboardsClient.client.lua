@@ -60,7 +60,7 @@ end
 
 local pendingUserInfoIds = {}
 local userInfoFetchAttempted = {}
-local userInfoRetryAt = {} -- [userId] = os.clock() minimal waktu retry berikutnya
+local userInfoRetryAt = {}
 local userInfoBatchScheduled = false
 
 local function flushUserInfoBatch()

@@ -2,45 +2,33 @@ local RateLimiter = require(script.Parent:WaitForChild("RateLimiter"))
 
 local RemoteEventManager = {}
 
--- CONFIG: Mapping RemoteEvent Name -> Rate Limit Action
 local REMOTE_ACTION_MAP = {
-	-- Remotes folder
 	["startSync"] = "startSync",
 	["changeSpeed"] = "changeSpeed",
 	["updateFavoritedAnimationsEvent"] = "updateFavoritedAnimations",
 	["UpdateLeaderStatus"] = "startSync",
 	
-	-- CarryRemotes
 	["CarryRequest"] = "carryRequest",
 	["CarryResponse"] = "carryResponse",
 	["CarryEnd"] = "carryEnd",
 	
-	-- BioRemotes
 	["SetBioStatus"] = "setBioStatus",
 	
-	-- TitleRemotes
 	["UpdateTitle"] = "updateTitle",
 	
-	-- Message
 	["SendMessage"] = "sendMessage",
 	
-	-- AccessoryRemotes
 	["ToggleAccessory"] = "toggleAccessory",
 	
-	-- ReplicatedStorage root
 	["RefreshCharacterEvent"] = "refreshCharacter",
 	["GiveRoleRemote"] = "giveRole",
 	["RequestDonationState"] = "requestDonationState",
 	
-	-- MusicRemotes
 	["DispatchAction"] = "musicAction",
 	["RequestSync"] = "musicSync",
 	
-	-- Gamepass
 	["RefreshRole"] = "giveRole",
 }
-
--- WRAPPER FUNCTIONS
 
 function RemoteEventManager.wrapRemoteEvent(remoteEvent, actionName, callback)
 	if not remoteEvent or not remoteEvent:IsA("RemoteEvent") then
@@ -86,8 +74,6 @@ function RemoteEventManager.wrapRemoteFunction(remoteFunction, actionName, callb
 	end
 end
 
--- HELPER: Auto-wrap semua remotes di folder
-
 function RemoteEventManager.wrapFolder(folder, callbackMap)
 	if not folder or not folder:IsA("Folder") then
 		warn("[RemoteEventManager] Invalid folder")
@@ -111,8 +97,6 @@ function RemoteEventManager.wrapFolder(folder, callbackMap)
 	end
 end
 
--- HELPER: Check tanpa wrap
-
 function RemoteEventManager.checkRateLimit(player, actionName)
 	return RateLimiter.check(player, actionName)
 end
@@ -120,8 +104,6 @@ end
 function RemoteEventManager.checkRateLimitWithInfo(player, actionName)
 	return RateLimiter.checkWithInfo(player, actionName)
 end
-
--- GETTER
 
 function RemoteEventManager.getRateLimiter()
 	return RateLimiter

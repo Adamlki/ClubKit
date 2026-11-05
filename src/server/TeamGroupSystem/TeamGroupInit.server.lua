@@ -5,14 +5,12 @@ local RoleSystem  = require(ServerStorage.Modules.RoleSystem)
 local TeamGroups  = require(ServerStorage.Modules.TeamGroups)
 local CustomTeams = require(ServerStorage.Modules.CustomTeams)
 
--- Urutan init penting: data custom harus siap sebelum team di-append dan di-init.
 CustomTeams.LoadFromDataStore()
 TeamGroups.CreateDefaultTeams()
 CustomTeams.AppendCustomTeams()
 TeamGroups.Init(CustomTeams.HasOverride)
 CustomTeams.Init()
 
--- Satu pintu masuk assignment agar tidak terjadi duplikasi saat init.
 local assignedPlayers = {}
 
 local function assignPlayerOnce(player)

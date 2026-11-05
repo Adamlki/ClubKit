@@ -3,27 +3,23 @@ local DataStoreEnv = require(script.Parent.Parent:WaitForChild("DataStoreEnv"))
 local MusicFavoriteManager = {}
 MusicFavoriteManager.__index = MusicFavoriteManager
 
--- CONFIGURATION
 local CONFIG = {
 	DATASTORE_NAME = "MusicFavorites_v1",
 	MAX_FAVORITES = 100,
 	RETRY_ATTEMPTS = 3,
 	RETRY_DELAY = 1,
-	CACHE_DURATION = 300, -- 5 minutes
+	CACHE_DURATION = 300,
 }
 
--- DATASTORE SETUP
 local favoritesStore, favoritesWriteStore = DataStoreEnv.Get(CONFIG.DATASTORE_NAME)
 
--- INITIALIZATION
 function MusicFavoriteManager.new()
 	local self = setmetatable({}, MusicFavoriteManager)
 
-	self.playerFavorites = {} -- Cache: [userId] = {musicIds = {}, lastUpdate = tick(), isDirty = bool}
-	self.loadingQueue = {} -- Track loading states
-	self.loaded = {} -- [userId] = true hanya jika DataStore berhasil dibaca
+	self.playerFavorites = {}
+	self.loadingQueue = {}
+	self.loaded = {}
 
-	-- Simpan perubahan berkala; jangan menunggu player leave saja.
 	task.spawn(function()
 		while true do
 			task.wait(120)
@@ -39,7 +35,6 @@ function MusicFavoriteManager.new()
 	return self
 end
 
--- DATASTORE OPERATIONS (WITH RETRY)
 local function datastoreGetAsync(key)
 	for attempt = 1, CONFIG.RETRY_ATTEMPTS do
 		local success, result = pcall(function()
@@ -79,7 +74,6 @@ local function datastoreUpdateAsync(key, value, loadedTimestamp)
 				if type(oldData) == "table"
 					and type(oldData.musicIds) == "table"
 					and (tonumber(oldData.timestamp) or 0) > (tonumber(loadedTimestamp) or 0) then
-					-- Another server wrote newer favorites. Keep both additions.
 					value.musicIds = mergeFavoriteIds(oldData.musicIds, value.musicIds)
 					value.timestamp = tick()
 				end
@@ -100,10 +94,7 @@ local function datastoreUpdateAsync(key, value, loadedTimestamp)
 	return false, nil
 end
 
--- LOAD PLAYER FAVORITES
 function MusicFavoriteManager:LoadPlayerFavorites(userId)
-	-- Check cache first. Cache yang dirty (ada perubahan lokal) tidak boleh
-	-- ditimpa oleh hasil GetAsync yang lebih lama.
 	local cached = self.playerFavorites[userId]
 	local currentTime = tick()
 
@@ -112,14 +103,12 @@ function MusicFavoriteManager:LoadPlayerFavorites(userId)
 		return cached.musicIds
 	end
 
-	-- Check if already loading
 	if self.loadingQueue[userId] then
 		local startWait = os.clock()
 		while self.loadingQueue[userId] and (os.clock() - startWait) < 10 do
 			task.wait(0.1)
 		end
 
-		-- Check cache again after waiting
 		cached = self.playerFavorites[userId]
 		if cached then
 			self.loaded[userId] = true
@@ -127,7 +116,6 @@ function MusicFavoriteManager:LoadPlayerFavorites(userId)
 		end
 	end
 
-	-- Load from DataStore
 	self.loadingQueue[userId] = true
 
 	local key = "favorites_" .. tostring(userId)
@@ -136,8 +124,6 @@ function MusicFavoriteManager:LoadPlayerFavorites(userId)
 	self.loadingQueue[userId] = nil
 
 	if not loadSuccess then
-		-- Jangan cache daftar kosong saat DataStore gagal: itu akan menimpa
-		-- favorites lama ketika pemain menekan tombol Favorite.
 		if cached then
 			self.loaded[userId] = true
 			return cached.musicIds
@@ -150,7 +136,6 @@ function MusicFavoriteManager:LoadPlayerFavorites(userId)
 		favorites = data.musicIds
 	end
 
-	-- Cache the result hanya setelah load sukses.
 	self.playerFavorites[userId] = {
 		musicIds = favorites,
 		lastUpdate = currentTime,
@@ -166,16 +151,13 @@ function MusicFavoriteManager:IsLoaded(userId)
 	return self.loaded[userId] == true
 end
 
--- SAVE PLAYER FAVORITES (ON LEAVE ONLY)
 function MusicFavoriteManager:SavePlayerFavorites(userId)
 	local cached = self.playerFavorites[userId]
 
-	-- Only save if data exists and is dirty (modified)
 	if not cached or not cached.isDirty then
 		return true
 	end
 
-	-- Jangan pernah menyimpan cache yang belum berhasil dimuat dari DataStore.
 	if not self.loaded[userId] then
 		return false
 	end
@@ -202,7 +184,6 @@ function MusicFavoriteManager:SavePlayerFavorites(userId)
 	return false
 end
 
--- GET PLAYER FAVORITES (FROM CACHE)
 function MusicFavoriteManager:GetPlayerFavorites(userId)
 	local cached = self.playerFavorites[userId]
 	if cached then
@@ -212,7 +193,6 @@ function MusicFavoriteManager:GetPlayerFavorites(userId)
 	return {}
 end
 
--- ADD FAVORITE (IN-MEMORY ONLY)
 function MusicFavoriteManager:AddFavorite(userId, musicId)
 	if not self.loaded[userId] then
 		local loaded = self:LoadPlayerFavorites(userId)
@@ -223,34 +203,29 @@ function MusicFavoriteManager:AddFavorite(userId, musicId)
 
 	local favorites = self:GetPlayerFavorites(userId)
 
-	-- Check if already favorited
 	for _, favId in ipairs(favorites) do
 		if favId == musicId then
 			return false, "Already in favorites"
 		end
 	end
 
-	-- Check max limit
 	if #favorites >= CONFIG.MAX_FAVORITES then
 		return false, string.format("Maximum %d favorites reached", CONFIG.MAX_FAVORITES)
 	end
 
-	-- Add to favorites (in memory only)
 	table.insert(favorites, musicId)
 
-	-- Update cache and mark as dirty
 	local previous = self.playerFavorites[userId]
 	self.playerFavorites[userId] = {
 		musicIds = favorites,
 		lastUpdate = tick(),
 		remoteTimestamp = previous and previous.remoteTimestamp or 0,
-		isDirty = true -- Mark for save on leave
+		isDirty = true
 	}
 
 	return true, "Added to favorites"
 end
 
--- REMOVE FAVORITE (IN-MEMORY ONLY)
 function MusicFavoriteManager:RemoveFavorite(userId, musicId)
 	if not self.loaded[userId] then
 		local loaded = self:LoadPlayerFavorites(userId)
@@ -261,7 +236,6 @@ function MusicFavoriteManager:RemoveFavorite(userId, musicId)
 
 	local favorites = self:GetPlayerFavorites(userId)
 
-	-- Find and remove
 	local found = false
 	for i, favId in ipairs(favorites) do
 		if favId == musicId then
@@ -275,35 +249,29 @@ function MusicFavoriteManager:RemoveFavorite(userId, musicId)
 		return false, "Not in favorites"
 	end
 
-	-- Update cache and mark as dirty
 	local previous = self.playerFavorites[userId]
 	self.playerFavorites[userId] = {
 		musicIds = favorites,
 		lastUpdate = tick(),
 		remoteTimestamp = previous and previous.remoteTimestamp or 0,
-		isDirty = true -- Mark for save on leave
+		isDirty = true
 	}
 
 	return true, "Removed from favorites"
 end
 
--- TOGGLE FAVORITE
 function MusicFavoriteManager:ToggleFavorite(userId, musicId)
 	local favorites = self:GetPlayerFavorites(userId)
 
-	-- Check if already favorited
 	for i, favId in ipairs(favorites) do
 		if favId == musicId then
-			-- Remove
 			return self:RemoveFavorite(userId, musicId)
 		end
 	end
 
-	-- Add
 	return self:AddFavorite(userId, musicId)
 end
 
--- IS FAVORITE
 function MusicFavoriteManager:IsFavorite(userId, musicId)
 	local favorites = self:GetPlayerFavorites(userId)
 
@@ -316,13 +284,11 @@ function MusicFavoriteManager:IsFavorite(userId, musicId)
 	return false
 end
 
--- GET FAVORITE COUNT
 function MusicFavoriteManager:GetFavoriteCount(userId)
 	local favorites = self:GetPlayerFavorites(userId)
 	return #favorites
 end
 
--- CLEAR ALL FAVORITES
 function MusicFavoriteManager:ClearAllFavorites(userId)
 	local success = self:SavePlayerFavoritesImmediate(userId, {})
 
@@ -345,7 +311,6 @@ function MusicFavoriteManager:SavePlayerFavoritesImmediate(userId, favorites)
 	local success = datastoreSetAsync(key, data)
 
 	if success then
-		-- Update cache
 		self.playerFavorites[userId] = {
 			musicIds = favorites,
 			lastUpdate = tick(),
@@ -358,15 +323,11 @@ function MusicFavoriteManager:SavePlayerFavoritesImmediate(userId, favorites)
 	return false
 end
 
--- INVALIDATE CACHE
 function MusicFavoriteManager:InvalidateCache(userId)
 	self.playerFavorites[userId] = nil
 end
 
--- CLEANUP PLAYER DATA (SAVE ON LEAVE)
 function MusicFavoriteManager:CleanupPlayer(userId)
-	-- Jangan hapus cache sebelum save benar-benar sukses. Jika DataStore
-	-- sedang sibuk, retry beberapa kali agar favorites tidak hilang.
 	local function finalize(attempt)
 		local cached = self.playerFavorites[userId]
 		if not cached then
@@ -394,7 +355,6 @@ function MusicFavoriteManager:CleanupPlayer(userId)
 	finalize(1)
 end
 
--- GET STATISTICS
 function MusicFavoriteManager:GetStats()
 	local stats = {
 		cachedPlayers = 0,

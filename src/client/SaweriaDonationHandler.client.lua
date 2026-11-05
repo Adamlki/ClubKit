@@ -14,10 +14,8 @@ local ClientState       = require(ReplicatedStorage:WaitForChild("Modules"):Wait
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- TopbarPlus
 local Icon = require(ReplicatedStorage:WaitForChild("Icon"))
 
--- UI REFERENCES (Membaca GUI Fisik dari StarterGui / PlayerGui)
 local gui = playerGui:WaitForChild("SaweriaDonationGui", 30)
 if not gui then
 	warn("[SaweriaDonationHandler] SaweriaDonationGui tidak ditemukan di PlayerGui dalam 30 detik!")
@@ -30,7 +28,6 @@ local closeBtn = headerBar:WaitForChild("CloseBtn")
 
 local contentFrame = mainCard:WaitForChild("ContentFrame")
 
--- Kolom Kiri
 local leftCol = contentFrame:WaitForChild("LeftCol")
 local avatarRing = leftCol:WaitForChild("AvatarRing")
 local avatarImage = avatarRing:WaitForChild("AvatarImage")
@@ -38,7 +35,6 @@ local displayNameLabel = leftCol:WaitForChild("DisplayNameLabel")
 local usernameLabel = leftCol:WaitForChild("UsernameLabel")
 local totalDonatedValue = leftCol:WaitForChild("TotalDonatedValue")
 
--- Kolom Kanan
 local rightCol = contentFrame:WaitForChild("RightCol")
 local linkBoxContainer = rightCol:WaitForChild("LinkBoxContainer")
 local linkTextBox = linkBoxContainer:WaitForChild("LinkTextBox")
@@ -46,7 +42,6 @@ local copyLinkBtn = rightCol:WaitForChild("CopyLinkBtn")
 local instructionsLabel = rightCol:WaitForChild("InstructionsLabel")
 local usernameHighlight = rightCol:WaitForChild("UsernameHighlight")
 
--- STATE & FORMATTING
 local isOpen = false
 local saweriaIcon
 local TopbarPanelRegistry = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("TopbarPanelRegistry"))
@@ -55,13 +50,11 @@ local function formatNumber(num)
 	return FormatUtils.formatNumber(num, ".")
 end
 
--- UPDATE STATS & DATA PEMAIN
 local function updateStats()
 	avatarImage.Image = string.format("rbxthumb://type=AvatarHeadShot&id=%d&w=150&h=150", player.UserId)
 	displayNameLabel.Text = player.DisplayName
 	usernameLabel.Text = "@" .. player.Name
 
-	-- Perbarui instruksi dengan username pemain asli berwarna merah
 	instructionsLabel.Text = string.format(
 		"1. Tekan <b>COPY LINK</b> lalu buka link donasinya.\n" ..
 		"2. Masukkan nominal donasi (CASH).\n" ..
@@ -88,12 +81,10 @@ local function updateStats()
 	end
 end
 
--- OPEN & CLOSE CONTROLLER (Instan Tanpa Animasi Sesuai Permintaan)
 local function openSaweria()
 	if isOpen then return end
 	isOpen = true
 
-	-- Tutup Robux Donation Board jika sedang terbuka agar tidak tumpang tindih
 	if ClientState.hasAction("CloseRobuxDonation") then
 		ClientState.callAction("CloseRobuxDonation")
 	end
@@ -123,7 +114,6 @@ end
 ClientState.registerAction("OpenSaweria", openSaweria)
 ClientState.registerAction("CloseSaweria", closeSaweria)
 
--- EVENT BINDINGS
 mainCard.Visible = false
 
 local lastCloseSaweriaClick = 0
@@ -178,7 +168,6 @@ copyLinkBtn.MouseButton1Click:Connect(function()
 	end)
 end)
 
--- TOPBAR PLUS INTEGRATION (Icon Saweria Mandiri)
 pcall(function()
 	if Icon.getIcon and Icon.getIcon("SaweriaDonationIcon") then
 		return
@@ -188,7 +177,7 @@ pcall(function()
 		:setName("SaweriaDonationIcon")
 		:setImage(AssetConfig.Images.SaweriaIcon)
 		:setLabel("")
-		:setOrder(3) -- Berdampingan di sebelah Robux Donate (Order 2)
+		:setOrder(3)
 
 	TopbarPanelRegistry:Register("Saweria", function()
 		if saweriaIcon then pcall(function() saweriaIcon:deselect() end) end

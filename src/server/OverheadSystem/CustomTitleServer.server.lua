@@ -1,5 +1,3 @@
--- CUSTOM TITLE SERVER (PLAYER SELF-CUSTOMIZATION)
-
 local Players           = game:GetService("Players")
 local TextService       = game:GetService("TextService")
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -8,7 +6,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage     = game:GetService("ServerStorage")
 local DataStoreEnv      = require(ServerStorage:WaitForChild("Modules"):WaitForChild("DataStoreEnv"))
 
--- Module references
 local TitleDataManager = require(script.Parent.OverheadSystemServer.TitleDataManager)
 local OverheadManager  = require(script.Parent.OverheadSystemServer.OverheadManager)
 
@@ -17,17 +14,15 @@ pcall(function()
 	LevelSystem = require(ServerStorage.Modules.LevelSystem)
 end)
 
--- CONFIGURATION
 local CONFIG = {
 	MAX_CHANCES                = 3,
 	MAX_TITLE_LENGTH           = 50,
 	PREVIEW_DURATION           = 5,
 	CHANCES_DATASTORE          = "CustomTitleChances_V1",
 	CHANCES_PREFIX             = "Chances_",
-	UNLIMITED_LEVEL_THRESHOLD  = 50, -- Level 50+ mendapat custom title unlimited
+	UNLIMITED_LEVEL_THRESHOLD  = 50,
 }
 
--- LEVEL CHECK HELPER
 local function getPlayerLevel(player)
 	if not player then return 1 end
 	if LevelSystem and LevelSystem.GetPlayerLevel then
@@ -48,10 +43,9 @@ local function hasUnlimitedTitle(player)
 	return getPlayerLevel(player) >= CONFIG.UNLIMITED_LEVEL_THRESHOLD
 end
 
--- DATASTORE & CACHE
 local chancesStore, chancesWriteStore = DataStoreEnv.Get(CONFIG.CHANCES_DATASTORE)
 local playerChancesCache = {}
-local activePreviews = {} -- [userId] = previewToken
+local activePreviews = {}
 
 local function getPlayerChances(userId)
 	if playerChancesCache[userId] ~= nil then
@@ -69,7 +63,6 @@ local function getPlayerChances(userId)
 			return chances
 		end
 
-		-- Pemain baru / belum pernah memakai title.
 		playerChancesCache[userId] = CONFIG.MAX_CHANCES
 		return CONFIG.MAX_CHANCES
 	end
@@ -129,7 +122,6 @@ local function consumePlayerChance(userId, expectedChances)
 	return false, nil
 end
 
--- REMOTE SETUP
 local titleRemotes = ReplicatedStorage:FindFirstChild("TitleRemotes")
 if not titleRemotes then
 	titleRemotes = Instance.new("Folder")
@@ -152,7 +144,6 @@ local previewCustomTitleRemote = getOrCreateRemote("RemoteEvent", "PreviewCustom
 local previewEndedRemote       = getOrCreateRemote("RemoteEvent", "PreviewEnded")
 local applyCustomTitleRemote   = getOrCreateRemote("RemoteFunction", "ApplyCustomTitle")
 
--- REMOTE: GET DATA (CHANCES & CURRENT TITLE)
 getCustomTitleDataRemote.OnServerInvoke = function(player)
 	if not player then return nil end
 	if not RemoteEventManager.checkRateLimit(player, "customTitleAction") then return nil end
@@ -177,7 +168,6 @@ getCustomTitleDataRemote.OnServerInvoke = function(player)
 	}
 end
 
--- REMOTE: PREVIEW TITLE (CEK DULU - 5 DETIK)
 previewCustomTitleRemote.OnServerEvent:Connect(function(player, titleData)
 	if not player or not player.Parent then return end
 	if not RemoteEventManager.checkRateLimit(player, "customTitleAction") then return end
@@ -191,7 +181,6 @@ previewCustomTitleRemote.OnServerEvent:Connect(function(player, titleData)
 
 	if rawTitle == "" then return end
 
-	-- Roblox Text Filtering for safety (jangan tampilkan rawTitle jika filter gagal)
 	local filteredTitle = nil
 	local okFilter = pcall(function()
 		local filterResult = TextService:FilterStringAsync(rawTitle, player.UserId)
@@ -209,7 +198,6 @@ previewCustomTitleRemote.OnServerEvent:Connect(function(player, titleData)
 		Color           = rawColor,
 	}
 
-	-- Save original title before previewing so we can accurately revert
 	local originalTitle = TitleDataManager:GetCache(player.UserId)
 	if not originalTitle then
 		originalTitle = TitleDataManager:LoadTitleData(player.UserId)
@@ -222,13 +210,11 @@ previewCustomTitleRemote.OnServerEvent:Connect(function(player, titleData)
 		}
 	end
 
-	-- Temporarily update cache and rebuild overhead
 	TitleDataManager:UpdateCache(player.UserId, previewData)
 	if player.Character and player.Character.Parent then
 		OverheadManager:CreateOverhead(player, player.Character)
 	end
 
-	-- Start 5-second timer with cancellation token
 	local token = os.clock()
 	activePreviews[player.UserId] = token
 
@@ -237,7 +223,6 @@ previewCustomTitleRemote.OnServerEvent:Connect(function(player, titleData)
 			activePreviews[player.UserId] = nil
 
 			if player and player.Parent then
-				-- Revert back to original title
 				TitleDataManager:UpdateCache(player.UserId, revertTitle or {
 					Title           = "",
 					Color           = Color3.fromRGB(255, 255, 255),
@@ -247,14 +232,12 @@ previewCustomTitleRemote.OnServerEvent:Connect(function(player, titleData)
 					OverheadManager:CreateOverhead(player, player.Character)
 				end
 
-				-- Notify client that 5 seconds preview has ended
 				previewEndedRemote:FireClient(player)
 			end
 		end
 	end)
 end)
 
--- REMOTE: APPLY TITLE (MEMOTONG 1 KESEMPATAN)
 applyCustomTitleRemote.OnServerInvoke = function(player, titleData)
 	if not player or not player.Parent then
 		return false, "Player tidak valid."
@@ -289,10 +272,8 @@ applyCustomTitleRemote.OnServerInvoke = function(player, titleData)
 		return false, "Title tidak boleh kosong!", chances, isUnlimited
 	end
 
-	-- Cancel any ongoing preview timer
 	activePreviews[userId] = nil
 
-	-- Roblox Text Filtering (wajib lolos sebelum disimpan ke DataStore & potongan kesempatan)
 	local filteredTitle = nil
 	local okFilter = pcall(function()
 		local filterResult = TextService:FilterStringAsync(rawTitle, userId)
@@ -312,8 +293,6 @@ applyCustomTitleRemote.OnServerInvoke = function(player, titleData)
 		Color           = rawColor,
 	}
 
-	-- Consume the chance atomically before writing the title. This prevents
-	-- two simultaneous applies from using the same last chance.
 	local remaining = chances
 	if not isUnlimited then
 		local consumed, newRemaining = consumePlayerChance(userId, chances)
@@ -336,7 +315,6 @@ applyCustomTitleRemote.OnServerInvoke = function(player, titleData)
 	end
 	TitleDataManager:UpdateCache(userId, finalTitleData)
 
-	-- Rebuild overhead in real-time
 	if player.Character and player.Character.Parent then
 		OverheadManager:CreateOverhead(player, player.Character)
 	end
@@ -351,7 +329,6 @@ applyCustomTitleRemote.OnServerInvoke = function(player, titleData)
 	return true, successMsg, remaining, isUnlimited
 end
 
--- CLEANUP
 Players.PlayerRemoving:Connect(function(player)
 	playerChancesCache[player.UserId] = nil
 	activePreviews[player.UserId] = nil

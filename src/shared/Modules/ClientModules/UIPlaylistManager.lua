@@ -22,7 +22,6 @@ function UIPlaylistManager.new(playlist, playlistTemplateFrame)
 	return self
 end
 
--- CLEAR PLAYLIST
 function UIPlaylistManager:ClearPlaylist()
 	for _, child in ipairs(self.playlist:GetChildren()) do
 		if child:IsA("Frame") and child ~= self.playlistTemplateFrame then
@@ -34,7 +33,6 @@ function UIPlaylistManager:ClearPlaylist()
 	self.noResultsLabel = nil
 end
 
--- SHOW NO RESULTS MESSAGE
 function UIPlaylistManager:ShowNoResults()
 	if self.noResultsLabel and self.noResultsLabel.Parent then
 		self.noResultsLabel:Destroy()
@@ -53,7 +51,6 @@ function UIPlaylistManager:ShowNoResults()
 	self.noResultsLabel = noResultLabel
 end
 
--- UPDATE PLAYLIST (TABLE VIEW)
 function UIPlaylistManager:UpdatePlaylist(musicList, albumName)
 	self.currentPlaylist = musicList or {}
 	self.currentAlbumName = albumName
@@ -89,14 +86,12 @@ function UIPlaylistManager:UpdatePlaylist(musicList, albumName)
 
 		if posLabel then posLabel.Text = tostring(index) end
 
-		-- Sync cover image with the playlist cover (e.g. Thailand cover for Thailand playlist)
 		local songCover = albumCover or (music.album and MusicModule:GetAlbumCover(music.album)) or music.sampul or DEFAULT_COVER
 		if thumbImg then thumbImg.Image = songCover end
 
 		if titleLabel then titleLabel.Text = music.judul or "Unknown" end
 		if colLabel then colLabel.Text = music.album or "Unknown" end
 
-		-- Dedicated "+" Add to Queue Button (0.3s debounce)
 		if addBtn then
 			local lastAddClick = 0
 			addBtn.MouseButton1Click:Connect(function()
@@ -104,7 +99,6 @@ function UIPlaylistManager:UpdatePlaylist(musicList, albumName)
 				if now - lastAddClick < 0.3 then return end
 				lastAddClick = now
 
-				-- Visual feedback: change '+' to '' briefly
 				addBtn.Text = "✓"
 				addBtn.TextColor3 = Color3.fromRGB(46, 220, 113)
 				local stroke = addBtn:FindFirstChild("BtnStroke") or addBtn:FindFirstChildOfClass("UIStroke")
@@ -124,7 +118,6 @@ function UIPlaylistManager:UpdatePlaylist(musicList, albumName)
 			end)
 		end
 
-		-- Favorite toggle (0.3s debounce)
 		local isFavorite = self:IsMusicFavorite(music.id)
 		if favBtn then
 			favBtn.Text = isFavorite and "❤️" or "♡"
@@ -142,14 +135,12 @@ function UIPlaylistManager:UpdatePlaylist(musicList, albumName)
 			end)
 		end
 
-		-- Yield periodically to avoid micro-stutters on huge playlists
 		if index % 15 == 0 then
 			task.wait()
 		end
 	end
 end
 
--- SEARCH IN ALBUM
 function UIPlaylistManager:SearchInAlbum(albumName, query)
 	if not query or query:match("^%s*$") then
 		local songs = MusicModule:GetAlbumSongs(albumName, self.favoriteSongs)
@@ -161,7 +152,6 @@ function UIPlaylistManager:SearchInAlbum(albumName, query)
 	self:UpdatePlaylist(results, albumName)
 end
 
--- FAVORITES
 function UIPlaylistManager:IsMusicFavorite(musicId)
 	for _, favId in ipairs(self.favoriteSongs) do
 		if favId == musicId then
@@ -193,7 +183,6 @@ function UIPlaylistManager:UpdateFavorites(favoriteSongs)
 	end
 end
 
--- CALLBACKS
 function UIPlaylistManager:OnPlay(callback)
 	self.onPlayCallback = callback
 end

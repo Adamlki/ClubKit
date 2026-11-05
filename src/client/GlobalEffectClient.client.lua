@@ -376,8 +376,6 @@ local function resumeLocalDance()
 
 	local syncTarget = char:GetAttribute("Syncing")
 	if syncTarget and syncTarget ~= "" then
-		-- Follower disinkronkan oleh DanceMirror renderer di EmoteHandler.
-		-- Jangan membuat track kedua di sini.
 		if resumedDanceTrack then
 			resumedDanceTrack:Stop(0.1)
 			resumedDanceTrack:Destroy()

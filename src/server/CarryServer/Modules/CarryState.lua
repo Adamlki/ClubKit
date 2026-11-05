@@ -11,7 +11,7 @@ export type PendingRequest = {
 local CarryState = {}
 
 local pendingRequests: { [number]: PendingRequest } = {}
-local activeCarries: { [number]: number } = {} -- bidirectional: [userId] = partnerUserId
+local activeCarries: { [number]: number } = {}
 
 function CarryState.setPending(targetUserId: number, carrier: Player, style: string)
 	pendingRequests[targetUserId] = {

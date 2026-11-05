@@ -235,7 +235,6 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 	end
 
 	local baseDuration = songData.Duration or musicData.Duration or self.config.DEFAULT_SONG_DURATION
-	-- Baca speed dari field speed (default 1.0).
 	local playbackSpeed = math.clamp(
 		musicData.PlaybackSpeed or musicData.speed or CONFIG.DEFAULT_PLAYBACK_SPEED,
 		0.1,
@@ -286,9 +285,6 @@ function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlayli
 	self.isPlaying = true
 
 	self:ConnectEndedEvent()
-	-- Jangan pasang watchdog dengan durasi default 180 detik sebelum
-	-- TimeLength diketahui; lagu yang lebih panjang bisa terpotong.
-	-- Watchdog dipasang lagi setelah durasi terdeteksi di bawah.
 	self:BroadcastSongUpdate(remotes, displayMusicData, uploaderName, self.adjustedDuration, playbackSpeed, false)
 
 	task.spawn(function()

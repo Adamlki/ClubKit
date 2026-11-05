@@ -70,7 +70,7 @@ local function updateChancesUI()
 	local chanceIcon = chancesBadge:FindFirstChild("ChanceIcon")
 	if state.isUnlimited then
 		chancesText.Text = string.format("Kesempatan: Unlimited (Level %d+)", state.unlimitedThreshold)
-		chancesText.TextColor3 = Color3.fromRGB(255, 215, 0) -- Emas
+		chancesText.TextColor3 = Color3.fromRGB(255, 215, 0)
 		if chanceIcon and chanceIcon:IsA("TextLabel") then
 			chanceIcon.Text = "👑"
 		end
@@ -97,7 +97,7 @@ end
 local function updatePreviewBanner()
 	local displayText = state.title ~= "" and state.title or "CONTOH TITLE"
 	livePreviewText.Text = displayText
-	livePreviewText.TextColor3 = Color3.fromRGB(255, 255, 255) -- Selalu putih!
+	livePreviewText.TextColor3 = Color3.fromRGB(255, 255, 255)
 	livePreviewPill.BackgroundColor3 = state.color
 	colorResult.BackgroundColor3 = state.color
 end
@@ -270,7 +270,6 @@ applyBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
--- LOAD INITIAL DATA
 local function loadInitialData()
 	if getCustomTitleDataRemote then
 		local ok, data = pcall(function()

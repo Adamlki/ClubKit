@@ -10,18 +10,15 @@ if not refreshEvent then
 	refreshEvent.Parent = remotefolder
 end
 
--- CONFIG
 local COOLDOWN_TIME = 8
 local MAX_WAIT_TIME = 6
 local MAX_CONCURRENT_REFRESH = 10
 
--- STATE
 local playerCooldowns = {}
 local activeRefreshes = {}
 local queue = {}
 local activeWorkers = 0
 
--- HELPER: WAIT CLOTHING READY
 local function waitForClothing(character)
 	local t = 0
 	
@@ -56,7 +53,6 @@ local function cleanupSavedBillboards(savedBillboards)
 	table.clear(savedBillboards)
 end
 
--- CORE REFRESH FUNCTION
 local function processPlayer(player)
 	local character = player.Character
 	if not character then return end
@@ -66,7 +62,6 @@ local function processPlayer(player)
 	
 	if not humanoid or not rootPart then return end
 	
-	-- Jangan refresh saat karakter di-carry atau efek global aktif.
 	local carryable = character:FindFirstChild("Carryable")
 	if (carryable and carryable.Value == false)
 		or player:GetAttribute("GlobalEffectAirborne")
@@ -104,7 +99,6 @@ local function processPlayer(player)
 		end
 	end
 	
-	-- Bekukan karakter sementara.
 	local origSpeed = humanoid.WalkSpeed
 	local origJump = humanoid.UseJumpPower and humanoid.JumpPower or humanoid.JumpHeight
 	
@@ -115,7 +109,6 @@ local function processPlayer(player)
 		humanoid.JumpHeight = 0
 	end
 	
-	-- Failsafe agar karakter tidak stuck jika proses gagal.
 	task.delay(10, function()
 		if humanoid and humanoid.Parent and humanoid.Health > 0 and humanoid.WalkSpeed == 0 then
 			humanoid.WalkSpeed = origSpeed
@@ -123,7 +116,6 @@ local function processPlayer(player)
 		end
 	end)
 	
-	-- Hapus pakaian lama.
 	for _, item in ipairs(character:GetChildren()) do
 		if item:IsA("Accessory") or item:IsA("Clothing") or item:IsA("BodyColors") or item:IsA("ShirtGraphic") then
 			item:Destroy()
@@ -132,7 +124,6 @@ local function processPlayer(player)
 
 	task.wait(0.2)
 
-	-- Terapkan ulang deskripsi.
 	local applySuccess = pcall(function()
 		humanoid:ApplyDescriptionReset(description)
 	end)
@@ -146,7 +137,6 @@ local function processPlayer(player)
 	
 	task.wait(0.5)
 	
-	-- Pastikan karakter masih valid setelah yield.
 	if not humanoid or humanoid.Parent == nil or humanoid.Health <= 0 then
 		cleanupSavedBillboards(savedBillboards)
 		return
@@ -169,7 +159,6 @@ local function processPlayer(player)
 		humanoid:BuildRigFromAttachments()
 	end)
 
-	-- Reset fisika aksesori.
 	for _, v in ipairs(character:GetChildren()) do
 		if v:IsA("Accessory") then
 			local handle = v:FindFirstChild("Handle")
@@ -196,7 +185,6 @@ local function processPlayer(player)
 		end
 	end
 	
-	-- Kembalikan billboard.
 	local newHead = character:FindFirstChild("Head")
 	if newHead then
 		for _, data in ipairs(savedBillboards) do
@@ -216,7 +204,6 @@ local function processPlayer(player)
 		humanoid:EquipTool(equippedTool)
 	end
 
-	-- Pulihkan state dance/sync.
 	local currentDance = character:GetAttribute("CurrentDanceID")
 	local syncingTo = character:GetAttribute("Syncing")
 
@@ -242,7 +229,6 @@ local function processPlayer(player)
 	character:SetAttribute("RefreshTrigger", os.clock())
 end
 
--- PARALLEL WORKER POOL SYSTEM
 local function processQueue()
 	while activeWorkers < MAX_CONCURRENT_REFRESH and #queue > 0 do
 		local player = table.remove(queue, 1)
@@ -261,7 +247,6 @@ local function processQueue()
 	end
 end
 
--- EVENT HANDLER
 refreshEvent.OnServerEvent:Connect(function(player)
 	if activeRefreshes[player.UserId] then return end
 	local last = playerCooldowns[player.UserId]
@@ -280,7 +265,6 @@ refreshEvent.OnServerEvent:Connect(function(player)
 	processQueue()
 end)
 
--- CLEANUP
 Players.PlayerRemoving:Connect(function(player)
 	playerCooldowns[player.UserId] = nil
 	activeRefreshes[player.UserId] = nil

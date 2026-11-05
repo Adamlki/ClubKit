@@ -20,7 +20,6 @@ local function deserializeColor(colorData)
 end
 
 function TitleDataManager:LoadTitleData(userId)
-	-- Cache negatif agar pemain tanpa title tidak memicu GetAsync berulang.
 	if playerTitleCache[userId] ~= nil then
 		return playerTitleCache[userId] or nil
 	end

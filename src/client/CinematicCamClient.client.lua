@@ -1,8 +1,6 @@
 --!optimize 2
 --!native
 
--- CINEMATIC CAMERA CONTROLLER
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -15,7 +13,6 @@ local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 local playerGui = player:WaitForChild("PlayerGui")
 
--- STATE
 local currentMode = nil
 local currentSpeedMultiplier = 0.5
 local currentDirection = 1
@@ -42,7 +39,6 @@ local COLOR_STOP_HOVER = Color3.fromRGB(210, 55, 55)
 local COLOR_TEXT = Color3.fromRGB(220, 225, 235)
 local COLOR_TEXT_MUTED = Color3.fromRGB(160, 165, 175)
 
--- REFERENCES TO MANUAL STARTERGUI INSTANCE
 local screenGui = playerGui:WaitForChild("CinematicCamGui", 30)
 if not screenGui then
 	warn("[CinematicCamClient] CinematicCamGui tidak ditemukan di PlayerGui dalam 30 detik!")
@@ -78,7 +74,6 @@ closeBtn.MouseButton1Click:Connect(function()
 	mainframe.Visible = false
 end)
 
--- HEADER DRAG LOGIC
 local isDraggingHeader = false
 local dragStartMouse = nil
 local dragStartFramePos = nil
@@ -109,7 +104,6 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
--- SPEED BUTTONS BINDING
 local speeds = {
 	{ label = "0.25x", val = 0.25 },
 	{ label = "0.5x",  val = 0.5 },
@@ -138,7 +132,6 @@ for _, sp in ipairs(speeds) do
 	end)
 end
 
--- DIRECTION BUTTONS BINDING
 local dirs = {
 	{ label = "◄ LEFT", val = -1 },
 	{ label = "RIGHT ►", val = 1 },
@@ -165,7 +158,6 @@ for _, d in ipairs(dirs) do
 	end)
 end
 
--- STOP SYSTEM BUTTON
 stopBtn.MouseEnter:Connect(function()
 	stopBtn.BackgroundColor3 = COLOR_STOP_HOVER
 end)
@@ -173,7 +165,6 @@ stopBtn.MouseLeave:Connect(function()
 	stopBtn.BackgroundColor3 = COLOR_STOP
 end)
 
--- PRESETS BINDING
 local PRESETS = {
 	"ORBIT MASTER",
 	"DRONE VIEW",
@@ -198,7 +189,6 @@ local function updatePresetVisuals(activePreset)
 	end
 end
 
--- CAMERA MATH & ENGINE
 local function stopCinematicSystem()
 	if not isRunning then return end
 	local owned = CameraLease:IsOwner("CinematicCam", leaseToken)

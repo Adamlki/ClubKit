@@ -1,66 +1,49 @@
 local RateLimiter = {}
 
--- CONFIGURATION
 local CONFIG = {
-	-- Animation & Emotes
-	-- Spam dance tidak boleh dipotong. Batas ini masih membatasi abuse,
-	-- tetapi cukup untuk spam 10-20 klik/detik dan streaming speed 20 Hz.
 	animationStart = { count = 30, window = 1 },
 	changeSpeed = { count = 40, window = 1 },
 	changeAnimationSpeed = { count = 40, window = 1 },
-	startSync = { count = 3, window = 2 },           -- 3 sync per 2 detik
+	startSync = { count = 3, window = 2 },
 	updateFavoritedAnimations = { count = 3, window = 5 },
 
-	-- Carry System
 	carryRequest = { count = 3, window = 3 },
 	carryResponse = { count = 5, window = 2 },
 	carryEnd = { count = 5, window = 1 },
 
-	-- Donation System
 	requestDonationState = { count = 2, window = 5 },
 
-	-- Music System
 	musicAction = { count = 5, window = 2 },
 	musicSync = { count = 3, window = 5 },
 
-	-- Bio & Title
 	setBioStatus = { count = 3, window = 5 },
 	updateTitle = { count = 3, window = 5 },
 	assignDonatur = { count = 3, window = 5 },
 	customTitleAction = { count = 3, window = 3 },
 
-	-- Message System
 	sendMessage = { count = 5, window = 3 },
 	adminNotifCheck = { count = 5, window = 3 },
 	adminNotifSend = { count = 3, window = 3 },
 
-	-- Admin Actions
 	teamAction = { count = 5, window = 2 },
 	giveRole = { count = 3, window = 3 },
 	adminRoleAction = { count = 3, window = 3 },
 
-	-- Accessory & Weapons
 	toggleAccessory = { count = 5, window = 2 },
 	accessoryHatToggle = { count = 5, window = 2 },
 	waterGunShoot = { count = 6, window = 1 },
 
-	-- Profile & Likes
 	getPlayerInfo = { count = 3, window = 5 },
 	CheckLike = { count = 6, window = 2 },
 	LikePlayerInvoke = { count = 3, window = 3 },
 
-	-- Refresh & Anti-AFK
 	refreshCharacter = { count = 2, window = 5 },
 	antiAfkRejoin = { count = 1, window = 30 },
 
-	-- Default untuk remote yang tidak terdaftar
 	default = { count = 10, window = 1 }
 }
 
--- STATE STORAGE
 local playerRequests = {}
-
--- HELPER FUNCTIONS
 
 local function getPlayerKey(player)
 	return tostring(player.UserId)
@@ -78,8 +61,6 @@ local function cleanOldRequests(requests, window)
 
 	return validRequests
 end
-
--- MAIN FUNCTIONS
 
 function RateLimiter.check(player, actionName)
 	if not player then
@@ -186,8 +167,6 @@ function RateLimiter.getAllConfigs()
 	return copy
 end
 
--- CLEANUP
-
 game:GetService("Players").PlayerRemoving:Connect(function(player)
 	local playerKey = getPlayerKey(player)
 	playerRequests[playerKey] = nil
@@ -214,8 +193,6 @@ task.spawn(function()
 		end
 	end
 end)
-
--- DEBUG FUNCTIONS
 
 RateLimiter.Debug = {
 	getStats = function()

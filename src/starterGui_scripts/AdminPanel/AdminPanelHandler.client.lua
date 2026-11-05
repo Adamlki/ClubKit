@@ -121,7 +121,6 @@ local roleconfirmBtn     = roleBtnFrame:WaitForChild("RoleConfirmBtn")
 local rolecancelBtn      = roleBtnFrame:WaitForChild("RoleCancelBtn")
 
 local titleframe             = actionframe:WaitForChild("TitleFrame")
--- Instance GUI lama masih bernama EffectFrame; isinya sekarang hanya preset warna.
 local colorPresetFrame       = titleframe:WaitForChild("EffectFrame")
 local colorPresetTemplateBtn = colorPresetFrame:WaitForChild("TitleEffectTemplate")
 local colorpickframe         = titleframe:WaitForChild("ColorPickFrame")
@@ -584,7 +583,6 @@ titleconfirmBtn.MouseButton1Click:Connect(function()
 		isProcessingTitle = false
 
 		if updated then
-			-- Tampilkan judul yang benar-benar lolos filter server, bukan teks mentah client.
 			local appliedTitle = targetPlayer:GetAttribute("Overhead_TitleText") or titleText
 			showNotification("Title berhasil diupdate!", true)
 			titlelabel.Text = "Title: " .. ((appliedTitle ~= "" and appliedTitle) or "-")

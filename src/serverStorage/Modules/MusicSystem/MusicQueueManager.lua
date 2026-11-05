@@ -11,38 +11,29 @@ function MusicQueueManager.new(config)
 	return self
 end
 
--- GET MAX QUEUE FOR ROLE
 function MusicQueueManager:GetMaxQueueForRole(role)
 	if self.config.MAX_QUEUE_PER_ROLE and self.config.MAX_QUEUE_PER_ROLE[role] then
 		return self.config.MAX_QUEUE_PER_ROLE[role]
 	end
-	-- Fallback to default
 	return self.config.MAX_QUEUE_PER_USER or 5
 end
 
--- QUEUE OPERATIONS
-
 function MusicQueueManager:AddToQueue(musicData, uploaderName, userId, role)
-	-- Check queue size limit
 	if #self.queue >= self.config.MAX_QUEUE_SIZE then
 		return false, "Queue penuh! Tunggu beberapa lagu selesai."
 	end
 
-	-- Get max queue for this role
 	local maxQueue = self:GetMaxQueueForRole(role)
 
-	-- Check if role can add songs at all
 	if maxQueue == 0 then
 		return false, "Anda tidak memiliki permission untuk menambah lagu!"
 	end
 
-	-- Check per-user limit based on role
 	local userCount = self.playerQueueCount[userId] or 0
 	if userCount >= maxQueue then
 		return false, string.format("Anda sudah punya %d lagu di queue! (Limit %s: %d)", userCount, role, maxQueue)
 	end
 
-	-- Add to queue
 	table.insert(self.queue, {
 		musicData = musicData,
 		uploader = uploaderName,
@@ -50,7 +41,6 @@ function MusicQueueManager:AddToQueue(musicData, uploaderName, userId, role)
 		addedTime = tick()
 	})
 
-	-- Increment user count
 	self.playerQueueCount[userId] = userCount + 1
 
 	return true, nil
@@ -60,7 +50,6 @@ function MusicQueueManager:GetNext()
 	if #self.queue > 0 then
 		local nextSong = table.remove(self.queue, 1)
 
-		-- Decrement user count
 		if nextSong.userId then
 			local count = self.playerQueueCount[nextSong.userId] or 0
 			self.playerQueueCount[nextSong.userId] = math.max(0, count - 1)
@@ -94,7 +83,6 @@ function MusicQueueManager:RemoveUserSongs(userId)
 		end
 	end
 
-	-- Reset user count
 	self.playerQueueCount[userId] = nil
 
 	return removed

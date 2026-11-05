@@ -1,7 +1,5 @@
 --!optimize 2
 
--- State dan action registry client-side.
--- Menggantikan flag/fungsi lintas-script di _G dengan API module yang aman.
 local ClientState = {}
 
 local flags = {

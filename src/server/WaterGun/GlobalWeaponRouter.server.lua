@@ -1,4 +1,3 @@
--- Letak: ServerScriptService > GlobalWeaponRouter
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -19,8 +18,6 @@ globalEvent.OnServerEvent:Connect(function(player, toolName, isShooting)
 	if type(toolName) ~= "string" or #toolName > 50 then return end
 	if type(isShooting) ~= "boolean" then return end
 
-	-- Stop must always be accepted even after the tool was unequipped
-	-- or the player exhausted the start-rate limit.
 	if not isShooting then
 		clearShooter(player.UserId)
 		return
@@ -41,8 +38,6 @@ Players.PlayerRemoving:Connect(function(player)
 	clearShooter(player.UserId)
 end)
 
--- One broadcast per batch instead of one FireClient per shooter per target.
--- Clients receive the active shooter list and cull by distance locally.
 task.spawn(function()
 	while true do
 		task.wait(BATCH_INTERVAL)

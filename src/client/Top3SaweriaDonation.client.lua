@@ -11,9 +11,9 @@ local SaweriaStatueManager = StatueRenderer.create({
 	remoteEventName = "UpdateSaweriaTopBoard",
 	animations = AssetConfig.Animations.Top3,
 	rankColors = {
-		[1] = Color3.fromRGB(255, 215, 0), -- Emas
-		[2] = Color3.fromRGB(192, 192, 192), -- Perak
-		[3] = Color3.fromRGB(205, 127, 50), -- Coklat
+		[1] = Color3.fromRGB(255, 215, 0),
+		[2] = Color3.fromRGB(192, 192, 192),
+		[3] = Color3.fromRGB(205, 127, 50),
 	},
 	formatValue = function(amount)
 		return FormatUtils.formatRupiah(amount)

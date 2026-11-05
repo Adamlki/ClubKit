@@ -84,7 +84,6 @@ LikePlayerRemote.OnServerInvoke = function(player, targetUserId)
 	end
 end
 
--- LEADERSTATS (TOTAL LIKES)
 local function setupPlayer(player)
 	task.spawn(function()
 		local leaderstats = player:WaitForChild("leaderstats", 15)

@@ -64,8 +64,6 @@ local function findGiftTypeForProduct(productId)
 	return nil
 end
 
--- OPERASI ATOMIK FIFO QUEUE & IDEMPOTENSI RECEIPT
-
 local function pushIntentAtomic(giverUserId, productId, intentData)
 	local qKey = getQueueKey(giverUserId, productId)
 	local now = os.time()

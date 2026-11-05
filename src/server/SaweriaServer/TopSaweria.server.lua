@@ -1,5 +1,3 @@
--- SAWERIA LEADERBOARD SERVER
-
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -13,10 +11,9 @@ local LeaderboardRegistry = require(ServerScriptService:WaitForChild("Modules"):
 local ServerConfig = require(ServerScriptService:WaitForChild("Config"):WaitForChild("ServerConfig"))
 
 local IS_STUDIO = RunService:IsStudio()
-local UPDATE_INTERVAL = IS_STUDIO and 60 or 90 -- Hindari lonjakan HTTP/network dan micro-freeze
+local UPDATE_INTERVAL = IS_STUDIO and 60 or 90
 local TOP_COUNT = 10
 
--- BoardSaweria dirender oleh LeaderboardsClient; server tidak render ulang.
 local RENDER_BOARD_ON_SERVER = false
 
 local GetTopSaweriaFunc = ServerStorage:FindFirstChild("GetTopSaweriaFunc") or Instance.new("BindableFunction")
@@ -27,7 +24,6 @@ local UpdateSaweriaEvent = ReplicatedStorage:FindFirstChild("UpdateSaweriaTopBoa
 UpdateSaweriaEvent.Name = "UpdateSaweriaTopBoard"
 UpdateSaweriaEvent.Parent = ReplicatedStorage
 
--- Batasi cache user ID agar tidak tumbuh tanpa batas.
 local userIdCache = {} 
 local cacheCount = 0
 local MAX_CACHE_LIMIT = 500
@@ -122,16 +118,13 @@ GetTopSaweriaFunc.OnInvoke = function()
 	return {}
 end
 
--- DYNAMIC BOARD FINDER (Mencari di Workspace dengan Cache)
 local cachedRoot, cachedGui, cachedComp = nil, nil, nil
 
 local function findBoardComponents()
-	-- Gunakan cache jika masih valid di Workspace
 	if cachedRoot and cachedRoot.Parent and cachedGui and cachedGui.Parent and cachedComp then
 		return cachedRoot, cachedGui, cachedComp
 	end
 
-	-- 1. Cari model/folder di Workspace / Workspace.Leaderboard
 	local folder = workspace:FindFirstChild("Leaderboard")
 	local root = (folder and (folder:FindFirstChild("BoardSaweria") or folder:FindFirstChild("Saweria")))
 		or workspace:FindFirstChild("BoardSaweria")
@@ -143,7 +136,6 @@ local function findBoardComponents()
 		return nil, nil, nil
 	end
 
-	-- 2. Cari GUI (bisa LeaderboardGui atau SurfaceGui)
 	local gui = root:FindFirstChild("LeaderboardGui", true)
 		or root:FindFirstChildWhichIsA("SurfaceGui", true)
 
@@ -151,7 +143,6 @@ local function findBoardComponents()
 		return root, nil, nil
 	end
 
-	-- 3. Cari komponen internal
 	local mainFrame = gui:FindFirstChild("MainFrame", true)
 	local scrollFrame = gui:FindFirstChild("ScrollFrame", true) 
 		or (mainFrame and mainFrame:FindFirstChild("ScrollFrame"))
@@ -182,7 +173,6 @@ local function updateUIs()
 	end
 
 	if not RENDER_BOARD_ON_SERVER then
-		-- Client `LeaderboardsClient` yang mengisi BoardSaweria.
 	elseif not root then
 		if IS_STUDIO then
 			warn("[TopSaweria] ⚠️ Model 'BoardSaweria' atau 'Saweria' belum ditemukan di Workspace!")
@@ -192,7 +182,6 @@ local function updateUIs()
 			warn("[TopSaweria] ⚠️ SurfaceGui / LeaderboardGui belum ditemukan di dalam " .. root:GetFullName())
 		end
 	else
-		-- Render ke ScrollFrame jika ada
 		if comp.ScrollFrame then
 			local mainFrame = comp.MainFrame or comp.ScrollFrame.Parent
 			local noDataLB = mainFrame and mainFrame:FindFirstChild("NoDataLabel")
@@ -257,7 +246,6 @@ local function updateUIs()
 				end
 			end
 
-			-- Render ke PodiumFrame (Top 1, 2, 3) jika ada
 			local podium = comp.MainFrame and comp.MainFrame:FindFirstChild("PodiumFrame")
 			if podium then
 				local slotMap = {
@@ -287,7 +275,6 @@ local function updateUIs()
 			end
 		end
 
-	-- Render ke ListLabel (format teks sederhana) jika ada
 		if comp.ListLabel then
 			local displayText = "🏆 TOP 10 DONATOR 🏆\n\n"
 			if #topDonators == 0 then
@@ -308,7 +295,6 @@ local function updateUIs()
 		end
 	end
 
-	-- 2. SIAPKAN DATA UNTUK CLIENT (ALL TIME & DAILY)
 	local function resolveUserId(dName)
 		if userIdCache[dName] then return userIdCache[dName] end
 
@@ -331,7 +317,6 @@ local function updateUIs()
 			cacheCount += 1
 			return foundId
 		else
-			-- Simpan 1 jika nama bukan akun Roblox asli (mencegah HTTP spam berulang)
 			userIdCache[dName] = 1
 			cacheCount += 1
 			return 1
@@ -371,7 +356,6 @@ local function updateUIs()
 		Daily = dailyClientData,
 	}
 
-	-- Cek apakah payload berubah sebelum melakukan multicast broadcast ke semua client
 	local hasChanged = not cachedSaweriaPayload 
 		or not cachedSaweriaPayload.AllTime 
 		or #cachedSaweriaPayload.AllTime ~= #newPayload.AllTime
@@ -390,7 +374,6 @@ local function updateUIs()
 
 	cachedSaweriaPayload = newPayload
 
-	-- Hanya broadcast jika data benar-benar berubah (menghemat bandwidth dan mencegah ping spike)
 	if hasChanged then
 		UpdateSaweriaEvent:FireAllClients(cachedSaweriaPayload)
 	end
@@ -403,7 +386,6 @@ UpdateSaweriaEvent.OnServerEvent:Connect(function(plr)
 
 	local now = os.clock()
 	if now - (clientRequestCooldown[plr.UserId] or 0) < 15 then
-		-- Throttle the reply itself, not only the fetch.
 		if cachedSaweriaPayload and cachedSaweriaPayload.AllTime and #cachedSaweriaPayload.AllTime > 0 then
 			pcall(function()
 				UpdateSaweriaEvent:FireClient(plr, cachedSaweriaPayload)
@@ -432,14 +414,12 @@ Players.PlayerRemoving:Connect(function(plr)
 	clientRequestCooldown[plr.UserId] = nil
 end)
 
--- Export ke LeaderboardRegistry & LeaderboardOrchestrator
 local function refreshSaweriaLeaderboard()
 	pcall(updateUIs)
 end
 
 LeaderboardRegistry.register("Saweria", refreshSaweriaLeaderboard)
 
--- Inisialisasi awal saat server baru menyala (agar client yang baru masuk langsung dapat data patung)
 task.spawn(function()
 	task.wait(2)
 	pcall(updateUIs)

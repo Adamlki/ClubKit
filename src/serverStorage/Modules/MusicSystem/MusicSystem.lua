@@ -2,7 +2,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local Players = game:GetService("Players")
 
--- Managers
 local MusicQueueManager = require(script.Parent.MusicQueueManager)
 local MusicPlaybackManager = require(script.Parent.MusicPlaybackManager)
 local MusicPlaylistManager = require(script.Parent.MusicPlaylistManager)
@@ -19,25 +18,20 @@ local MusicModule = require(ReplicatedStorage.Modules:WaitForChild("MusicModule"
 local MusicSystem = {}
 MusicSystem.__index = MusicSystem
 
--- CONFIGURATION (SIMPLIFIED - NO DJ)
 local CONFIG = {
-	-- Queue
 	MAX_QUEUE_SIZE = 50,
-	MAX_QUEUE_PER_USER = 10, -- Fallback default
+	MAX_QUEUE_PER_USER = 10,
 
-	-- Queue Limits (per role)
 	MAX_QUEUE_PER_ROLE = {
-		Owner = 999,      -- No limit
-		Admin = 999,      -- No limit
-		Moderator = 999,  -- No limit
-		VIP = 2,          -- 2 songs max
-		Player = 0        -- Cannot add songs
+		Owner = 999,
+		Admin = 999,
+		Moderator = 999,
+		VIP = 2,
+		Player = 0
 	},
 
-	-- Playback
 	DEFAULT_SONG_DURATION = 180,
 
-	-- Cooldowns (per role, in seconds)
 	COOLDOWNS = {
 		Owner = 0,
 		Admin = 0,
@@ -46,23 +40,19 @@ local CONFIG = {
 		Player = 30
 	},
 
-	-- Skip Vote
 	SKIP_VOTE_DURATION = 30,
 	SKIP_VOTE_COOLDOWN = 7,
 }
 
--- INITIALIZATION
 function MusicSystem.new()
 	local self = setmetatable({}, MusicSystem)
 
-	-- System state
 	self.systemState = {
 		InitialPreloadComplete = false,
 		IsUIBlocked = false
 	}
 	self.isTransitioning = false
 
-	-- Initialize managers
 	self.queueManager = MusicQueueManager.new(CONFIG)
 	self.playbackManager = MusicPlaybackManager.new(CONFIG)
 	self.playlistManager = MusicPlaylistManager.new(CONFIG)
@@ -70,10 +60,8 @@ function MusicSystem.new()
 	self.favoriteManager = MusicFavoriteManager.new()
 	self.cooldownService = MusicCooldownService.new(CONFIG)
 
-	-- Setup remotes
 	self.remotes = self:SetupRemotes()
 
-	-- Initialize dispatcher
 	self.dispatcher = MusicDispatcher.new(self.remotes, CONFIG, {
 		queueManager = self.queueManager,
 		playbackManager = self.playbackManager,
@@ -82,7 +70,6 @@ function MusicSystem.new()
 		playlistManager = self.playlistManager
 	})
 
-	-- Initialize action handler
 	self.actionHandler = MusicActionHandler.new(CONFIG, {
 		queueManager = self.queueManager,
 		playbackManager = self.playbackManager,
@@ -95,7 +82,6 @@ function MusicSystem.new()
 		broadcastPreloadCallback = function() self:BroadcastPreloadNext() end
 	}, self.dispatcher)
 
-	-- Initialize player manager
 	self.playerManager = MusicPlayerManager.new(CONFIG, {
 		queueManager = self.queueManager,
 		skipVoteManager = self.skipVoteManager,
@@ -108,7 +94,6 @@ function MusicSystem.new()
 		playNextCallback = function() self:PlayNext() end
 	}, self.dispatcher)
 
-	-- Setup auto-next callback (Lagu selesai alami -> reset streak skip)
 	self.playbackManager.autoNextCallback = function()
 		if self.actionHandler then
 			self.actionHandler:ResetSkipStreak()
@@ -116,7 +101,6 @@ function MusicSystem.new()
 		self:PlayNext()
 	end
 
-	-- Setup song failed callback (Anti-Stuck Notification)
 	self.playbackManager.onSongFailed = function(songTitle, reason)
 		pcall(function()
 			self.dispatcher:NotifyAll(string.format("⚠️ Lagu '%s' tidak dapat diputar (Error/Banned). Melewati...", songTitle or "Unknown"))
@@ -126,7 +110,6 @@ function MusicSystem.new()
 	return self
 end
 
--- SETUP REMOTES
 function MusicSystem:SetupRemotes()
 	local remoteFolder = ReplicatedStorage:FindFirstChild("MusicRemotes")
 	if not remoteFolder then
@@ -153,15 +136,12 @@ function MusicSystem:SetupRemotes()
 	}
 end
 
--- PLAY NEXT SONG
 function MusicSystem:PlayNext()
-	-- ANTI-DEADLOCK: Cek apakah lock transisi macet lebih dari 5 detik
 	if self.isTransitioning then 
 		if self._transitionStartTime and (os.clock() - self._transitionStartTime) > 5 then
 			warn("[MusicSystem] ⚠️ Transition lock timeout (>5s). Me-reset paksa isTransitioning...")
 			self.isTransitioning = false
 		else
-			-- Jadwalkan retry 1 detik lagi jika sistem sedang transisi agar panggilan auto-next tidak hilang
 			task.delay(1, function()
 				if not self.playbackManager:IsPlaying() and not self.isTransitioning then
 					self:PlayNext()
@@ -174,27 +154,23 @@ function MusicSystem:PlayNext()
 	self.isTransitioning = true
 	self._transitionStartTime = os.clock()
 
-	-- Bersihkan vote skip yang mungkin masih aktif saat lagu berganti
 	if self.skipVoteManager and self.skipVoteManager:IsActive() then
 		self.skipVoteManager:CancelVote(self.dispatcher)
 	end
 
 	local success, err = pcall(function()
-		-- Check if there's a song in queue
 		local nextSong = self.queueManager:GetNext()
 
 		if nextSong then
-			-- Play from queue
 			local playSuccess, playErr = self.playbackManager:Play(
 				self.remotes,
 				nextSong,
 				nextSong.uploader,
-				false -- Not from playlist
+				false
 			)
 
 			if not playSuccess then
 				warn("[MusicSystem] Failed to play queued song:", playErr)
-				-- Try next song
 				task.delay(1, function()
 					self.isTransitioning = false
 					self:PlayNext()
@@ -202,15 +178,12 @@ function MusicSystem:PlayNext()
 				return
 			end
 
-			-- Sync queue to all players
 			self.dispatcher:SyncState()
 			self.isTransitioning = false
 			
-			-- BROADCAST PRELOAD UNTUK LAGU BERIKUTNYA
 			self:BroadcastPreloadNext()
 
 		else
-			-- Queue is empty, play from auto-playlist
 			local playlistSong = self.playlistManager:GetNextSong()
 
 			if playlistSong then
@@ -218,12 +191,11 @@ function MusicSystem:PlayNext()
 					self.remotes,
 					playlistSong,
 					"Auto-Playlist",
-					true -- From playlist
+					true
 				)
 
 				if not playSuccess then
 					warn("[MusicSystem] Failed to play playlist song:", playErr)
-					-- Try next song
 					task.delay(1, function()
 						self.isTransitioning = false
 						self:PlayNext()
@@ -232,7 +204,6 @@ function MusicSystem:PlayNext()
 					self.dispatcher:SyncState()
 					self.isTransitioning = false
 					
-					-- BROADCAST PRELOAD UNTUK LAGU BERIKUTNYA
 					self:BroadcastPreloadNext()
 				end
 			else
@@ -266,12 +237,10 @@ function MusicSystem:PlayNext()
 	end
 end
 
--- BROADCAST PRELOAD NEXT SONG (SMART BACKGROUND BUFFER)
 function MusicSystem:BroadcastPreloadNext()
 	local nextSongId = nil
 	local nextSongTitle = nil
 
-	-- 1. Cek antrean (Queue) terlebih dahulu
 	local queue = self.queueManager:GetQueue()
 	if queue and #queue > 0 and queue[1] then
 		local queuedItem = queue[1]
@@ -279,7 +248,6 @@ function MusicSystem:BroadcastPreloadNext()
 		nextSongId = musicData.id
 		nextSongTitle = musicData.judul
 	else
-		-- 2. Jika antrean kosong, intip lagu berikutnya dari auto-playlist
 		local playlistSong = self.playlistManager:PeekNextSong()
 		if playlistSong then
 			nextSongId = playlistSong.id
@@ -296,9 +264,7 @@ function MusicSystem:BroadcastPreloadNext()
 	end
 end
 
--- START SYSTEM
 function MusicSystem:Start()
-	-- Connect player events
 	Players.PlayerAdded:Connect(function(player)
 		self.playerManager:OnPlayerAdded(player)
 	end)
@@ -307,18 +273,14 @@ function MusicSystem:Start()
 		self.playerManager:OnPlayerRemoving(player)
 	end)
 
-	-- Simpan data saat server shutdown.
 	game:BindToClose(function()
 		print("[MusicSystem] Server shutting down, backing up all favorite data...")
 		for _, player in ipairs(Players:GetPlayers()) do
 			self.playerManager:OnPlayerRemoving(player)
 		end
-		-- FavoriteManager melakukan retry saat save gagal; beri waktu lebih
-		-- agar perubahan terakhir tidak hilang saat shutdown.
 		task.wait(10)
 	end)
 
-	-- Handle existing players
 	for _, player in ipairs(Players:GetPlayers()) do
 		task.spawn(function()
 			self.playerManager:OnPlayerAdded(player)
@@ -339,7 +301,6 @@ function MusicSystem:Start()
 		end
 	end)
 
-	-- Mark as ready
 	task.delay(2, function()
 		self.systemState.InitialPreloadComplete = true
 		self:PlayNext()

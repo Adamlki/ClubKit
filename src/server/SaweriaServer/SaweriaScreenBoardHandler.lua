@@ -13,10 +13,9 @@ local ServerConfig = require(ServerScriptService:WaitForChild("Config"):WaitForC
 
 local SaweriaScreenBoardHandler = {}
 
--- KONFIGURASI SAWERIA SCREEN BOARD
 local CONFIG = {
 	ENABLED = true,
-	MIN_DONATION = 10000, -- minimal Rp 10.000 untuk tampil di papan (bisa disesuaikan)
+	MIN_DONATION = 10000,
 	NAME_FORMAT = "%s  |  Rp %s",
 	DEFAULT_NAME = "RASA NADA",
 	DEFAULT_MESSAGE = "KATA KATA HARI INI KING!!!",
@@ -24,12 +23,10 @@ local CONFIG = {
 	FADE_IN_TIME = 0.4,
 }
 
--- HELPER FORMAT RUPIAH
 local function formatRupiah(num)
 	return FormatUtils.formatNumber(num, ".")
 end
 
--- REFERENSI WORKSPACE GUI
 local gui = nil
 local mainframe = nil
 local displayname = nil
@@ -71,10 +68,8 @@ local function ensureElements()
 	return displayname ~= nil and displaymessage ~= nil
 end
 
--- Coba dapatkan di awal
 ensureElements()
 
--- ANIMASI FADE (Server-side TweenService)
 local isAnimating = false
 
 local function animateUpdate(newName, newMessage, userId)
@@ -115,7 +110,6 @@ local function animateUpdate(newName, newMessage, userId)
 	if fadeAvatarOut then fadeAvatarOut:Play() end
 	task.wait(CONFIG.FADE_OUT_TIME + 0.05)
 
-	-- Update teks & avatar
 	displayname.Text = newName
 	displaymessage.Text = newMessage
 	if avatarImage and newAvatarThumb then
@@ -145,7 +139,6 @@ local function animateUpdate(newName, newMessage, userId)
 	isAnimating = false
 end
 
--- TEXT FILTERING (Roblox Community Standard)
 local function filterMessage(message, fromUserId)
 	if not message or #message == 0 then
 		return CONFIG.DEFAULT_MESSAGE
@@ -174,7 +167,6 @@ local function filterMessage(message, fromUserId)
 		end
 	end
 
-	-- KEAMANAN ROBLOX TOS: Jangan pernah menampilkan teks mentah tanpa filter di live server!
 	if game:GetService("RunService"):IsStudio() then
 		local trimmed = message:match("^%s*(.-)%s*$")
 		if trimmed and #trimmed > 0 then
@@ -185,11 +177,9 @@ local function filterMessage(message, fromUserId)
 	return CONFIG.DEFAULT_MESSAGE
 end
 
--- RESOLVE USER ID DARI NAMA DONATUR
 local function resolveUserId(donatorName)
 	if not donatorName or donatorName == "" then return 1 end
 
-	-- Cek apakah player sedang berada di server
 	local cleanName = donatorName:lower()
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player.Name:lower() == cleanName or player.DisplayName:lower() == cleanName then
@@ -197,7 +187,6 @@ local function resolveUserId(donatorName)
 		end
 	end
 
-	-- Coba cari ID online via Players service
 	local ok, foundId = pcall(function()
 		return Players:GetUserIdFromNameAsync(donatorName)
 	end)
@@ -205,7 +194,6 @@ local function resolveUserId(donatorName)
 		return foundId
 	end
 
-	-- Fallback cerdas: gunakan salah satu pemain aktif di server sebagai konteks TextService
 	local activePlayer = Players:GetPlayers()[1]
 	if activePlayer then
 		return activePlayer.UserId
@@ -218,8 +206,6 @@ local function resolveUserId(donatorName)
 
 	return 1
 end
-
--- MAIN MODULE
 
 function SaweriaScreenBoardHandler:ShowDonationMessage(donatorName, amount, message)
 	if not CONFIG.ENABLED then return false end
@@ -254,7 +240,6 @@ function SaweriaScreenBoardHandler:ShowDonationMessage(donatorName, amount, mess
 	return true
 end
 
--- INISIALISASI DEFAULT SAAT SERVER BOOT
 task.spawn(function()
 	task.wait(1.5)
 	if ensureElements() then
@@ -282,7 +267,6 @@ function SaweriaScreenBoardHandler:ResetToDefault()
 	end
 end
 
--- Debug test shortcut
 local function testSaweriaScreen(donatorName, amount, message)
 	SaweriaScreenBoardHandler:ShowDonationMessage(
 		donatorName or "AdamSaweria",

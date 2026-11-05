@@ -29,7 +29,6 @@ local function requestRejoin()
 	end)
 end
 
--- GUI BUTTON HANDLER
 local function setupGui()
 	local playerGui = Player:WaitForChild("PlayerGui")
 	local refreshGui = playerGui:WaitForChild("RefreshGui", 10)
@@ -63,7 +62,6 @@ end
 
 task.spawn(setupGui)
 
--- CHAT COMMAND HANDLER
 local function setupLegacyChatCommands()
 	if TextChatService and TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
 		return

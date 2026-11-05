@@ -1,7 +1,6 @@
 --!optimize 2
 --!native
 
--- SINGLETON PROTECTION
 local ScriptOnce = require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("ScriptOnce"))
 if not ScriptOnce.Claim("AdminNotifHandler") then return end
 
@@ -16,13 +15,11 @@ local ClientState  = require(RS:WaitForChild("Modules"):WaitForChild("ClientStat
 local player       = Players.LocalPlayer
 local playerGui    = player:WaitForChild("PlayerGui")
 
--- REMOTE REFERENCES
 local RemoteFolder         = RS:WaitForChild("Message")
 local SendMessageRemote    = RemoteFolder:WaitForChild("SendMessage")
 local ReceiveMessageRemote = RemoteFolder:WaitForChild("ReceiveMessage")
 local CheckTimerRemote     = RemoteFolder:WaitForChild("CheckTimer")
 
--- UI REFERENCES
 local gui = script.Parent:IsA("ScreenGui") and script.Parent or (playerGui:WaitForChild("AdminNotif", 10) or playerGui:FindFirstChild("AdminNotif"))
 if not gui then
 	repeat
@@ -44,7 +41,6 @@ templateNotif.Parent  = nil
 templateNotif.Visible = false
 messageFrame.Visible = false
 
--- CONFIG
 local Config = {
 	Notification = {
 		Duration   = 8,
@@ -55,7 +51,6 @@ local Config = {
 	}
 }
 
--- STATE
 local activeNotifications   = {}
 local notificationContainer = nil
 local notificationListFrame = nil
@@ -68,7 +63,6 @@ local timerData = {
 local lastTimerNotifTime = 0
 local isSending = false  
 
--- SAFE INVOKE UTILITY
 local function SafeInvoke(remote, timeout, ...)
 	local args = {...}
 	local finished = false
@@ -92,7 +86,6 @@ local function SafeInvoke(remote, timeout, ...)
 	return finished and success, data
 end
 
--- NOTIFICATION CONTAINER WITH UILISTLAYOUT
 local function setupNotificationContainer()
 	if notificationContainer and notificationContainer.Parent and notificationListFrame and notificationListFrame.Parent then
 		return
@@ -131,7 +124,6 @@ local function setupNotificationContainer()
 	end
 end
 
--- UTILITY
 local function formatTime(seconds)
 	local minutes = math.floor(seconds / 60)
 	local secs    = math.floor(seconds % 60)
@@ -145,7 +137,6 @@ local function sanitizeHtml(text)
 	return StringUtils.sanitizeHtml(text)
 end
 
--- TIMER FUNCTIONS
 local function showTimerNotification(remainingTime)
 	if not Config.Timer.ShowNotification then return end
 
@@ -174,7 +165,6 @@ local function refreshTimerData()
 	end)
 end
 
--- NOTIFICATION CREATION & STACKING
 local function createNotification(messageData)
 	setupNotificationContainer()
 	if not notificationListFrame then return end
@@ -283,7 +273,6 @@ local function createNotification(messageData)
 	end)
 end
 
--- SEND MESSAGE
 local function sendMessage(isGlobal)
 	if isSending then return end
 
@@ -304,7 +293,6 @@ local function sendMessage(isGlobal)
 	end)
 end
 
--- UI SETUP
 mainframe.Visible = false  
 
 serverBtn.MouseButton1Click:Connect(function()
@@ -327,7 +315,6 @@ if closeBtn then
 	end)
 end
 
--- RECEIVE MESSAGE FROM SERVER
 ReceiveMessageRemote.OnClientEvent:Connect(function(messageData)
 	if type(messageData) ~= "table" then return end
 
@@ -355,5 +342,4 @@ ReceiveMessageRemote.OnClientEvent:Connect(function(messageData)
 	end
 end)
 
--- INITIALIZE
 refreshTimerData()

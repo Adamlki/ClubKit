@@ -1,13 +1,9 @@
--- CHAT BADGE SERVER
--- Letak: ServerScriptService
-
 local Players       = game:GetService("Players")
 local Teams         = game:GetService("Teams")
 local ServerStorage = game:GetService("ServerStorage")
 
 local RoleSystem = require(ServerStorage:WaitForChild("Modules"):WaitForChild("RoleSystem"))
 
--- CONFIGURATION
 local CONFIG = {
 	BADGES = {
 		Owner     = { text = "Owner",      color = Color3.fromRGB(255, 0,   0),    priority = 6 },
@@ -20,7 +16,6 @@ local CONFIG = {
 	DEBUG = false,
 }
 
--- INTERNAL
 local function debugLog(message)
 	if CONFIG.DEBUG then print("[ChatBadge Debug]", message) end
 end
@@ -92,20 +87,16 @@ refreshBadge = function(player)
 	player:SetAttribute("PlayerRole",    RoleSystem:GetPlayerRole(player))
 end
 
--- PLAYER SETUP & EVENT BINDINGS
 local function setupPlayer(player)
 	debugLog(string.format("Player setup: %s", player.Name))
 
-	-- Beri badge saat masuk
 	refreshBadge(player)
 
-	-- EVENT-DRIVEN: Hanya update badge saat TEAM BERUBAH
 	player:GetPropertyChangedSignal("Team"):Connect(function()
 		debugLog(string.format("Team changed: %s → %s", player.Name, player.Team and player.Team.Name or "nil"))
 		refreshBadgeDebounced(player)
 	end)
 
-	-- EVENT-DRIVEN: Refresh saat karakter hidup/respawn
 	player.CharacterAdded:Connect(function()
 		task.wait(0.5)
 		refreshBadge(player)
@@ -118,17 +109,11 @@ for _, player in ipairs(Players:GetPlayers()) do
 	task.spawn(setupPlayer, player)
 end
 
--- PLAYER REMOVING
 Players.PlayerRemoving:Connect(function(player)
 	refreshDebounce[player.UserId] = nil
-	-- Tidak perlu repot-repot menghapus Attribute, karena player-nya toh akan hancur dari game.
 end)
 
--- ROLE CHANGED
 RoleSystem.RoleChanged:Connect(function(player, oldRole, newRole)
 	debugLog(string.format("Role changed: %s → %s → %s", player.Name, oldRole, newRole))
-	-- EVENT-DRIVEN: Hanya update badge saat ROLE BERUBAH
 	refreshBadgeDebounced(player)
 end)
-
--- GLOBAL HELPERS

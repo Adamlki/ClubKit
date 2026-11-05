@@ -9,7 +9,6 @@ local DataStoreEnv = require(ServerStorage:WaitForChild("Modules"):WaitForChild(
 local RoleSystem = require(ServerStorage:WaitForChild("Modules"):WaitForChild("RoleSystem"))
 
 LevelSystem.Config = {
-	-- Studio reads live data; writes are redirected to a sandbox by DataStoreEnv.
 	DATASTORE_NAME = "PlayerLevel_v1",
 	DATASTORE_PREFIX = "Level_",
 	DATASTORE_RETRY_ATTEMPTS = 5,
@@ -77,7 +76,6 @@ local function datastoreGetAsync(key)
 	for attempt = 1, LevelSystem.Config.DATASTORE_RETRY_ATTEMPTS do
 		waitForLoadSlot()
 
-		-- Avoid adding more requests when Roblox's DataStore budget is empty.
 		local budgetWait = os.clock()
 		while not hasGetBudget() and (os.clock() - budgetWait) < 4 do
 			task.wait(0.25)
@@ -258,7 +256,6 @@ function LevelSystem:SavePlayerLevel(player, forceSave, snapshotCache)
 
 	if datastoreSetAsync(key, data) then
 		saveCooldowns[userId] = os.clock()
-		-- Jangan anggap save gagal hanya karena update leaderboard error.
 		pcall(function()
 			syncLeaderboard(player, cache.Level)
 		end)
@@ -335,9 +332,6 @@ function LevelSystem:InitializePlayer(player)
 	end
 	levelValue.Value = level
 
-	-- InitializePlayer dipanggil beberapa sistem (Overhead, RankItem, Music,
-	-- LevelBoard). Jangan buat timer baru jika sudah ada; thread lama akan
-	-- menunggu 15 menit sebelum menyadari token-nya sudah tidak dipakai.
 	if not playerTimers[userId] then
 		startLevelTimer(player)
 	end
@@ -464,8 +458,6 @@ function LevelSystem:CleanupPlayer(player)
 
 	activeSaves[userId] = true
 
-	-- Jangan buang cache sebelum save sukses. Retry beberapa kali jika
-	-- DataStore sedang sibuk; snapshot terbaru tetap dipakai saat rejoin.
 	local function finalize(attempt)
 		if self:SavePlayerLevel(player, true, snapshot) then
 			playerLevelCache[userId] = nil

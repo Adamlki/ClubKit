@@ -8,9 +8,8 @@ DonationLeaderboard.__index = DonationLeaderboard
 
 local ORDERED_DATASTORE_NAME = "DonationBoard_Ordered_V2"
 local ORDERED_SCOPE = "global"
-local CACHE_LIFETIME = 60 -- detik
+local CACHE_LIFETIME = 60
 
--- Cache cerdas untuk User Info (DisplayName & Username)
 local userInfoCache = {}
 
 local function resolveUserInfos(userIds)
@@ -30,7 +29,6 @@ local function resolveUserInfos(userIds)
 	end
 
 	if #missingIds > 0 then
-		-- Batasi batch maksimal 100 ID per request ke UserService
 		for i = 1, #missingIds, 100 do
 			local batch = {}
 			for j = i, math.min(i + 99, #missingIds) do
@@ -51,7 +49,6 @@ local function resolveUserInfos(userIds)
 			end
 		end
 
-		-- Fallback untuk ID yang tidak ditemukan
 		for _, id in ipairs(missingIds) do
 			if not userInfoCache[id] then
 				local s, name = pcall(function()
@@ -123,7 +120,6 @@ function DonationLeaderboard:GetTopDonors(maxEntries)
 			if uid then table.insert(userIds, uid) end
 		end
 
-		-- Tarik DisplayName dan Username asli secara cepat
 		resolveUserInfos(userIds)
 
 		local rank = 1

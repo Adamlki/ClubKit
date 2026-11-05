@@ -1,7 +1,6 @@
 local Players = game:GetService("Players")
 local ServerStorage = game:GetService("ServerStorage")
 
--- Cache RoleSystem agar tidak require berulang.
 local RoleSystem = nil
 local function getRoleSystem()
 	if not RoleSystem then
@@ -30,12 +29,10 @@ function MusicDispatcher.new(remotes, config, managers)
 	return self
 end
 
--- PLAYER VALIDATION (SIMPLE)
 local function validatePlayer(player)
 	return player and player:IsDescendantOf(Players)
 end
 
--- BASIC COMMUNICATION
 function MusicDispatcher:SendToClient(player, eventType, payload)
 	if not validatePlayer(player) then
 		return
@@ -66,9 +63,7 @@ function MusicDispatcher:NotifyAll(message)
 	self:SendToAll("NOTIFY", {message = message})
 end
 
--- QUEUE SYNC
 function MusicDispatcher:SyncQueueOnly()
-	-- Debounce update queue agar tidak broadcast tiap perubahan.
 	if self._queueSyncScheduled then return end
 	self._queueSyncScheduled = true
 
@@ -81,7 +76,6 @@ function MusicDispatcher:SyncQueueOnly()
 	end)
 end
 
--- STATE SYNC (DIRECT - NO BATCHING)
 function MusicDispatcher:SyncState()
 	local playbackState = self.playbackManager:GetState()
 
@@ -97,7 +91,6 @@ function MusicDispatcher:SyncState()
 	})
 end
 
--- SYNC TO INDIVIDUAL PLAYER
 function MusicDispatcher:SyncToPlayer(player)
 	if not validatePlayer(player) then
 		return
@@ -118,7 +111,6 @@ function MusicDispatcher:SyncToPlayer(player)
 		favoriteSongs = favorites
 	})
 
-	-- Sync playback if music is playing
 	if playbackState.isPlaying and playbackState.currentSong then
 		pcall(function()
 			self.playbackManager:SyncToPlayer(self.remotes, player)
@@ -133,12 +125,10 @@ function MusicDispatcher:SyncToPlayer(player)
 		if roleHierarchy < roleSystem.Config.RoleHierarchy.Moderator then
 			self:SendToClient(player, "ADMIN_BLOCK_ACTIVATED", {})
 		else
-			-- Beri tahu admin bahwa sistem sedang diblokir.
 			self:SendToClient(player, "ADMIN_BUTTON_UPDATE", {text = "Unblock"})
 		end
 	end
 
-	-- Preload lagu berikutnya di client.
 	task.defer(function()
 		if not validatePlayer(player) then return end
 		local nextSongId = nil

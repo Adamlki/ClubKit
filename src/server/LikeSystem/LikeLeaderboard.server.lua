@@ -206,7 +206,6 @@ local function updateLeaderboardBoard()
 	return true
 end
 
--- KETIKA CLIENT MEMINTA DATA
 local requestCooldowns = {}
 local REQUEST_COOLDOWN = 5
 

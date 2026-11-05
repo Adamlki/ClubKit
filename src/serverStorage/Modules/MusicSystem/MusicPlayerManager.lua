@@ -23,19 +23,15 @@ function MusicPlayerManager.new(config, managers, dispatcher)
 	return self
 end
 
--- PLAYER VALIDATION (SIMPLE)
 local function validatePlayer(player)
 	return player and player:IsDescendantOf(Players)
 end
 
--- PLAYER ADDED
 function MusicPlayerManager:OnPlayerAdded(player)
 	RoleSystem:InitializePlayer(player)
 
-	-- Load favorit sebelum sync agar daftar tidak tertimpa.
 	self.favoriteManager:LoadPlayerFavorites(player.UserId)
 
-	-- Retry di background jika load gagal.
 	task.spawn(function()
 		for _ = 1, 3 do
 			if self.favoriteManager:IsLoaded(player.UserId) then break end
@@ -63,7 +59,6 @@ function MusicPlayerManager:OnPlayerAdded(player)
 		end
 	end
 
-	-- Character respawn handler
 	player.CharacterAdded:Connect(function(character)
 		local hrp = character:WaitForChild("HumanoidRootPart", 5)
 		if not hrp then return end
@@ -75,11 +70,9 @@ function MusicPlayerManager:OnPlayerAdded(player)
 		end
 	end)
 
-	-- Admin commands
 	self:SetupAdminCommands(player)
 end
 
--- PLAYER REMOVING
 function MusicPlayerManager:OnPlayerRemoving(player)
 	local userId = player.UserId
 
@@ -101,13 +94,11 @@ function MusicPlayerManager:OnPlayerRemoving(player)
 	self.favoriteManager:CleanupPlayer(userId)
 	self.cooldownService:CleanupPlayer(userId)
 
-	-- Broadcast queue hanya jika ada lagu yang benar-benar dihapus.
 	if removedSongs and removedSongs > 0 then
 		self.dispatcher:SyncQueueOnly()
 	end
 end
 
--- ADMIN COMMANDS
 function MusicPlayerManager:SetupAdminCommands(player)
 	player.Chatted:Connect(function(message)
 		local role = RoleSystem:GetPlayerRole(player)
@@ -115,13 +106,11 @@ function MusicPlayerManager:SetupAdminCommands(player)
 		if role == "Admin" or role == "Owner" or role == "Moderator" then
 			local lowerMsg = string.lower(message)
 
-			-- Retry Player (UI sync only)
 			if lowerMsg:match("^/retryplayer%s+") or lowerMsg:match("^;retryplayer%s+") then
 				local targetName = lowerMsg:match("^/retryplayer%s+(.+)") or lowerMsg:match("^;retryplayer%s+(.+)")
 				self:HandleRetryPlayer(player, targetName)
 			end
 
-			-- Retry All (UI sync only)
 			if lowerMsg == "/retryall" or lowerMsg == ";retryall" then
 				self:HandleRetryAll(player)
 			end
@@ -129,7 +118,6 @@ function MusicPlayerManager:SetupAdminCommands(player)
 	end)
 end
 
--- RETRY PLAYER (UI SYNC ONLY - NO AUDIO RELOAD)
 function MusicPlayerManager:HandleRetryPlayer(player, targetName)
 	local targetPlayer = self:FindPlayerByName(targetName)
 
@@ -140,7 +128,6 @@ function MusicPlayerManager:HandleRetryPlayer(player, targetName)
 
 	self.dispatcher:Notify(player, string.format("Syncing UI for %s...", targetPlayer.DisplayName))
 
-	-- Simply sync UI state to target player
 	self.dispatcher:SyncToPlayer(targetPlayer)
 
 	task.delay(0.5, function()
@@ -149,13 +136,11 @@ function MusicPlayerManager:HandleRetryPlayer(player, targetName)
 	end)
 end
 
--- RETRY ALL (UI SYNC ONLY - NO AUDIO RELOAD)
 function MusicPlayerManager:HandleRetryAll(player)
 	local playerCount = #Players:GetPlayers()
 
 	self.dispatcher:Notify(player, string.format("Syncing UI for %d players...", playerCount))
 
-	-- Sync state to all players
 	self.dispatcher:SyncState()
 
 	task.delay(0.5, function()
@@ -164,7 +149,6 @@ function MusicPlayerManager:HandleRetryAll(player)
 	end)
 end
 
--- UTILITY: FIND PLAYER BY NAME
 function MusicPlayerManager:FindPlayerByName(targetName)
 	local targetPlayer = nil
 	local matches = {}

@@ -5,15 +5,13 @@ local Workspace = game:GetService("Workspace")
 
 local RoleSystem = require(ServerStorage:WaitForChild("Modules"):WaitForChild("RoleSystem"))
 
--- SAFETY GATE: bot stress test hanya boleh jalan di Roblox Studio. Bot yang lupa
--- dimatikan di live server akan membebani map 24/7. Set true hanya jika terpaksa.
 local ALLOW_IN_LIVE_SERVER = false
 local CAN_RUN_BOTS = RunService:IsStudio() or ALLOW_IN_LIVE_SERVER
 
-local AUTO_STOP_SECONDS = 300 -- Auto-despawn 5 menit setelah spawn terakhir
-local MAX_TOTAL_BOTS = 100 -- Batas keras agar server tidak mati
+local AUTO_STOP_SECONDS = 300
+local MAX_TOTAL_BOTS = 100
 
-local stressGeneration = 0 -- Invalidasi timer auto-stop yang usang
+local stressGeneration = 0
 
 local activeBots = {}
 local isTesting = false
@@ -90,7 +88,6 @@ local function spawnBots(amount, originPosition)
 		local bot = template:Clone()
 		bot.Name = "Bot_" .. tostring(i)
 		
-		-- Posisi spawn acak di sekitar origin
 		local randomOffset = Vector3.new(
 			math.random(-radius, radius),
 			15,
@@ -101,7 +98,6 @@ local function spawnBots(amount, originPosition)
 		
 		table.insert(activeBots, bot)
 		
-		-- AI Loop untuk setiap Bot
 		task.spawn(function()
 			local humanoid = bot:FindFirstChildOfClass("Humanoid")
 			if not humanoid then return end
@@ -110,7 +106,6 @@ local function spawnBots(amount, originPosition)
 				task.wait(math.random(1, 4))
 				
 				if not isSyncing and bot.PrimaryPart then
-					-- Bergerak liar ke arah acak
 					local moveOffset = Vector3.new(
 						math.random(-30, 30),
 						0,
@@ -118,7 +113,6 @@ local function spawnBots(amount, originPosition)
 					)
 					humanoid:MoveTo(bot.PrimaryPart.Position + moveOffset)
 					
-					-- Sesekali lompat untuk stress test physics
 					if math.random(1, 4) == 1 then
 						humanoid.Jump = true
 					end
@@ -126,7 +120,6 @@ local function spawnBots(amount, originPosition)
 			end
 		end)
 		
-		-- Beri jeda kecil setiap 5 bot agar server tidak Freeze mendadak
 		if i % 5 == 0 then
 			task.wait(0.1)
 		end
@@ -151,7 +144,6 @@ local function syncBotsToPlayer(player)
 	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
 	if not animator then return end
 	
-	-- Cari animasi yang sedang dimainkan player (hindari animasi jalan/diam bawaan)
 	local activeTrack = nil
 	for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
 		if track.Animation and track.Priority ~= Enum.AnimationPriority.Core and track.Priority ~= Enum.AnimationPriority.Idle then
@@ -173,14 +165,12 @@ local function syncBotsToPlayer(player)
 		local botHum = bot:FindFirstChildOfClass("Humanoid")
 		local botAnimator = botHum and botHum:FindFirstChildOfClass("Animator")
 		
-		-- Buat Animator jika bot belum punya
 		if botHum and not botAnimator then
 			botAnimator = Instance.new("Animator")
 			botAnimator.Parent = botHum
 		end
 		
 		if botAnimator then
-			-- Hentikan animasi bot yang lama
 			for _, t in ipairs(botAnimator:GetPlayingAnimationTracks()) do
 				t:Stop()
 			end
@@ -191,7 +181,6 @@ local function syncBotsToPlayer(player)
 			newTrack.Priority = activeTrack.Priority
 			newTrack:Play()
 			
-			-- Samakan posisi waktu tarian agar 100% selaras
 			task.spawn(function()
 				task.wait()
 				newTrack.TimePosition = activeTrack.TimePosition
@@ -217,10 +206,8 @@ local function stopSyncBots()
 	print("[StressTest] Sinkronisasi tarian bot dihentikan. Bot kembali bergerak liar.")
 end
 
--- Chat Command Listener
 Players.PlayerAdded:Connect(function(player)
 	player.Chatted:Connect(function(message)
-		-- Hanya Owner yang berhak memanggil Pasukan Bot
 		local role = RoleSystem:GetPlayerRole(player)
 		if role ~= "Owner" then return end
 		
@@ -229,7 +216,7 @@ Players.PlayerAdded:Connect(function(player)
 		if string.sub(msgLower, 1, 11) == "/stresstest" then
 			local amountStr = string.sub(msgLower, 13)
 			local amount = tonumber(amountStr) or 50
-			amount = math.clamp(amount, 1, 100) -- Hard-limit 100 bot agar PC/Server tidak mati
+			amount = math.clamp(amount, 1, 100)
 			
 			local character = player.Character
 			local root = character and character:FindFirstChild("HumanoidRootPart")

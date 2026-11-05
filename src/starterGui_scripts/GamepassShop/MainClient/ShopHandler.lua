@@ -1,5 +1,3 @@
--- CLIENT SHOP HANDLER (SIMPLIFIED)
-
 local Config = require(script.Parent:WaitForChild("Config"))
 local Logger = require(script.Parent:WaitForChild("Logger"))
 

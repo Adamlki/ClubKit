@@ -1,5 +1,3 @@
--- SINGLETON PROTECTION
--- Mencegah script berjalan ganda jika masih ada LocalScript di StarterGui.EmoteGui
 local ScriptOnce = require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("ScriptOnce"))
 if not ScriptOnce.Claim("EmoteHandlerClient") then return end
 
@@ -27,7 +25,6 @@ local DanceState = require(Modules:WaitForChild("DanceState"))
 AnimatorUtils.AnimationPreloader = AnimationPreloader
 local UIAnimator = require(ReplicatedStorage:WaitForChild("UIAnimator"))
 
--- GLOBAL CONNECTION TRACKER
 local isScriptActive = true
 local scriptConnections = {}
 local characterConnections = {}
@@ -36,7 +33,6 @@ local globalSyncListeners = setmetatable({}, { __mode = "k" })
 local leaderCharAddedConn = nil
 local leaderDanceConn = nil
 
--- SNAPSHOT & RENDERER STATE
 local parsedSnapshots = setmetatable({}, { __mode = "k" })
 local snapshotByPlayerName = {}
 local renderStates = setmetatable({}, { __mode = "k" })
@@ -77,7 +73,6 @@ local function cleanupCharacterConnections(char)
 	end
 end
 
--- GUI ELEMENTS
 local playerGui = player:WaitForChild("PlayerGui")
 local gui = script.Parent:IsA("ScreenGui") and script.Parent or playerGui:WaitForChild("EmoteGui", 30)
 if not gui then
@@ -143,7 +138,6 @@ local speedSlider = speedBar and speedBar:FindFirstChild("speedPosition")
 local speedButton = speedSlider and speedSlider:FindFirstChild("Button")
 local speedtext = speedFrame and speedFrame:FindFirstChild("TextLabel")
 
--- VARIABLES & CONSTANTS
 local SPEED_MIN = 0.1
 local SPEED_MAX = 3.0
 local SPEED_DEFAULT = 1.0
@@ -202,7 +196,6 @@ local animationStarted
 local lastEmoteClickTime = 0 
 local lastDanceSwitchTime = 0 
 
--- CORE ANIMATION & STATE CONTROL
 local function isClubDanceId(animId)
 	if not animId or animId == "" then return false end
 	if emoteIdCache[animId] then return true end
@@ -290,7 +283,6 @@ local function restoreCharacterAnimations(character)
 	end
 end
 
--- GUI HELPER FUNCTIONS
 local function showNotification(message, duration, bgColor)
 	table.insert(notificationQueue, { message = message, duration = duration or 3, bgColor = bgColor or Color3.fromRGB(50, 150, 255) })
 
@@ -397,14 +389,6 @@ local function findAnimById(danceId)
 	return fallbackAnim
 end
 
--- ==========================================================================
--- DANCE MIRROR RENDERER
--- Semua dancer selain local player dirender ulang secara lokal dari snapshot.
--- Track native mereka dihentikan karena TimePosition/AdjustSpeed tidak
--- direplikasi Roblox. Dengan satu snapshot, semua mirror di satu client
--- memakai fase dan speed yang sama.
--- ==========================================================================
-
 local function getCharacterAnimator(char)
 	if not char then return nil end
 	local humanoid = char:FindFirstChildOfClass("Humanoid")
@@ -430,7 +414,6 @@ local function getActiveLocalDanceTrack()
 		return localAnimTrack
 	end
 
-	-- Fallback untuk track yang dibuat script lain (mis. resume GlobalEffect).
 	local animator = getCharacterAnimator(char)
 	local currentDanceId = char:GetAttribute("CurrentDanceID")
 	if animator and currentDanceId and currentDanceId ~= "" then
@@ -482,8 +465,6 @@ local function getStateForCharacter(char)
 	return parsedSnapshots[char] or legacyStateForCharacter(char)
 end
 
--- Mengembalikan: sourceKind, sourceCharacter, sourceState, sourceTrack,
--- animationId, restartMarker.
 local function getSourceForCharacter(char)
 	local myChar = player.Character
 	local syncingTo = char:GetAttribute("Syncing")
@@ -502,8 +483,6 @@ local function getSourceForCharacter(char)
 		local leaderChar = leader and leader.Character
 
 		if leaderChar then
-			-- Kalau local player adalah leader, follower langsung mengikuti
-			-- track lokal tanpa menunggu snapshot/jaringan.
 			if leaderChar == myChar and (not myChar:GetAttribute("Syncing") or myChar:GetAttribute("Syncing") == "") then
 				local track = getActiveLocalDanceTrack()
 				if track and track.Animation then
@@ -519,7 +498,6 @@ local function getSourceForCharacter(char)
 			return nil
 		end
 
-		-- Leader tidak sedang ter-stream, tapi snapshot terakhir masih tersimpan.
 		local state = snapshotByPlayerName[syncingTo]
 		if state then
 			return "snapshot", nil, state, nil, state.animationId, state.restartSeq
@@ -605,8 +583,6 @@ local function updateRenderCharacter(char, now, force)
 	local localFollowing = isLocal and isLocalFollowing()
 	local syncingTo = char:GetAttribute("Syncing")
 
-	-- Local player yang sedang menjadi leader/solo adalah sumber. Jangan
-	-- pernah membuat mirror untuk dirinya sendiri.
 	if isLocal and not localFollowing then
 		local state = renderStates[char]
 		if state and state.track then
@@ -615,13 +591,11 @@ local function updateRenderCharacter(char, now, force)
 		return
 	end
 
-	-- Selama global effect, animasi efek yang menang.
 	if char:GetAttribute("GlobalEffectActive") == true then
 		stopRenderState(char, 0.1)
 		return
 	end
 
-	-- Cull mirror yang jauh. Local follower sendiri tidak pernah di-cull.
 	if not isLocal then
 		local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
 		local hrp = char:FindFirstChild("HumanoidRootPart")
@@ -666,8 +640,6 @@ local function updateRenderCharacter(char, now, force)
 
 	local length = targetTrack.Length
 	if not length or length <= 0 then
-		-- Asset belum siap. Track lama tetap diputar; jangan pernah
-		-- memainkan track baru yang Length-nya masih 0.
 		return
 	end
 
@@ -724,8 +696,6 @@ local function updateRenderCharacter(char, now, force)
 		return
 	end
 
-	-- Restart eksplisit (spam / start ulang) harus mengenai semua mirror
-	-- pada frame yang sama. Tidak ada speed reset sebelum transisi.
 	if force or restartMarker ~= state.restartMarker then
 		pcall(function() state.track.TimePosition = targetPos end)
 		pcall(function() state.track:AdjustSpeed(targetSpeed) end)
@@ -739,8 +709,6 @@ local function updateRenderCharacter(char, now, force)
 		state.lastSpeed = targetSpeed
 	end
 
-	-- Koreksi sisa drift hanya lewat speed. TimePosition baru di-set pada
-	-- restart, switch, initial sync, atau desync yang benar-benar besar.
 	local diff = DanceState.wrapDiff(targetPos - state.track.TimePosition, length)
 	local absDiff = math.abs(diff)
 
@@ -826,7 +794,6 @@ local function monitorPlayerCharacter(targetPlayer)
 		local animator = humanoid:WaitForChild("Animator", 10)
 		if not animator then return end
 
-		-- Cleanup otomatis saat karakter respawn, mati, atau dihancurkan
 		trackCharConn(char.AncestryChanged:Connect(function(_, parent)
 			if not parent then
 				cleanupCharacterConnections(char)
@@ -843,14 +810,10 @@ local function monitorPlayerCharacter(targetPlayer)
 			end)
 		end))
 
-		-- Track native dance pada karakter remote dihentikan. Track mirror
-		-- buatan renderer kita sendiri dikecualikan lewat state.ourTracks.
 		trackCharConn(animator.AnimationPlayed:Connect(function(track)
 			suppressNativeDanceTrack(char, track)
 		end))
 
-		-- Track dance yang sudah terlanjur diputar sebelum listener terpasang
-		-- juga harus dihentikan supaya tidak dobel dengan mirror.
 		for _, existingTrack in ipairs(animator:GetPlayingAnimationTracks()) do
 			suppressNativeDanceTrack(char, existingTrack)
 		end
@@ -917,8 +880,6 @@ end
 for _, p in ipairs(Players:GetPlayers()) do monitorPlayerCharacter(p) end
 trackConnection(Players.PlayerAdded:Connect(monitorPlayerCharacter))
 trackConnection(Players.PlayerRemoving:Connect(onPlayerRemoving))
-
--- GUI & SYNC MANAGEMENT
 
 local function getDanceNameFromId(danceId)
 	if not danceId or danceId == "" then return nil end
@@ -1130,8 +1091,6 @@ function updateUnsyncFrame()
 		bindLeaderDanceListener(leaderPlayer)
 		updateLeaderDanceIndicator()
 
-		-- Simpan dance lokal sebelum track dihentikan. Listener lain bisa
-		-- berjalan lebih dulu, jadi jangan bergantung pada urutan sinyal.
 		if not savedLocalEmoteData and currentAnimation then
 			for _, data in ipairs(allButtons) do
 				if data.button == currentAnimation then
@@ -1145,8 +1104,6 @@ function updateUnsyncFrame()
 			end
 		end
 
-		-- Dance lokal harus berhenti saat mulai menjadi follower. Mirror
-		-- renderer akan memutar dance leader pada karakter ini.
 		local character = player.Character
 		if localAnimTrack then
 			pcall(function() localAnimTrack:Stop(FADE_TIME) end)
@@ -1164,8 +1121,6 @@ function updateUnsyncFrame()
 			freezeHumanoidForPose(character, false)
 		end
 
-		-- UI kembali netral selama mengikuti leader. Dance yang disimpan
-		-- akan dipulihkan saat unsync.
 		currentAnimation = nil
 		lastEmoteClickTime = 0
 		updateButtonVisuals()
@@ -1173,7 +1128,6 @@ function updateUnsyncFrame()
 		setMenuElementsBlocked(true)
 		unsyncframe.Visible = true
 
-		-- Mulai mirror pada frame ini juga, jangan menunggu render tick.
 		updateAllRenderCharacters(workspace:GetServerTimeNow(), true)
 	else
 		if leaderDanceConn then leaderDanceConn:Disconnect() leaderDanceConn = nil end
@@ -1192,7 +1146,6 @@ function updateUnsyncFrame()
 			restoreCharacterAnimations(player.Character)
 		end
 
-		-- Kembalikan dance lokal yang tadi disimpan saat mulai sync.
 		if savedLocalEmoteData and not currentAnimation then
 			local saved = savedLocalEmoteData
 			savedLocalEmoteData = nil
@@ -1270,7 +1223,6 @@ end
 setupSyncMonitoring()
 trackConnection(player.CharacterAdded:Connect(function() task.wait(1) if isScriptActive then setupSyncMonitoring() end end))
 
--- ANIMATION STARTED
 local function publishPlaySnapshot(animation, track, isSpam, fade)
 	if not animation or not track or not track.Animation then return end
 	if not isScriptActive then return end
@@ -1299,8 +1251,6 @@ local function playLocalDance(animation, isSpam, isPose)
 	local token = localPlayToken + 1
 	localPlayToken = token
 
-	-- Spam dance yang sama: restart track yang sudah siap. Tidak ada
-	-- fade keluar/masuk yang membuat karakter terlihat patah.
 	if localAnimTrack and localAnimTrack.IsPlaying and localAnimTrack.Animation
 		and DanceState.normalizeId(localAnimTrack.Animation.AnimationId) == normId then
 		localAppliedSpeed = currentSpeed
@@ -1343,8 +1293,6 @@ local function playLocalDance(animation, isSpam, isPose)
 		setAnimateEnabled(currentCharacter, false)
 		track.Priority = Enum.AnimationPriority.Action4
 
-		-- Penting: track baru diputar setelah Length > 0. Dance lama tetap
-		-- berjalan sampai titik ini, jadi tidak ada frame karakter diam.
 		pcall(function() track.TimePosition = 0 end)
 		track:Play(DANCE_SWITCH_FADE, 1, localAppliedSpeed)
 		pcall(function() track.TimePosition = 0 end)
@@ -1373,8 +1321,6 @@ local function playLocalDance(animation, isSpam, isPose)
 	if track.Length > 0 then
 		beginPlay()
 	else
-		-- First-click / asset belum siap: tunggu track benar-benar punya
-		-- Length, sambil dance lama terus diputar.
 		local lengthConn
 		local done = false
 		local function tryStart()
@@ -1468,7 +1414,6 @@ function animationStarted(animation, button, ignoreLock)
 
 	if currentAnimation == button then
 		if isSpamming then
-			-- Spam: restart seketika tanpa mematikan track lama lebih dulu.
 			lastEmoteClickTime = os.clock()
 			local isPose = buttonCategoryMap[button] == "Pose"
 			playLocalDance(animation, true, isPose)
@@ -1499,8 +1444,6 @@ function animationStarted(animation, button, ignoreLock)
 		playLocalDance(animation, false, isPose)
 	end
 end
-
--- GUI & BUTTON BUILDER
 
 local updateDisplay 
 
@@ -1597,9 +1540,6 @@ poseBtn.MouseButton1Click:Connect(function() setActiveCategory("Pose") end)
 favoriteBtn.MouseButton1Click:Connect(function() setActiveCategory("Favorite") end)
 searchBox:GetPropertyChangedSignal("Text"):Connect(function() searchQuery = searchBox.Text updateDisplay() end)
 
--- SPEED SLIDER
--- Knob mengikuti input secara langsung (tanpa easing). Speed animasi memakai
--- ramp pendek di updateLocalSpeed agar perubahan tetap halus.
 if speedSlider and speedBar and speedtext and speedButton then
 	local isDraggingSpeed = false
 	local activeInput = nil
@@ -1662,7 +1602,6 @@ if speedSlider and speedBar and speedtext and speedButton then
 		if input == activeInput or input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			isDraggingSpeed = false
 			activeInput = nil
-			-- Snapshot final dikirim oleh loop speed saat nilainya sudah stabil.
 		end
 	end))
 
@@ -1671,7 +1610,6 @@ if speedSlider and speedBar and speedtext and speedButton then
 	speedtext.Text = string.format("%.1fx", SPEED_DEFAULT)
 end
 
--- PRELOAD & LOAD ANIMATIONS
 task.spawn(function()
 	while #emotesFolder:GetChildren() == 0 and isScriptActive do task.wait(0.1) end
 	if not isScriptActive then return end
@@ -1728,9 +1666,6 @@ task.spawn(function()
 	setActiveCategory("Dance")
 end)
 
--- RENDERER LOOP & SPEED STREAM
--- 20 Hz cukup untuk semua mirror; aksi leader memakai refreshLocalGroup
--- agar follower di layar leader berubah pada frame yang sama.
 local function publishLocalSpeedSnapshot()
 	if not isScriptActive then return end
 
@@ -1823,7 +1758,6 @@ trackConnection(RunService.Heartbeat:Connect(function(dt)
 	end
 end))
 
--- CLEANUP
 trackConnection(player.CharacterAdded:Connect(function(newCharacter)
 	task.spawn(function()
 		local animScript = newCharacter:WaitForChild("Animate", 2)
@@ -1897,7 +1831,6 @@ script.Destroying:Connect(function()
 	end
 end)
 
--- DRAWER SLIDE & DRAG CONTROLLER (RESET ON CLOSE & DOCKED BUTTON)
 local toggleBtn = gui:WaitForChild("DanceToggleButton", 5) or gui:FindFirstChild("DanceToggleButton")
 
 local oldDragDetector = mainframe:FindFirstChildOfClass("UIDragDetector")

@@ -4,29 +4,24 @@ local DataStoreEnv = require(script.Parent:WaitForChild("DataStoreEnv"))
 
 local LikeManager = {}
 
--- Studio reads live data; writes are redirected to a sandbox by DataStoreEnv.
 local LikesStore, LikesWriteStore = DataStoreEnv.Get("PlayerLikes_v1")
 local OrderedLikesStore, OrderedLikesWriteStore = DataStoreEnv.GetOrdered("PlayerLikes_Ordered_v1")
 local CooldownsStore, CooldownsWriteStore = DataStoreEnv.Get("LikeCooldowns_v1")
 
-local COOLDOWN_DURATION = 86400 -- 24 jam (dalam detik)
+local COOLDOWN_DURATION = 86400
 
--- Memory Cache
 local playerCooldownsCache = {}
-local playerLikesCache = {} -- Menyimpan data like sementara sebelum di-save
-local playerLoadedFlags = {} -- Mencegah data loss jika GetAsync gagal
-local playerDirtyFlags = {} -- Dirty checking untuk TotalLikes penerima like
-local cooldownDirtyFlags = {} -- Dirty checking untuk cooldown pengirim like
+local playerLikesCache = {}
+local playerLoadedFlags = {}
+local playerDirtyFlags = {}
+local cooldownDirtyFlags = {}
 
--- Cegah race condition saat pemain keluar-masuk cepat.
 local activeSaves = {}
 
--- COOLDOWN SYSTEM
 function LikeManager.LoadPlayerCooldowns(player)
 	local success, data = pcall(function()
 		return CooldownsStore:GetAsync(tostring(player.UserId))
 	end)
-	-- Jangan simpan ke cache jika pemain sudah keluar saat GetAsync berjalan.
 	if not player or not player.Parent then return end
 	
 	if success then
@@ -64,19 +59,16 @@ function LikeManager.SavePlayerCooldowns(player)
 		end
 	end
 
-	-- Keep the snapshot on failure so the cleanup retry can write it.
 	if saved then
 		playerCooldownsCache[userId] = nil
 	end
 	return saved
 end
 
--- LIKES SYSTEM
 function LikeManager.LoadTotalLikes(player)
 	local success, totalLikes = pcall(function()
 		return LikesStore:GetAsync(tostring(player.UserId))
 	end)
-	-- Jangan isi cache jika pemain sudah disconnect saat GetAsync berjalan.
 	if not player or not player.Parent then return end
 	
 	totalLikes = totalLikes or 0
@@ -92,7 +84,6 @@ end
 
 function LikeManager.SaveTotalLikes(player)
 	local userId = player.UserId
-	-- Save hanya jika data berhasil dimuat agar tidak menimpa DataStore dengan nilai kosong.
 	if playerLoadedFlags[userId] and playerDirtyFlags[userId] then
 		local likesToSave = playerLikesCache[userId]
 		if likesToSave ~= nil then
@@ -117,7 +108,6 @@ function LikeManager.SaveTotalLikes(player)
 	return true
 end
 
--- LIKE LOGIC
 function LikeManager.CanLikePlayer(liker, targetPlayer)
 	local likerId = liker.UserId
 	local targetId = tostring(targetPlayer.UserId)
@@ -126,13 +116,11 @@ function LikeManager.CanLikePlayer(liker, targetPlayer)
 		return false, "Tidak bisa melike diri sendiri!"
 	end
 	
-	-- Cek apakah data liker sudah termuat
 	local cooldowns = playerCooldownsCache[likerId]
 	if not cooldowns then
 		return false, "Data kamu masih loading, sabar ya!"
 	end
 	
-	-- Cek apakah data target sudah termuat (Mencegah Race Condition Overwrite Bug)
 	if not playerLoadedFlags[targetPlayer.UserId] then
 		return false, "Data pemain ini masih loading!"
 	end
@@ -161,7 +149,6 @@ function LikeManager.ProcessLike(liker, targetPlayer)
 	playerLikesCache[targetPlayer.UserId] = (playerLikesCache[targetPlayer.UserId] or 0) + 1
 	targetPlayer:SetAttribute("TotalLikes", playerLikesCache[targetPlayer.UserId])
 	
-	-- Cooldown pengirim berubah; TotalLikes pengirim tidak.
 	cooldownDirtyFlags[likerId] = true
 	playerDirtyFlags[targetPlayer.UserId] = true
 
@@ -187,13 +174,10 @@ function LikeManager.GetCooldownEndTime(liker, targetPlayer)
 	return 0
 end
 
--- EVENTS
 Players.PlayerAdded:Connect(function(player)
-	-- Jeda acak agar GetAsync tidak bertabrakan saat 100 pemain join bersamaan.
 	task.wait(math.random(10, 40) / 10)
 	if not player or not player.Parent then return end
 
-	-- Tunggu save sebelumnya selesai jika pemain keluar-masuk cepat.
 	local waited = 0
 	while activeSaves[player.UserId] and waited < 10 do
 		waited += task.wait(0.1)
@@ -231,7 +215,6 @@ Players.PlayerRemoving:Connect(function(player)
 	cleanup(1)
 end)
 
--- Auto Save setiap 300 detik (5 menit) agar DataStore limit tidak over
 task.spawn(function()
 	while true do
 		task.wait(300)
@@ -274,14 +257,12 @@ task.spawn(function()
 			end
 
 			if didWrite then
-				-- Beri jeda 1 detik antar pemain yang melakukan SetAsync agar tidak kena Throttling
 				task.wait(1)
 			end
 		end
 	end
 end)
 
--- Mencegah data loss saat server mati
 local RunService = game:GetService("RunService")
 if RunService:IsServer() and RunService:IsRunning() then
 	pcall(function()
@@ -297,13 +278,11 @@ if RunService:IsServer() and RunService:IsRunning() then
 					completed += 1
 				end)
 				
-				-- Beri napas ke API Roblox tiap 10 pemain (Anti-Throttle)
 				if i % 10 == 0 then
 					task.wait(0.2)
 				end
 			end
 			
-			-- Tahan server jangan mati sebelum data diselamatkan (maks 15 detik)
 			local elapsed = 0
 			while completed < totalPlayers and elapsed < 15 do
 				task.wait(1)

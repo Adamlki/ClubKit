@@ -1,4 +1,3 @@
--- CLIENT LOGGER MODULE
 local Config = require(script.Parent:WaitForChild("Config"))
 
 local Logger = {}

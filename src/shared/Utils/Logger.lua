@@ -58,7 +58,6 @@ function Logger:Error(...: any)
 	warn(string.format("[%s] ❌", self.prefix), ...)
 end
 
--- Default fallback instance
 local defaultLogger = Logger.new("ClubKit")
 return setmetatable(Logger, {
 	__index = defaultLogger,

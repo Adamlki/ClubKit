@@ -1,16 +1,11 @@
--- ACCESSORY GIVER WITH EQUIP/UNEQUIP
--- Place in ServerScriptService
-
 local ServerStorage = game:GetService("ServerStorage")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
--- Load RoleSystem Module
 local RoleSystem = require(ServerStorage.Modules.RoleSystem)
 local RemoteEventManager = require(ServerScriptService:WaitForChild("Modules"):WaitForChild("RemoteEventManager"))
 
--- REMOTE EVENTS SETUP
 local RemotesFolder = ReplicatedStorage:FindFirstChild("AccessoryRemotes") or Instance.new("Folder")
 RemotesFolder.Name = "AccessoryRemotes"
 RemotesFolder.Parent = ReplicatedStorage
@@ -23,33 +18,25 @@ local ShowIconEvent = RemotesFolder:FindFirstChild("ShowIcon") or Instance.new("
 ShowIconEvent.Name = "ShowIcon"
 ShowIconEvent.Parent = RemotesFolder
 
--- CONFIGURATION
 local itemsFolder = ServerStorage:WaitForChild("Items", 10)
 local crownTemplate = itemsFolder and (itemsFolder:FindFirstChild("Crown8bit") or itemsFolder:WaitForChild("Crown8bit", 10)) or nil
 
 local Config = {
-	-- Debug Settings
 	DebugMode = false,
 
-	-- Item Settings
 	AccessoryPath = crownTemplate,
 	AccessoryName = "Crown8bit",
 	RequiredRole = "Moderator",
 
-	-- Role Behavior
 	IncludeHigherRoles = true,
 
-	-- Storage
 	StorageTag = "AccessoryOwned",
 
-	-- Timing
 	RoleCheckDelay = 0.1
 }
 
--- PLAYER DATA TRACKING
-local PlayerAccessoryData = {} -- [UserId] = {owned = bool, equipped = bool}
+local PlayerAccessoryData = {}
 
--- DEBUG SYSTEM
 local function debugPrint(message, isSuccess)
 	if not Config.DebugMode then return end
 	local prefix = isSuccess and "[✓ SUCCESS]" or "[✗ FAILED]"
@@ -57,7 +44,6 @@ local function debugPrint(message, isSuccess)
 	print(color .. " " .. prefix .. " " .. message)
 end
 
--- ACCESSORY FUNCTIONS
 local function equipAccessory(character, player)
 	local accName = Config.AccessoryName or "Crown8bit"
 	if character:FindFirstChild(accName) then
@@ -149,18 +135,14 @@ local function isAccessoryEquipped(player)
 	return PlayerAccessoryData[player.UserId] and PlayerAccessoryData[player.UserId].equipped or false
 end
 
--- GUI CREATION
 local function showIconForPlayer(player, shouldShow)
 	if player and player.Parent then
-		-- Attribute adalah sumber kebenaran; event ShowIcon bisa terlewat
-		-- jika client selesai inisialisasi setelah event dikirim.
 		player:SetAttribute("CanUseHat", shouldShow == true)
 	end
 	ShowIconEvent:FireClient(player, shouldShow)
 	debugPrint(player.Name .. " icon visibility: " .. tostring(shouldShow), true)
 end
 
--- CHARACTER HANDLERS
 local function onCharacterAdded(character, player)
 	if Config.RoleCheckDelay > 0 then
 		task.wait(Config.RoleCheckDelay)
@@ -177,7 +159,6 @@ local function onCharacterAdded(character, player)
 end
 
 local function onPlayerAdded(player)
-	-- Wait for player to load
 	task.wait(1)
 
 	local hasRole, _ = hasRequiredRole(player)
@@ -194,7 +175,6 @@ local function onPlayerAdded(player)
 	end)
 end
 
--- REMOTE EVENT HANDLERS
 AccessoryEvent.OnServerEvent:Connect(function(player, action)
 	if not RemoteEventManager.checkRateLimit(player, "accessoryHatToggle") then return end
 
@@ -217,7 +197,6 @@ AccessoryEvent.OnServerEvent:Connect(function(player, action)
 	end
 end)
 
--- INITIALIZATION
 if not Config.AccessoryPath then
 	warn("[MyHat] ⚠️ Crown8bit tidak ditemukan saat inisialisasi ServerStorage.Items (akan dicoba lagi dinamis).")
 end
@@ -254,7 +233,6 @@ RoleSystem.RoleChanged:Connect(function(player, oldRole, newRole)
 	end
 end)
 
--- PLAYER REMOVING - MEMORY CLEANUP
 Players.PlayerRemoving:Connect(function(player)
 	PlayerAccessoryData[player.UserId] = nil
 end)

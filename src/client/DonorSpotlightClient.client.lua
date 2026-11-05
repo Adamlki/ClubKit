@@ -1,5 +1,3 @@
--- DONOR SPOTLIGHT CONTROLLER
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -40,7 +38,6 @@ local function cancelActiveTween()
 	end
 end
 
--- FAIL-SAFE RESTORE CAMERA
 local originalFOV = 70
 
 local function forceRestoreCamera(originalCamType)
@@ -137,7 +134,6 @@ local function returnToPlayerPOV(originalCamType, onDone)
 	if onDone then onDone() end
 end
 
--- MAIN SPOTLIGHT SEQUENCE
 local function playDonorSpotlight(donorUserId, donorDisplayName, duration)
 	duration = duration or 5
 
@@ -233,7 +229,6 @@ local function playDonorSpotlight(donorUserId, donorDisplayName, duration)
 	local testRay = Workspace:Raycast(donorHeadPos, frontDir * 9, wallRayParams)
 
 	if testRay and testRay.Distance < 5 then
-		-- Jika depan terhalang tembok, coba cek dari sudut lain yang lebih lapang
 		local backDir = (-donorLook * 0.88 + donorRight * 0.32).Unit
 		local backRay = Workspace:Raycast(donorHeadPos, backDir * 9, wallRayParams)
 		if not backRay or backRay.Distance > testRay.Distance then
@@ -253,9 +248,8 @@ local function playDonorSpotlight(donorUserId, donorDisplayName, duration)
 	local focalPoint = donorHeadPos + Vector3.new(0, 0.2, 0)
 	local closeTargetCF = CFrame.new(closeTargetPos, focalPoint)
 
-	-- FASE 1: DYNAMIC ZOOM-IN HERO PUSH (~0.85 detik)
 	cancelActiveTween()
-	local cinematicFOV = math.clamp(originalFOV - 20, 46, 54) -- Efek lensa portrait/telephoto
+	local cinematicFOV = math.clamp(originalFOV - 20, 46, 54)
 
 	local zoomInTween = TweenService:Create(
 		cam,
@@ -292,7 +286,6 @@ local function playDonorSpotlight(donorUserId, donorDisplayName, duration)
 		return
 	end
 
-	-- FASE 2: HERO SHOWCASE / SLOW CINEMATIC DRIFT (NO ROTATION!)
 	local remainingDuration = math.max(1.8, duration - 1.8)
 	local elapsed = 0
 	local basePos = closeTargetPos
@@ -316,7 +309,6 @@ local function playDonorSpotlight(donorUserId, donorDisplayName, duration)
 		cam.CFrame = CFrame.new(currentCamPos, currentFocal)
 	end
 
-	-- FASE 3: DYNAMIC ZOOM-OUT & TRANSISI PULANG KE POV PEMAIN
 	if sessionId == currentSessionId then
 		returnToPlayerPOV(originalCamType, function()
 			isRunning = false
@@ -324,7 +316,6 @@ local function playDonorSpotlight(donorUserId, donorDisplayName, duration)
 	end
 end
 
--- GLOBAL FAIL-SAFE: JIKA LOCAL PLAYER RESPAWN
 localPlayer.CharacterAdded:Connect(function()
 	currentSessionId += 1
 	forceRestoreCamera(Enum.CameraType.Custom)

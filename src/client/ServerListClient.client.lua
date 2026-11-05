@@ -1,5 +1,3 @@
--- ServerListClient (ClubKit Server Browser Controller)
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
@@ -8,7 +6,6 @@ local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Remotes
 local remotesFolder = ReplicatedStorage:WaitForChild("ServerListRemotes", 10)
 local getServerListRF = remotesFolder and remotesFolder:WaitForChild("GetServerList", 5)
 local teleportToServerRF = remotesFolder and remotesFolder:WaitForChild("TeleportToServer", 5)
@@ -30,14 +27,12 @@ local closeBtn = rightControls:WaitForChild("CloseBtn")
 local scrollContainer = mainframe:WaitForChild("ScrollContainer")
 local cardTemplate = scrollContainer:WaitForChild("CardTemplate")
 
--- State
 local cachedServers = {}
 local spawnedCards = {}
 local isFetching = false
 local INITIAL_POSITION = UDim2.new(0.5, 0, 0.5, 0)
 mainframe.Position = INITIAL_POSITION
 
--- POSITION RESET & CLOSE LOGIC
 mainframe:GetPropertyChangedSignal("Visible"):Connect(function()
 	if mainframe.Visible then
 		mainframe.Position = INITIAL_POSITION
@@ -58,7 +53,6 @@ closeBtn.MouseButton1Click:Connect(function()
 	mainframe.Visible = false
 end)
 
--- HEADER DRAG LOGIC
 local isDragging = false
 local dragStartMouse = nil
 local dragStartFramePos = nil
@@ -100,7 +94,6 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
--- CLEAR SPAWNED CARDS
 local function clearCards()
 	for _, card in ipairs(spawnedCards) do
 		if card and card.Parent then
@@ -110,7 +103,6 @@ local function clearCards()
 	spawnedCards = {}
 end
 
--- RENDER SERVER CARDS
 local function renderServerCards(filterText)
 	clearCards()
 	local query = filterText and string.lower(string.gsub(filterText, "^%s*(.-)%s*$", "%1")) or ""
@@ -186,7 +178,7 @@ local function renderServerCards(filterText)
 					local avLayout = Instance.new("UIListLayout")
 					avLayout.FillDirection = Enum.FillDirection.Horizontal
 					avLayout.SortOrder = Enum.SortOrder.LayoutOrder
-					avLayout.Padding = UDim.new(0, -6) -- Overlapping effect
+					avLayout.Padding = UDim.new(0, -6)
 					avLayout.Parent = avatarsContainer
 
 					local userIds = sData.playerUserIds or {}
@@ -281,7 +273,6 @@ local function renderServerCards(filterText)
 	end
 end
 
--- FETCH SERVERS FROM BACKEND
 function fetchAndRenderServers()
 	if isFetching then return end
 	isFetching = true

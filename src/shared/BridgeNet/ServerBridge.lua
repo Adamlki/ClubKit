@@ -61,7 +61,7 @@ function ServerBridge._start(): nil
 	InvokeReply = SerdesLayer.CreateIdentifier("InvokeReply")
 
 	local replTicks = {}
-	local remainingQueue = {} -- FIX: Pindahkan ke luar Heartbeat agar paket rate-limited tidak hilang setiap frame!
+	local remainingQueue = {}
 
 	RunService.Heartbeat:Connect(function()
 		debug.profilebegin("ServerBridge")
@@ -84,8 +84,6 @@ function ServerBridge._start(): nil
 
 			local obj = BridgeObjects[SerdesLayer.FromCompressed(v.remote)]
 			if obj == nil then
-				--Don't warn here because that's a vulnerability. We don't want exploiters
-				--lagging out the server over time with a pcall that warns every frame.
 				continue
 			end
 			if v.args[1] == Invoke then
@@ -95,7 +93,7 @@ function ServerBridge._start(): nil
 						local uuid = args[2]
 
 						table.remove(args, 1)
-						table.remove(args, 1) -- Arg 2 becomes arg1 after arg1 is removed.
+						table.remove(args, 1)
 						table.insert(SendQueue, {
 							plrs = v.plr,
 							remote = obj._id,
@@ -106,12 +104,11 @@ function ServerBridge._start(): nil
 						})
 					end)
 				else
-					-- onInvoke is not set s	end an error to the client
 					local args = v.args
 					local uuid = args[2]
 
 					table.remove(args, 1)
-					table.remove(args, 1) -- Arg 2 becomes arg1 after arg1 is removed.
+					table.remove(args, 1)
 					table.insert(SendQueue, {
 						plrs = v.plr,
 						remote = obj._id,
@@ -125,7 +122,6 @@ function ServerBridge._start(): nil
 				debug.profilebegin(string.format("connections_%s", obj._name))
 
 				for _, callback in obj._connections do
-					-- OPTIMIZED: Use task.defer instead of task.spawn for better thread scheduling
 					task.defer(function()
 						local success, err = pcall(function()
 							if #obj._inboundMiddleware ~= 0 then
@@ -179,7 +175,6 @@ function ServerBridge._start(): nil
 
 		for _, v: queueSendPacket in SendQueue do
 			if replTicks[v.replRate] then
-				-- subtract 0.003 to make sure we don't accidentally skip any frames due to rounding errors
 				if (currentTime - replTicks[v.replRate]) <= (1 / v.replRate - 0.003) then
 					if not passingReplRates[v.replRate] then
 						table.insert(remainingQueue, v)
@@ -262,7 +257,6 @@ function ServerBridge._start(): nil
 					table.insert(tbl, k)
 				end
 
-				-- FIX CRITICAL BUG: Kirim invokeReply hanya ke peminta (toSendPlayers[v.plrs]), BUKAN toSendAll!
 				table.insert(toSendPlayers[v.plrs], tbl)
 			end
 		end
@@ -283,7 +277,6 @@ function ServerBridge._start(): nil
 	end)
 
 	RemoteEvent.OnServerEvent:Connect(function(plr, tbl)
-		-- FIX ANTI-EXPLOIT CRASH: Validasi tipe tabel dan batas jumlah paket per frame
 		if type(tbl) ~= "table" then return end
 		local count = 0
 		for _, v in tbl do
@@ -442,7 +435,7 @@ function ServerBridge:OnInvoke(callback: (...any) -> nil)
 		end
 	end
 
-	self._onInvoke = wrappedCallback --wrappedCallback
+	self._onInvoke = wrappedCallback
 end
 
 --[=[
@@ -784,7 +777,7 @@ end
 ]=]
 function ServerBridge:Destroy()
 	BridgeObjects[self._name] = nil
-	SerdesLayer.DestroyIdentifier(self._name) -- FIX TYPO: self._name bukan self.Name
+	SerdesLayer.DestroyIdentifier(self._name)
 	for k, v in self do
 		if type(v) == "table" and v.Destroy ~= nil then
 			v:Destroy()

@@ -7,12 +7,10 @@ local ShopHandler = require(script:WaitForChild("ShopHandler"))
 local Player = game.Players.LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- INTEGRASI MODULE ANIMASI
 local UIAnimator = require(ReplicatedStorage:WaitForChild("UIAnimator"))
 
 local gui = script.Parent
 
--- Gate client-side: jangan inisialisasi shop jika feature flag OFF.
 local featureFolder = ReplicatedStorage:WaitForChild("FeatureFlags", 10)
 local shopFlag = featureFolder and featureFolder:WaitForChild("VIPShopEnabled", 5)
 if not (shopFlag and shopFlag.Value) then

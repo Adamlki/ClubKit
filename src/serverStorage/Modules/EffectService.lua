@@ -1,6 +1,5 @@
 --!optimize 2
 
--- Registry effect server-side. Menggantikan _G untuk helper stage/Robux.
 local EffectService = {}
 local handlers = {}
 

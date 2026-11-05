@@ -16,8 +16,6 @@ function MusicPlaylistManager.new(config)
 	return self
 end
 
--- PLAYLIST OPERATIONS
-
 function MusicPlaylistManager:GetNextSong()
 	local playlist = MusicModule:GetAllMusic()
 
@@ -29,10 +27,8 @@ function MusicPlaylistManager:GetNextSong()
 	if self.preparedNextSong then
 		local song = self.preparedNextSong
 		self.preparedNextSong = nil
-		-- Mark as played
 		self.playedSongs[song.id] = true
 
-		-- Advance playlist index for sequential mode
 		if not self.shuffleMode then
 			self.playlistIndex = self.playlistIndex + 1
 			if self.playlistIndex > #playlist then
@@ -46,7 +42,6 @@ function MusicPlaylistManager:GetNextSong()
 	local nextSong
 
 	if self.shuffleMode then
-		-- Random mode - avoid recently played songs
 		local availableSongs = {}
 
 		for i, song in ipairs(playlist) do
@@ -55,38 +50,32 @@ function MusicPlaylistManager:GetNextSong()
 			end
 		end
 
-		-- Reset if all songs have been played
 		if #availableSongs == 0 then
 			self.playedSongs = {}
 			availableSongs = playlist
 		end
 
-		-- Pick random song
 		local randomIndex = math.random(1, #availableSongs)
 		nextSong = availableSongs[randomIndex]
 
 	else
-		-- Sequential mode (Sanitasi indeks agar tidak pernah nil / out of bounds)
 		if self.playlistIndex < 1 or self.playlistIndex > #playlist then
 			self.playlistIndex = 1
 		end
 
 		nextSong = playlist[self.playlistIndex]
 
-		-- Move to next index
 		self.playlistIndex = self.playlistIndex + 1
 		if self.playlistIndex > #playlist then
 			self.playlistIndex = 1
 		end
 	end
 
-	-- Fallback jika nextSong nil padahal playlist ada
 	if not nextSong and #playlist > 0 then
 		nextSong = playlist[1]
 		self.playlistIndex = 2
 	end
 
-	-- Mark as played
 	if nextSong then
 		self.playedSongs[nextSong.id] = true
 	end

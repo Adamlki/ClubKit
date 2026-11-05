@@ -1,21 +1,16 @@
--- MAIN SERVER SCRIPT
-
 local Config = require(script.Config)
 local Logger = require(script.Logger)
 local AntiSpamManager = require(script.AntiSpamManager)
 local ValidationManager = require(script.ValidationManager)
 local ShopHandler = require(script.ShopHandler)
 
--- SERVICES
 local ServerStorage = game:GetService("ServerStorage")
 local Players = game:GetService("Players")
 local MarketplaceService = game:GetService("MarketplaceService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- MODULES
 local RoleSystem = require(ServerStorage.Modules.RoleSystem)
 
--- SETUP REMOTES
 local GamepassFolder = ReplicatedStorage:FindFirstChild("Gamepass")
 if not GamepassFolder then
 	GamepassFolder = Instance.new("Folder")
@@ -46,7 +41,6 @@ end
 
 Logger:Success("Remotes created successfully")
 
--- INITIALIZE HANDLERS
 Logger:Info("Initializing Gamepass System...")
 
 ShopHandler:Init(RoleSystem, ValidationManager)
@@ -56,8 +50,6 @@ local ProcessReceiptHandler = require(game.ServerScriptService.DonationSystem.Do
 GiftManager:Init(ProcessReceiptHandler)
 
 Logger:Success("All systems initialized (Including Gift System)!")
-
--- REMOTE HANDLERS
 
 shopRequest.OnServerInvoke = function(player, requestData)
 	if not ValidationManager:ValidatePlayer(player) then
@@ -90,14 +82,12 @@ end)
 
 Logger:Success("Remote handlers connected")
 
--- MARKETPLACE EVENTS
 MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, purchasedPassID, purchaseSuccess)
 	ShopHandler:HandlePurchaseFinished(player, purchasedPassID, purchaseSuccess)
 end)
 
 Logger:Success("Marketplace events connected")
 
--- ROLE SYSTEM EVENTS
 RoleSystem.RoleChanged:Connect(function(player, oldRole, newRole)
 	Logger:Info(string.format("Role changed: %s -> %s (%s)", 
 		oldRole, newRole, player.Name))
@@ -107,7 +97,6 @@ RoleSystem.RoleChanged:Connect(function(player, oldRole, newRole)
 	end
 end)
 
--- PLAYER EVENTS
 Players.PlayerAdded:Connect(function(player)
 	Logger:Info(string.format("Player joined: %s (UserId: %d)", player.Name, player.UserId))
 
@@ -126,7 +115,6 @@ Players.PlayerRemoving:Connect(function(player)
 	Logger:Debug(string.format("Cleaned up data for %s", player.Name))
 end)
 
--- SERVER MONITORING
 task.spawn(function()
 	local timePassed = 0
 	local reportInterval = Config.StatsReportInterval or 300

@@ -1,12 +1,8 @@
--- RANK ITEM GIVER SYSTEM
-
 local ServerStorage = game:GetService("ServerStorage")
 local Players = game:GetService("Players")
 
--- LOAD ROLE SYSTEM MODULE
 local RoleSystem = require(ServerStorage.Modules.RoleSystem)
 
--- CONFIGURATION
 local itemsFolder = ServerStorage:WaitForChild("Items", 10)
 
 local function getItemTemplate(itemName)
@@ -25,36 +21,34 @@ local Config = {
 	RankItems = {
 		{
 			Name = "AFK",
-			MinimumHierarchy = 2 -- VIP ke atas
+			MinimumHierarchy = 2
 		},
 		{
 			Name = "Glowstick",
-			MinimumHierarchy = 2 -- VIP ke atas
+			MinimumHierarchy = 2
 		},
 		{
 			Name = "Umbrella",
-			MinimumHierarchy = 2 -- VIP ke atas
+			MinimumHierarchy = 2
 		},
 		{
 			Name = "Sharky",
-			MinimumHierarchy = 2 -- VIP ke atas
+			MinimumHierarchy = 2
 		},
 		{
 			Name = "WaterGun",
-			MinimumHierarchy = 2 -- VIP ke atas
+			MinimumHierarchy = 2
 		},
 		{
 			Name = "Heart",
-			MinimumHierarchy = 2 -- VIP ke atas
+			MinimumHierarchy = 2
 		},
 		{
 			Name = "Mawar",
-			MinimumHierarchy = 2 -- VIP ke atas
+			MinimumHierarchy = 2
 		},
 	}
 }
-
--- UTILITY FUNCTIONS
 
 local function debugPrint(...)
 	if Config.DebugMode then
@@ -119,7 +113,6 @@ end
 local function checkAndGiveItems(player)
 	if not player or not player.Parent then return end
 
-	-- Ambil role sekali per pemain, bukan per item.
 	local playerRole = RoleSystem:GetPlayerRole(player)
 	local playerHierarchy = RoleSystem.Config.RoleHierarchy[playerRole] or 0
 
@@ -131,8 +124,6 @@ local function checkAndGiveItems(player)
 		end
 	end
 end
-
--- PLAYER MANAGEMENT
 
 local function onPlayerAdded(player)
 	RoleSystem:InitializePlayer(player)
@@ -149,8 +140,6 @@ local function onPlayerAdded(player)
 	end)
 end
 
--- ROLE CHANGE HANDLER
-
 RoleSystem.RoleChanged:Connect(function(player, oldRole, newRole)
 	debugPrint(string.format("Role changed: %s (%s -> %s)", player.Name, oldRole, newRole))
 
@@ -159,8 +148,6 @@ RoleSystem.RoleChanged:Connect(function(player, oldRole, newRole)
 		checkAndGiveItems(player)
 	end)
 end)
-
--- INITIALIZATION
 
 Players.PlayerAdded:Connect(onPlayerAdded)
 

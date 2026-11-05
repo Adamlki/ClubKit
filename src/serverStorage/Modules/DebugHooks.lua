@@ -1,7 +1,5 @@
 --!optimize 2
 
--- Registry debug/test hooks server-only.
--- Menggantikan _G untuk hook debug agar tidak ada akses nil dan mudah dilacak.
 local DebugHooks = {}
 local hooks = {}
 

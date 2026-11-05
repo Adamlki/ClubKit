@@ -1,33 +1,21 @@
--- MUSIC MODULE - RASA NADA
--- Tambahkan lagu ke kategori playlist dengan format:
--- { id = "1234567890", judul = "Artis - Judul", speed = 0.9, pitch = 1.1 }
--- speed dan pitch opsional; cover, album, dan durasi mengikuti data lagu.
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local AssetConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AssetConfig"))
 
 local MusicModule = {}
 
--- 1. ALBUM / PLAYLIST COVER CONFIGURATION
--- Ganti rbxassetid untuk mengganti cover playlist.
 MusicModule.ALBUM_COVERS = {
-	["All Songs"]      = "rbxassetid://100674441262590", -- Cover RASA NADA Utama
-	["My Favorites"]   = "rbxassetid://113553647698301", -- Icon Hati / Love
-	["PLAYLIST 1"]     = "rbxassetid://75519739809680",  -- Music Note Icon
-	["PLAYLIST 2"]     = "rbxassetid://114910483744172", -- DJ Global Effect Icon
-	["BREAKBEAT"]      = "rbxassetid://106900580552131", -- Breakbeat Headphones Badge
-	["EDM"]            = "rbxassetid://74637269436548", -- EDM Cover / DJ Global Effect Icon
-	["AMAPIANO"]       = "rbxassetid://136994553919740",  -- Amapiano / Afrobeat Cover
-	["DJ"]             = "rbxassetid://73561867265020",  -- DJ Cover
-	["KOPLO & JAWA"]   = "rbxassetid://103698710073129",  -- Koplo & Jawa Cover
-	-- ["THAILAND STYLE"] = "rbxassetid://92853116803097",  -- DJ / Thailand Style Cover
-	-- ["FUNKOT STYLE"]   = "rbxassetid://99989680726270",  -- Party / Dance Icon
+	["All Songs"]      = "rbxassetid://100674441262590",
+	["My Favorites"]   = "rbxassetid://113553647698301",
+	["PLAYLIST 1"]     = "rbxassetid://75519739809680",
+	["PLAYLIST 2"]     = "rbxassetid://114910483744172",
+	["BREAKBEAT"]      = "rbxassetid://106900580552131",
+	["EDM"]            = "rbxassetid://74637269436548",
+	["AMAPIANO"]       = "rbxassetid://136994553919740",
+	["DJ"]             = "rbxassetid://73561867265020",
+	["KOPLO & JAWA"]   = "rbxassetid://103698710073129",
 }
 
--- 2. PLAYLIST DATABASE
--- Semua lagu dikelompokkan per playlist agar rapi dan mudah dicari/diedit.
 MusicModule.PLAYLISTS = {
-	-- PLAYLIST 1 (175 Lagu)
 	["PLAYLIST 1"] = {
 		{ id = "125646898891578", judul = "I Want It That Way - Backstreet Boys", speed = 0.43 },
 		{ id = "100783222387599", judul = "Merry Christmas, i miss you", speed = 0.43 },
@@ -132,9 +120,7 @@ MusicModule.PLAYLISTS = {
 		{ id = "116457204192670", judul = "BTS (방탄소년단) '2.0'", speed = 0.43 },
 	},
 
-	-- PLAYLIST 2 (102 Lagu - Split Seimbang & Lagu Baru)
 	["PLAYLIST 2"] = {
-		-- Lagu Baru
 		{ id = "118329838572289", judul = "MOJANG PRIANGAN", speed = 0.43 },
 		{ id = "134339619153625", judul = "ALWAYS LOVING YOU STADIUM BREAKBEAT", speed = 0.43 },
 		{ id = "116834928520132", judul = "KAKA MAIN SALAH X GIVE IT TO ME X TERUNTUK MIA", speed = 0.43 },
@@ -164,7 +150,6 @@ MusicModule.PLAYLISTS = {
 		{ id = "113959859524529", judul = "LMFAO - Party Rock Anthem", speed = 0.43 },
 		{ id = "122581282138639", judul = "SENAM GEMU FA MI RE", speed = 0.43 },
 
-		-- Bagian Kedua dari PLAYLIST 1 agar Seimbang
 		{ id = "78297798901557", judul = "Camila Cabello - Havana", speed = 0.43 },
 		{ id = "80894670917995", judul = "Calvin Harris - Outside", speed = 0.43 },
 		{ id = "73513045426835", judul = "Bruno Mars - Locked Out Of Heaven", speed = 0.43 },
@@ -240,7 +225,6 @@ MusicModule.PLAYLISTS = {
 		{ id = "109120785081796", judul = "Arizona Zervas - ROXANNE", speed = 0.43 },
 		{ id = "101133558179718", judul = "Aya Nakamura - Copines", speed = 0.43 },
 
-		-- Tambahan Lagu PLAYLIST 2 (Digabung agar tidak menimpa 102 lagu di atas)
 		{ id = "130506595568178", judul = "Love Me Not - Ravyn Lenae", speed = 0.43 },
 		{ id = "123427427221176", judul = "Beretta (Brazilian Funk) - Cvplis", speed = 0.43 },
 		{ id = "135679855800052", judul = "Bazovyy Minimum - SABI, MIA BOYKA", speed = 0.43 },
@@ -277,7 +261,6 @@ MusicModule.PLAYLISTS = {
 		{ id = "70882327880546", judul = "Last Christmas - Wham!", speed = 0.43 },
 	},
 
-	-- BREAKBEAT (115 Lagu)
 	["BREAKBEAT"] = {
 		{ id = "72668014512344", judul = "GOD IS A GIRL BKB", speed = 0.43 },
 		{ id = "93322287577293", judul = "IN AND OUT OF LOVE BKB", speed = 0.43 },
@@ -396,7 +379,6 @@ MusicModule.PLAYLISTS = {
 		{ id = "139178389984286", judul = "ZUMI ZA BKB", speed = 0.43 },
 	},
 
-	-- EDM (48 Lagu)
 	["EDM"] = {
 		{ id = "136414098503960", judul = "Turn The Lights Off - KATO", speed = 0.43 },
 		{ id = "129805097312205", judul = "Save My Love (Remix) - Kygo", speed = 0.43 },
@@ -448,7 +430,6 @@ MusicModule.PLAYLISTS = {
 		{ id = "120524521249674", judul = "Makeba - Jain", speed = 0.43 },
 	},
 
-	-- AMAPIANO (103 Lagu)
 	["AMAPIANO"] = {
 		{ id = "95448356878813", judul = "Pilé - Mauvais Djo", speed = 0.43 },
 		{ id = "87980444422764", judul = "Fire Fire - Unknown", speed = 0.43 },
@@ -552,13 +533,11 @@ MusicModule.PLAYLISTS = {
 		{ id = "111850113533465", judul = "Lupa Nama Ingat Rasa (Amapiano) - OKAAY", speed = 0.43 },
 	},
 
-	-- DJ (2 Lagu)
 	["DJ"] = {
 		{ id = "132376300924608", judul = "My Mine Gue - DJ Remix", speed = 0.43 },
 		{ id = "110762245924608", judul = "Apa Artinya Cinta - DJ Remix", speed = 0.43 },
 	},
 
-	-- KOPLO & JAWA (32 Lagu)
 	["KOPLO & JAWA"] = {
 		{ id = "99566872218628", judul = "Sayang 2 - Nella Kharisma", speed = 0.43 },
 		{ id = "98786527040927", judul = "Mangku Purel - Om Adella", speed = 0.43 },
@@ -594,11 +573,8 @@ MusicModule.PLAYLISTS = {
 		{ id = "95573189869248", judul = "Jadikan Aku Yang Kedua (Koplo) - Astrid", speed = 0.43 },
 	},
 
-	-- ["THAILAND STYLE"] = {},
-	-- ["FUNKOT STYLE"] = {},
 }
 
--- 3. ALBUM COVER RESOLVER
 function MusicModule:GetAlbumCover(albumName)
 	if albumName and self.ALBUM_COVERS and self.ALBUM_COVERS[albumName] then
 		return self.ALBUM_COVERS[albumName]
@@ -606,12 +582,9 @@ function MusicModule:GetAlbumCover(albumName)
 	return self.ALBUM_COVERS["All Songs"] or AssetConfig.Music.DefaultCover
 end
 
--- 4. DATABASE COMPILER & O(1) LOOKUP CACHE
--- Otomatis menyusun MusicDatabase flat array & index O(1) untuk performa server & client.
 local MusicDatabase = {}
 local MusicById     = {}
 
--- Helper pengurutan alfabetis A-Z berdasarkan judul lagu (case-insensitive)
 local function sortSongsAlphabetically(list)
 	if not list or #list <= 1 then return list end
 
@@ -619,7 +592,6 @@ local function sortSongsAlphabetically(list)
 		local titleA = tostring((a and a.judul) or ""):lower():match("^%s*(.-)%s*$") or ""
 		local titleB = tostring((b and b.judul) or ""):lower():match("^%s*(.-)%s*$") or ""
 
-		-- Abaikan tanda baca/simbol pembuka agar urutan abjad A-Z tetap presisi
 		local cleanA = titleA:match("^[%p%s]*(.-)$")
 		local cleanB = titleB:match("^[%p%s]*(.-)$")
 		if not cleanA or cleanA == "" then cleanA = titleA end
@@ -656,7 +628,6 @@ local function rebuildDatabase()
 		processed[albumName] = true
 		local cover = MusicModule:GetAlbumCover(albumName)
 
-		-- Urutkan list playlist sumber secara alfabetis A-Z
 		sortSongsAlphabetically(list)
 
 		for _, item in ipairs(list) do
@@ -683,27 +654,21 @@ local function rebuildDatabase()
 		processAlbum(albumName, list)
 	end
 
-	-- Urutkan database global (All Songs) secara alfabetis A-Z
 	sortSongsAlphabetically(MusicDatabase)
 end
 
 rebuildDatabase()
 
--- 5. PUBLIC API
-
--- Mengambil seluruh lagu di database
 function MusicModule:GetAllMusic()
 	return MusicDatabase
 end
 
--- Mencari lagu berdasarkan SoundId secara instan O(1)
 function MusicModule:GetMusicById(id)
 	if not id then return nil end
 	local idStr = tostring(id)
 	return MusicById[idStr]
 end
 
--- Menambahkan lagu baru secara dinamis via script (opsional)
 function MusicModule:AddSong(albumName, songData)
 	if not albumName or not songData or not songData.id then return false end
 	if not self.PLAYLISTS[albumName] then
@@ -714,7 +679,6 @@ function MusicModule:AddSong(albumName, songData)
 	return true
 end
 
--- Mengambil daftar album beserta jumlah lagu & cover
 function MusicModule:GetAllAlbums(favoriteSongs)
 	favoriteSongs = favoriteSongs or {}
 	local albums = {}
@@ -725,14 +689,12 @@ function MusicModule:GetAllAlbums(favoriteSongs)
 		albumCounts[albumName] = (albumCounts[albumName] or 0) + 1
 	end
 
-	-- "All Songs" album
 	table.insert(albums, {
 		name = "All Songs",
 		songCount = #MusicDatabase,
 		cover = self:GetAlbumCover("All Songs")
 	})
 
-	-- "My Favorites" album
 	local favCount = 0
 	for _, favId in ipairs(favoriteSongs) do
 		if self:GetMusicById(favId) then
@@ -747,7 +709,6 @@ function MusicModule:GetAllAlbums(favoriteSongs)
 		})
 	end
 
-	-- Urutan album yang rapi di menu
 	local displayOrder = {
 		"PLAYLIST 1",
 		"PLAYLIST 2",
@@ -785,7 +746,6 @@ function MusicModule:GetAllAlbums(favoriteSongs)
 	return albums
 end
 
--- Mengambil lagu berdasarkan album (selalu terurut alfabetis A-Z)
 function MusicModule:GetAlbumSongs(albumName, favoriteSongs)
 	favoriteSongs = favoriteSongs or {}
 	local songs = {}
@@ -813,7 +773,6 @@ function MusicModule:GetAlbumSongs(albumName, favoriteSongs)
 	return sortSongsAlphabetically(songs)
 end
 
--- Pencarian lagu di dalam album
 function MusicModule:SearchInAlbum(albumName, query, favoriteSongs)
 	local songs = self:GetAlbumSongs(albumName, favoriteSongs)
 	if not query or query == "" then

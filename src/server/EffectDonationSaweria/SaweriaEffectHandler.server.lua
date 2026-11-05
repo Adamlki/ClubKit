@@ -1,5 +1,3 @@
--- SAWERIA EFFECT HANDLER (SERVER)
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local Players = game:GetService("Players")
@@ -84,7 +82,6 @@ local function getUserId(username)
 	return 1
 end
 
--- TIER EFEK
 local function getRobuxEffectTier(amount)
 	if not MegaEffectsConfig.GLOBAL_ENABLED or not MegaEffectsConfig.ROBUX_ENABLED then
 		return nil

@@ -11,7 +11,6 @@ local DebugHooks = require(ServerStorage:WaitForChild("Modules"):WaitForChild("D
 local ServerConfig = require(ServerScriptService:WaitForChild("Config"):WaitForChild("ServerConfig"))
 local DonationConfig = require(script.Parent.DonationConfig)
 
--- REFERENSI WORKSPACE GUI
 local gui = nil
 local mainframe = nil
 local displayname = nil
@@ -69,17 +68,14 @@ if RunService:IsServer() and RunService:IsRunning() then
 	end)
 end
 
--- DEBUG
 local function debugLog(...)
 	if DonationConfig.DEBUG.ENABLED and DonationConfig.DEBUG.SHOW_BROADCAST then
 		print("[ScreenBoard]", ...)
 	end
 end
 
--- STATE
 local isAnimating = false
 
--- ANIMASI FADE
 local FADE_OUT_TIME = 0.3
 local FADE_IN_TIME  = 0.4
 
@@ -125,7 +121,6 @@ local function animateUpdate(newName, newMessage, userId)
 	isAnimating = false
 end
 
--- TEXT FILTERING
 local function filterMessage(message, fromPlayer)
 	if not message or #message == 0 then
 		return DonationConfig.SCREEN_BOARD.DEFAULT_MESSAGE
@@ -182,7 +177,6 @@ local function getPlayerDisplayName(userId)
 	return "User_" .. userId
 end
 
--- MAIN
 local ScreenBoardHandler = {}
 
 function ScreenBoardHandler:ShowDonationMessage(player, amount, message)

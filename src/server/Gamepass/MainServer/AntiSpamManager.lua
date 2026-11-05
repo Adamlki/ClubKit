@@ -1,4 +1,3 @@
--- ANTI-SPAM MANAGER
 local Config = require(script.Parent.Config)
 local Logger = require(script.Parent.Logger)
 

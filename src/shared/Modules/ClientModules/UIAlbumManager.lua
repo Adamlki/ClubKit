@@ -20,7 +20,6 @@ function UIAlbumManager.new(albumList, albumTemplateBtn)
 	return self
 end
 
--- LOAD ALBUMS
 function UIAlbumManager:LoadAlbums(favoriteSongs, silent)
 	self.favoriteSongs = favoriteSongs or {}
 
@@ -68,17 +67,14 @@ function UIAlbumManager:LoadAlbums(favoriteSongs, silent)
 		end)
 	end
 
-	-- Restore selection or default to "All Songs"
 	if not silent then
 		self:SelectAlbum(self.currentAlbum or "All Songs", true)
 	end
 end
 
--- SELECT ALBUM
 function UIAlbumManager:SelectAlbum(albumName, silent, songCount)
 	self.currentAlbum = albumName
 
-	-- Highlight active card
 	for name, btn in pairs(self.albumButtons) do
 		local stroke = btn:FindFirstChild("UIStroke")
 		if stroke then

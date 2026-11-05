@@ -1,15 +1,13 @@
 --!native
 --!optimize 2
--- CENTRALIZED ROUND-ROBIN LEADERBOARD ORCHESTRATOR
--- Menjalankan update leaderboard secara bergiliran untuk mencegah spike dan error 429.
 
 local RunService = game:GetService("RunService")
 local LeaderboardRegistry = require(script.Parent:WaitForChild("Modules"):WaitForChild("LeaderboardRegistry"))
 
 local CONFIG = {
 	DEBUG_ENABLED = false,
-	STAGGERED_BOOT_INTERVAL = 8, -- Jeda detik saat inisialisasi awal server
-	ROUND_ROBIN_INTERVAL = 30,   -- Jeda detik antar kategori (Siklus 4 kategori = 2 Menit)
+	STAGGERED_BOOT_INTERVAL = 8,
+	ROUND_ROBIN_INTERVAL = 30,
 }
 
 local function debugPrint(...)
@@ -18,7 +16,6 @@ local function debugPrint(...)
 	end
 end
 
--- DAFTAR KATEGORI LEADERBOARD (ROUND-ROBIN QUEUE)
 local categories = {
 	{
 		name = "Robux Leaderboard (All-Time & Daily)",
@@ -58,12 +55,9 @@ local categories = {
 	},
 }
 
--- MAIN ORCHESTRATOR THREAD
 task.spawn(function()
 	debugPrint("🚀 Inisialisasi Round-Robin Leaderboard Orchestrator...")
 
-	-- 1. STAGGERED BOOT: Jalankan setiap kategori satu per satu saat startup dengan jeda
-	-- Mencegah 4 DataStore/HTTP request bertubrukan di detik pertama server nyala
 	task.wait(3)
 	for i, cat in ipairs(categories) do
 		debugPrint(string.format("📌 [Boot %d/%d] Memuat %s...", i, #categories, cat.name))
@@ -76,7 +70,6 @@ task.spawn(function()
 
 	debugPrint("✅ Staggered Boot selesai! Memulai siklus Round-Robin (" .. CONFIG.ROUND_ROBIN_INTERVAL .. "s per kategori)...")
 
-	-- 2. ROUND-ROBIN LOOP BERKELANJUTAN
 	local currentIndex = 1
 	while true do
 		task.wait(CONFIG.ROUND_ROBIN_INTERVAL)

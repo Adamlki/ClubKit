@@ -5,28 +5,24 @@ local ContentProvider = game:GetService("ContentProvider")
 local player = Players.LocalPlayer
 local module = {}
 
--- CONFIG
 local CONFIG = {
 	DEBUG_ENABLED = false,
 	PRELOAD_ON_SPAWN = false,
-	PRELOAD_DELAY = 2, -- Delay before starting preload (let character fully load)
-	MAX_PRELOAD = math.huge, -- Semua animation harus siap sebelum diputar
+	PRELOAD_DELAY = 2,
+	MAX_PRELOAD = math.huge,
 	BATCH_SIZE = 25,
 }
 
--- CACHE
 local isPreloaded = false
 local preloadStarted = false
 local preloadFinished = false
 
--- DEBUG
 local function debug(...)
 	if CONFIG.DEBUG_ENABLED then
 		print("[AnimPreloader]", ...)
 	end
 end
 
--- GET ANIMATOR
 local function getAnimator()
 	if not player.Character then return nil end
 
@@ -42,9 +38,6 @@ local function getAnimator()
 	return animator
 end
 
--- Preload SEMUA aset di background. Dance diprioritaskan, lalu pose.
--- Jangan membatasi jumlah: animasi yang belum siap adalah penyebab utama
--- karakter diam saat pertama kali dance dipilih.
 function module.preloadAnimations(animationFolder)
 	if preloadStarted then
 		return true
@@ -55,7 +48,6 @@ function module.preloadAnimations(animationFolder)
 	task.spawn(function()
 		local animationsToPreload = {}
 
-		-- Folder utama = Dance. Pose ada di subfolder Pose.
 		for _, child in ipairs(animationFolder:GetChildren()) do
 			if child:IsA("Animation") then
 				table.insert(animationsToPreload, child)
@@ -73,7 +65,6 @@ function module.preloadAnimations(animationFolder)
 
 		debug("Starting background preload for", #animationsToPreload, "animations...")
 
-		-- Preload per batch agar tidak membanjiri koneksi saat join.
 		local batchSize = math.max(1, CONFIG.BATCH_SIZE)
 		for i = 1, #animationsToPreload, batchSize do
 			local batch = {}
@@ -93,8 +84,6 @@ function module.preloadAnimations(animationFolder)
 	return true
 end
 
--- GET PRELOADED TRACK
--- Animator bisa diberikan untuk karakter remote. Tanpa argumen, memakai LocalPlayer.
 local loadedTrackCache = setmetatable({}, { __mode = "k" })
 
 local function cacheFor(animator)
@@ -116,8 +105,6 @@ function module.getPreloadedTrack(animation, animator)
 	if cachedTrack then
 		local isValid = false
 		pcall(function()
-			-- AnimationTrack tidak punya Parent, jadi validasi lewat Animation
-			-- dan Length. Cache tetap terpisah per animator.
 			isValid = cachedTrack.Animation ~= nil
 				and typeof(cachedTrack.Length) == "number"
 		end)
@@ -142,7 +129,6 @@ function module.getPreloadedTrack(animation, animator)
 	return nil
 end
 
--- INVALIDATE TRACK
 function module.invalidateTrack(animation, animator)
 	animator = animator or getAnimator()
 	if animator and loadedTrackCache[animator] then
@@ -157,8 +143,6 @@ function module.invalidateTrack(animation, animator)
 	end
 end
 
--- Hapus track remote yang sudah tidak dipakai agar 100 karakter tidak
--- menyimpan semua dance yang pernah dimainkan.
 function module.evictTrack(animator, animation, track)
 	if not animator or not animation then return end
 	local perAnimator = loadedTrackCache[animator]
@@ -178,7 +162,6 @@ function module.evictTrack(animator, animation, track)
 	end
 end
 
--- Sisakan hanya track yang masih dipakai oleh renderer remote.
 function module.pruneTracks(animator, keep)
 	if not animator or not loadedTrackCache[animator] then return end
 	if not keep then return end
@@ -195,7 +178,6 @@ function module.pruneTracks(animator, keep)
 	end
 end
 
--- CHECK IF PRELOADED
 function module.isPreloaded()
 	return isPreloaded
 end
@@ -204,7 +186,6 @@ function module.isPreloadFinished()
 	return preloadFinished
 end
 
--- CLEAR CACHE (Call on character death/respawn)
 function module.clearCache()
 	debug("🗑️ Clearing preload state...")
 	for animator, perAnimator in pairs(loadedTrackCache) do
@@ -223,18 +204,15 @@ function module.clearCache()
 	debug("✅ State cleared & tracks destroyed")
 end
 
--- AUTO PRELOAD ON CHARACTER SPAWN
 if CONFIG.PRELOAD_ON_SPAWN then
 	local function setupPreload()
 		if not player.Character then
 			player.CharacterAdded:Wait()
 		end
 
-		-- Wait for character to fully load
 		local humanoid = player.Character:WaitForChild("Humanoid")
 		player.Character:WaitForChild("HumanoidRootPart")
 
-		-- Wait for Animator
 		task.wait(0.5)
 
 		local animator = humanoid:FindFirstChildOfClass("Animator")
@@ -243,20 +221,15 @@ if CONFIG.PRELOAD_ON_SPAWN then
 			return
 		end
 
-		-- Additional delay for stability
 		task.wait(CONFIG.PRELOAD_DELAY)
 
-		-- Wait for animations to be loaded
 		local emotesFolder = ReplicatedStorage:WaitForChild("Emotes")
 
-		-- Preload from Emotes folder (includes Pose subfolder)
 		module.preloadAnimations(emotesFolder)
 	end
 
-	-- Initial setup
 	task.spawn(setupPreload)
 
-	-- Setup on respawn
 	player.CharacterAdded:Connect(function()
 		module.clearCache()
 		task.wait(1)

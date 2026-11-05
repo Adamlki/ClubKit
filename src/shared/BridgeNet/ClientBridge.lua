@@ -59,7 +59,6 @@ function ClientBridge._start()
 
 		for _, v: sendPacketQueue in SendQueue do
 			if replTicks[v.replRate] then
-				-- subtract 0.003 to make sure we don't accidentally skip any frames due to rounding errors
 				if (currentTime - replTicks[v.replRate]) <= (1 / v.replRate - 0.003) then
 					if not passingReplRates[v.replRate] then
 						table.insert(remainingQueue, v)
@@ -149,8 +148,6 @@ function ClientBridge._start()
 
 			if args[1] ~= InvokeReply then
 				for _, callback in obj._connections do
-					-- Spawn a thread to be yield-safe. Potentially implement thread reusability for optimization later?
-					-- also for error protection
 					task.spawn(function()
 						if #obj._inboundMiddleware ~= 0 then
 							local result
@@ -182,7 +179,7 @@ function ClientBridge._start()
 				table.remove(args, 1)
 				argCount -= 2
 				task.spawn(threads[uuid], unpack(args, 1, argCount))
-				threads[uuid] = nil -- don't want a memory leak ;)
+				threads[uuid] = nil
 			end
 		end
 

@@ -55,6 +55,15 @@ Kalau GroupId tidak sama, script akan memberi warning saat server start.
 - Harga di `DonationConfig.PRODUCTS` harus sama dengan harga di Creator Hub.
 - Tier `MegaEffectsConfig` harus disesuaikan dengan harga produk pembeli.
 
+#### Kebijakan Regional Pricing (Creator Hub)
+Sistem Gift VIP ClubKit memakai **Roblox Price Levels API (`MarketplaceService:GetUsersPriceLevelsAsync`)** untuk mencegah arbitrase harga regional. Server membandingkan price level pengirim dan penerima sebelum prompt. Jika level pengirim lebih rendah dari penerima, gift diblokir sebelum pembelian. Server juga **memverifikasi ulang saat receipt**; jika verifikasi saat receipt gagal, pass tidak dikirim ke penerima dan diberikan ke pembeli agar pembelian tidak menggantung.
+
+- Di pop-up Creator Hub *"Protect your revenue"*:
+  - Pilih **"My experience implements the appropriate checks"** jika `PrivateConfig.Features.VIPGiftEnabled = true` **dan** `PrivateConfig.GiftProducts.VIP` sudah diisi dengan Developer Product yang benar. Opsi ini adalah deklarasi bahwa check benar-benar aktif; pastikan tidak ada sistem trading/gifting lain yang belum memakai check.
+  - Pilih **"My experience does not allow trading or gifting"** jika `VIPGiftEnabled = false`. Tombol gift disembunyikan dan server menolak `PromptGift`. Sebaiknya Developer Product gift juga dinonaktifkan di Creator Hub agar tidak bisa dipicu langsung oleh client.
+- Jangan klaim "100% bebas sanksi"; pop-up ini adalah perlindungan revenue, bukan jaminan. Yang penting jawaban sesuai kondisi riil.
+- Uji di published place dengan dua akun. Di Studio pengecekan dilewati agar testing offline tidak error, jadi perilaku production tidak terlihat di Studio.
+
 ### Saweria
 
 - `PrivateConfig.SaweriaWebhookURL` → URL Apps Script pembeli.

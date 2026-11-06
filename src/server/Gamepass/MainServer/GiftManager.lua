@@ -11,7 +11,9 @@ local GiftManager = {}
 local lastPromptAt = {}
 local recentReceipt = {}
 
-local INTENT_MAX_AGE = 30 * 24 * 3600
+-- Intent gift hanya berlaku 15 menit. Harga regional bisa berubah, jadi intent
+-- lama tidak boleh dipakai ulang untuk mengakali hasil verifikasi.
+local INTENT_MAX_AGE = 15 * 60
 
 local POLICY_TARGET_MISSING = "GRANT_TO_BUYER"
 
@@ -183,6 +185,70 @@ local function claimTargetForReceipt(giverUserId, productId, purchaseId, matched
 	return nil
 end
 
+local function setReceiptTarget(purchaseId, targetId)
+	local rKey = getReceiptKey(purchaseId)
+	localReceiptMap[rKey] = targetId
+	if isDataStoreAvailable and receiptMapStore then
+		local ok = pcall(function()
+			receiptMapStore:SetAsync(rKey, targetId)
+		end)
+		if not ok then
+			warn(string.format(
+				"[GiftManager] ⚠️ Gagal menyimpan target final receipt %s ke DataStore.",
+				tostring(purchaseId)
+			))
+		end
+	end
+end
+
+local function checkRegionalPriceLevel(giverUserId, recipientUserId)
+	if RunService:IsStudio() then
+		return true
+	end
+
+	local success, result = pcall(function()
+		return MarketplaceService:GetUsersPriceLevelsAsync({ giverUserId, recipientUserId })
+	end)
+
+	if not success or type(result) ~= "table" then
+		warn(string.format("[GiftManager] ⚠️ GetUsersPriceLevelsAsync gagal: %s", tostring(result)))
+		return false, "Gagal memverifikasi tingkat harga regional. Silakan coba lagi nanti."
+	end
+
+	local lookup = {}
+	for _, data in ipairs(result) do
+		if type(data) == "table"
+			and type(data.UserId) == "number"
+			and type(data.PriceLevel) == "number" then
+			lookup[data.UserId] = data.PriceLevel
+		end
+	end
+
+	local giverLevel = lookup[giverUserId]
+	local recipientLevel = lookup[recipientUserId]
+
+	if type(giverLevel) ~= "number" or type(recipientLevel) ~= "number"
+		or giverLevel < 1 or giverLevel > 1000
+		or recipientLevel < 1 or recipientLevel > 1000 then
+		warn(string.format(
+			"[GiftManager] ⚠️ Price level tidak lengkap: giver %d=%s, recipient %d=%s",
+			giverUserId, tostring(giverLevel), recipientUserId, tostring(recipientLevel)
+		))
+		return false, "Gagal memverifikasi tingkat harga regional. Silakan coba lagi nanti."
+	end
+
+	if giverLevel < recipientLevel then
+		warn(string.format(
+			"[GiftManager] 🛡️ Regional price check diblokir: Giver %d (Level %d) < Recipient %d (Level %d)",
+			giverUserId, giverLevel, recipientUserId, recipientLevel
+		))
+		return false, "Gift tidak dapat dikirim karena perbedaan tingkat harga regional akun."
+	end
+
+	return true
+end
+
+
 function GiftManager:Init(ProcessReceiptHandler)
 	local remotesFolder = ReplicatedStorage:WaitForChild("Remotes")
 	local promptGiftEvent = remotesFolder:FindFirstChild("PromptGift") or Instance.new("RemoteEvent")
@@ -204,6 +270,14 @@ function GiftManager:Init(ProcessReceiptHandler)
 		local now = os.clock()
 		if now - (lastPromptAt[giver.UserId] or 0) < 2 then return end
 		lastPromptAt[giver.UserId] = now
+		local allowed, errMessage = checkRegionalPriceLevel(giver.UserId, targetPlayer.UserId)
+		if not allowed then
+			promptGiftEvent:FireClient(giver, false, errMessage or "Gift diblokir oleh proteksi harga regional.")
+			return
+		end
+
+		if not giver.Parent or not targetPlayer.Parent then return end
+
 
 		local intentData = {
 			GiverId = giver.UserId,
@@ -241,6 +315,23 @@ function GiftManager:Init(ProcessReceiptHandler)
 		local targetId = claimTargetForReceipt(player.UserId, productId, purchaseId, matchedGiftType)
 
 		if targetId then
+			-- Verifikasi ulang saat receipt: level harga bisa berubah, dan
+			-- PromptProductPurchase juga bisa dipicu langsung dari client
+			-- tanpa melewati pengecekan di PromptGift.
+			local allowed, errMessage = checkRegionalPriceLevel(player.UserId, targetId)
+			if not allowed then
+				warn(string.format(
+					"[GiftManager] 🛡️ Gift dialihkan ke pembeli saat receipt: giver %d -> target %d. %s",
+					player.UserId, targetId, tostring(errMessage)
+				))
+				if player.Parent then
+					promptGiftEvent:FireClient(player, false,
+						"Gift tidak dapat dikirim ke penerima karena verifikasi harga regional gagal. Pass diberikan ke pembeli.")
+				end
+				targetId = player.UserId
+				setReceiptTarget(purchaseId, targetId)
+			end
+
 			local success = RoleSystem:GivePassToPlayer(targetId, matchedGiftType, player.UserId)
 			if success then
 				return true

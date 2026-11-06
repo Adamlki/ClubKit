@@ -228,6 +228,17 @@ task.spawn(function()
 		end)
 		closeMenu()
 	end)
+	promptGift.OnClientEvent:Connect(function(success, message)
+		if not success and message then
+			pcall(function()
+				game:GetService("StarterGui"):SetCore("SendNotification", {
+					Title = "Gift VIP",
+					Text = tostring(message),
+					Duration = 6,
+				})
+			end)
+		end
+	end)
 end)
 
 likeBtn.MouseButton1Click:Connect(function()
